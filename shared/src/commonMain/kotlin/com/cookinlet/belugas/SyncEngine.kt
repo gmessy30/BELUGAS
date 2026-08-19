@@ -24,14 +24,27 @@ object SyncEngine {
 
             // Attempt to transmit each item directly.
             // If the network is truly down, the try/catch inside SupabaseApi will handle it.
+            // A failure on one item (photo upload or record insert) leaves that item queued for
+            // retry but does not stop the rest of the queue from syncing.
             for (item in queue) {
                 println("SyncEngine: Attempting to sync item ${item.localId}")
-                val success = SupabaseApi.postSighting(item.record)
+
+                val recordToSync = if (item.localPhotoPath != null && item.record.photoUrl == null) {
+                    val uploadedUrl = SupabaseApi.uploadSightingPhoto(item.localId, item.localPhotoPath, storage)
+                    if (uploadedUrl == null) {
+                        println("SyncEngine: Photo upload failed for ${item.localId}, will retry later.")
+                        continue
+                    }
+                    item.record.copy(photoUrl = uploadedUrl)
+                } else {
+                    item.record
+                }
+
+                val success = SupabaseApi.postSighting(recordToSync)
                 if (success) {
                     OfflineSightingRepository.markAsSynced(storage, item.localId)
                 } else {
-                    println("SyncEngine: Sync failed for item ${item.localId}, stopping queue processing.")
-                    break
+                    println("SyncEngine: Sync failed for item ${item.localId}, will retry later.")
                 }
             }
 

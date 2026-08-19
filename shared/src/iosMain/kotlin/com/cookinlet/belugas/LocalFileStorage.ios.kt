@@ -4,6 +4,7 @@ import platform.Foundation.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.cinterop.*
+import platform.posix.memcpy
 
 actual class LocalFileStorage actual constructor() {
 
@@ -64,6 +65,16 @@ actual class LocalFileStorage actual constructor() {
     private fun getDocumentsDirectory(): String {
         val paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, true)
         return paths.first() as String
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual suspend fun readBytesAtPath(absolutePath: String): ByteArray? = withContext(Dispatchers.Default) {
+        val data = NSData.dataWithContentsOfFile(absolutePath) ?: return@withContext null
+        val bytes = ByteArray(data.length.toInt())
+        data.bytes?.let { ptr ->
+            bytes.usePinned { pinned -> memcpy(pinned.addressOf(0), ptr, data.length) }
+        }
+        bytes
     }
 }
 

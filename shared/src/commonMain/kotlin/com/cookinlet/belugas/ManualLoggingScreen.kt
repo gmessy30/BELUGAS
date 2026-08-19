@@ -60,6 +60,11 @@ fun ManualLoggingScreen(
     var showGeofenceWarning by remember { mutableStateOf(false) }
     var pendingRecord by remember { mutableStateOf<SightingRecord?>(null) }
     var isSaving by remember { mutableStateOf(false) }
+    var isRecentering by remember { mutableStateOf(false) }
+
+    var headingEstimate by remember { mutableStateOf<HeadingEstimate?>(null) }
+    var distanceBucket by remember { mutableStateOf<DistanceBucket?>(null) }
+    val isAerial = sightingAlt > 100.0
 
     val scope = rememberCoroutineScope()
 
@@ -70,8 +75,7 @@ fun ManualLoggingScreen(
         )
     )
 
-    // Safely update GPS position on boot
-    LaunchedEffect(Unit) {
+    suspend fun recenterOnGps(zoom: Double = 12.0) {
         try {
             val coords = locationService.getCurrentLocation()
             if (coords != null) {
@@ -80,12 +84,17 @@ fun ManualLoggingScreen(
                 sightingAlt = coords.altitudeMeters
                 cameraState.position = CameraPosition(
                     target = Position(longitude = sightingLng, latitude = sightingLat),
-                    zoom = 12.0
+                    zoom = zoom
                 )
             }
         } catch (e: Exception) {
             e.printStackTrace() // Fallback stays on default region coordinates
         }
+    }
+
+    // Safely update GPS position on boot
+    LaunchedEffect(Unit) {
+        recenterOnGps()
     }
 
     fun saveAndFinish(record: SightingRecord) {
@@ -171,7 +180,12 @@ fun ManualLoggingScreen(
                         countCalves = calfCount,
                         countUnknown = unknownCount,
                         observedAtEpochMs = selectedTimestampMs,
-                        observerType = observerType.name
+                        observerType = observerType.name,
+                        headingDegrees = headingEstimate?.degrees,
+                        headingSource = headingEstimate?.source?.name,
+                        headingAccuracyDegrees = headingEstimate?.accuracyDegrees,
+                        distanceBucket = distanceBucket?.name,
+                        distanceRadiusMeters = distanceBucket?.radiusMeters(isAerial)
                     )
 
                     if (!GeofenceUtils.isWithin3DFunnel(targetCenter.latitude, targetCenter.longitude, sightingAlt, region.shorelinePolygon)) {
@@ -232,6 +246,38 @@ fun ManualLoggingScreen(
                     .size(width = 110.dp, height = 110.dp),
                 onClick = { selectedDirection = PodDirection.RIGHT }
             )
+        }
+
+        // --- 3b. RECENTER ON GPS BUTTON ---
+        Button(
+            onClick = {
+                if (isRecentering) return@Button
+                isRecentering = true
+                scope.launch {
+                    try {
+                        recenterOnGps(zoom = cameraState.position.zoom)
+                    } finally {
+                        isRecentering = false
+                    }
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 220.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.85f)),
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            if (isRecentering) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    color = Color.Yellow,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Text("📍 RECENTER", color = Color.Yellow, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
         }
 
         // --- 4. FLOATING TRANSPARENT CONTROLS PANEL ---
@@ -299,6 +345,29 @@ fun ManualLoggingScreen(
                 ) {
                     Text("📅 SET DATE / TIME", color = Color.Yellow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
+            }
+
+            // Row A2: Heading & Distance
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                val pinTarget = cameraState.position.target
+                HeadingDistanceButton(
+                    heading = headingEstimate,
+                    distance = distanceBucket,
+                    isAerial = isAerial,
+                    originLat = pinTarget.latitude,
+                    originLng = pinTarget.longitude,
+                    altitudeMeters = sightingAlt,
+                    region = region,
+                    onConfirm = { h, d ->
+                        headingEstimate = h
+                        distanceBucket = d
+                    }
+                )
             }
 
             // Row B: Stacked Counters (Floating Pills)

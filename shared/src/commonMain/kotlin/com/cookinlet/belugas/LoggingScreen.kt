@@ -40,11 +40,34 @@ fun LoggingScreen(
     var pendingRecord by remember { mutableStateOf<SightingRecord?>(null) }
     var isSaving by remember { mutableStateOf(false) }
 
+    var headingEstimate by remember { mutableStateOf<HeadingEstimate?>(null) }
+    var distanceBucket by remember { mutableStateOf<DistanceBucket?>(null) }
+
+    // Approximate observer position/altitude, fetched once for the heading/distance picker's
+    // aerial-vs-shore bucket sizing and live geofence hint. The submitted record still fetches a
+    // fresh GPS reading at DONE time below, independent of this.
+    var observerLat by remember { mutableStateOf(region.defaultCenterLat) }
+    var observerLng by remember { mutableStateOf(region.defaultCenterLng) }
+    var observerAltitude by remember { mutableStateOf(0.0) }
+    LaunchedEffect(Unit) {
+        try {
+            val coords = locationService.getCurrentLocation()
+            if (coords != null) {
+                observerLat = coords.latitude
+                observerLng = coords.longitude
+                observerAltitude = coords.altitudeMeters
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    val isAerial = observerAltitude > 100.0
+
     val scope = rememberCoroutineScope()
 
     fun saveAndFinish(record: SightingRecord) {
         scope.launch {
-            OfflineSightingRepository.queueSighting(storage, record)
+            OfflineSightingRepository.queueSighting(storage, record, localPhotoPath = capturedPhotoPath)
             SyncEngine.processQueueInBackground(scope, storage)
             onDoneClick()
         }
@@ -98,7 +121,14 @@ fun LoggingScreen(
                             countCalves = calfCount,
                             countUnknown = unknownCount,
                             observedAtEpochMs = currentTimeMillis(),
-                            observerType = ObserverType.SELF.name
+                            observerType = ObserverType.SELF.name,
+                            headingDegrees = headingEstimate?.degrees,
+                            headingSource = headingEstimate?.source?.name,
+                            headingAccuracyDegrees = headingEstimate?.accuracyDegrees,
+                            distanceBucket = distanceBucket?.name,
+                            // Uses the fresh GPS altitude fetched above rather than the picker's
+                            // boot-time snapshot, in case the observer's altitude changed since.
+                            distanceRadiusMeters = distanceBucket?.radiusMeters(currentAlt > 100.0)
                         )
 
                         if (!GeofenceUtils.isWithin3DFunnel(currentLat, currentLng, currentAlt, region.shorelinePolygon)) {
@@ -159,15 +189,38 @@ fun LoggingScreen(
             )
         }
 
-        // --- 4. STACKED BOTTOM COUNTERS ROW ---
-        Row(
+        // --- 4. HEADING/DISTANCE + STACKED BOTTOM COUNTERS ROW ---
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                HeadingDistanceButton(
+                    heading = headingEstimate,
+                    distance = distanceBucket,
+                    isAerial = isAerial,
+                    originLat = observerLat,
+                    originLng = observerLng,
+                    altitudeMeters = observerAltitude,
+                    region = region,
+                    onConfirm = { h, d ->
+                        headingEstimate = h
+                        distanceBucket = d
+                    }
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
             // 1. Far Left (Furthest from thumb)
             WhaleCounterTile(
                 label = "UNKNOWN",
@@ -199,6 +252,7 @@ fun LoggingScreen(
                 onIncrement = { whiteCount++ },
                 onDecrement = { if (whiteCount > 0) whiteCount-- }
             )
+            }
         }
 
         // --- GEOFENCE WARNING DIALOG ---

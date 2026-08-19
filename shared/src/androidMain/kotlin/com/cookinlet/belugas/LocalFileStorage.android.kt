@@ -37,6 +37,11 @@ actual class LocalFileStorage actual constructor() {
             file.delete()
         }
     }
+
+    actual suspend fun readBytesAtPath(absolutePath: String): ByteArray? = withContext(Dispatchers.IO) {
+        val file = File(absolutePath)
+        if (file.exists()) file.readBytes() else null
+    }
 }
 
 actual fun currentTimeMillis(): Long = System.currentTimeMillis()

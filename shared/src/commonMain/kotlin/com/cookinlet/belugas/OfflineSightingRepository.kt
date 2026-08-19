@@ -18,7 +18,10 @@ import kotlinx.serialization.json.Json
 data class LocalPendingSighting(
     val localId: String,
     val record: SightingRecord,
-    val timestamp: Long = 0L // Placeholder for platform timestamp if needed
+    val timestamp: Long = 0L, // Placeholder for platform timestamp if needed
+    // Absolute path to a captured photo still awaiting upload. Not sent to Supabase directly —
+    // SyncEngine uploads it and stamps the resulting Storage URL onto `record.photoUrl`.
+    val localPhotoPath: String? = null
 )
 
 expect class LocalFileStorage() {
@@ -30,6 +33,9 @@ expect class LocalFileStorage() {
     fun getCacheDir(): String
     suspend fun writeBytes(fileName: String, bytes: ByteArray)
     suspend fun deleteFile(fileName: String)
+    // Reads raw bytes from an already-absolute path (e.g. a captured photo living outside
+    // the managed storage dir, such as the OS cache/tmp dir) rather than a managed fileName.
+    suspend fun readBytesAtPath(absolutePath: String): ByteArray?
 }
 
 @Composable
@@ -53,13 +59,15 @@ object OfflineSightingRepository {
     // 1. Save new sighting locally immediately
     suspend fun queueSighting(
         storage: LocalFileStorage,
-        record: SightingRecord
+        record: SightingRecord,
+        localPhotoPath: String? = null
     ): LocalPendingSighting = mutex.withLock {
         val pendingList = getQueueInternal(storage).toMutableList()
         val newItem = LocalPendingSighting(
             localId = "local_${currentTimeMillis()}",
             record = record,
-            timestamp = currentTimeMillis()
+            timestamp = currentTimeMillis(),
+            localPhotoPath = localPhotoPath
         )
         pendingList.add(newItem)
         saveQueueInternal(storage, pendingList)

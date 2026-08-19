@@ -7,6 +7,8 @@
     <uses-feature android:name="android.hardware.camera" android:required="true" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Not required: heading capture falls back to manual entry when no compass is present. -->
+    <uses-feature android:name="android.hardware.sensor.compass" android:required="false" />
 
     <application
         android:allowBackup="true"

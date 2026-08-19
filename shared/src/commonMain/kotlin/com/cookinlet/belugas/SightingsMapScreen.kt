@@ -18,6 +18,8 @@ import org.maplibre.compose.style.BaseStyle
 import org.maplibre.spatialk.geojson.Position
 import org.maplibre.compose.layers.SymbolLayer
 import org.maplibre.compose.layers.CircleLayer
+import org.maplibre.compose.layers.FillLayer
+import org.maplibre.compose.layers.LineLayer
 import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.compose.sources.GeoJsonData
 import org.maplibre.spatialk.geojson.Point
@@ -137,6 +139,37 @@ fun SightingsMapScreen(
                         s.timestamp <= playbackTimeMs && isWithinFade && region.containsLocation(s.lat, s.lng) 
                     }
                 }
+
+                // Heading/distance sectors — always shown in standard mode regardless of the
+                // playback fade timeline (a separate, independent estimate of "somewhere out
+                // there in this direction/range", not another point-in-time marker).
+                val sectorGeoJsonString = remember(remoteSightings, region) {
+                    val features = remoteSightings.mapNotNull { s ->
+                        val degrees = s.headingDegrees ?: return@mapNotNull null
+                        val radiusMeters = s.distanceRadiusMeters ?: return@mapNotNull null
+                        if (!region.containsLocation(s.lat, s.lng)) return@mapNotNull null
+                        val headingSource = HeadingSource.entries.firstOrNull { it.name == s.headingSource }
+                            ?: HeadingSource.MANUAL
+                        val heading = HeadingEstimate(degrees, headingSource, s.headingAccuracyDegrees)
+                        buildSectorGeoJsonFeature(s.lat, s.lng, heading, radiusMeters)
+                    }
+                    """{ "type": "FeatureCollection", "features": [ ${features.joinToString(",")} ] }"""
+                }
+                val sectorSource = rememberGeoJsonSource(data = GeoJsonData.JsonString(sectorGeoJsonString))
+
+                // Fill + outline, drawn before the point markers below so sectors sit underneath them.
+                FillLayer(
+                    id = "sighting-sectors-fill",
+                    source = sectorSource,
+                    color = const(Color(0xFF00E5FF)),
+                    opacity = const(0.25f)
+                )
+                LineLayer(
+                    id = "sighting-sectors-outline",
+                    source = sectorSource,
+                    color = const(Color(0xFF00E5FF)),
+                    width = const(1.5.dp)
+                )
 
                 // Safe GeoJSON source initialization without LinkedHashMap serialization errors
                 val geoJsonString = remember(visibleSightings, playbackTimeMs, fadeWindowMs, isPlaybackVisible) {
