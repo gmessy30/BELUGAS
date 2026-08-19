@@ -1,0 +1,5 @@
+# Copy this file to local.properties (gitignored) and fill in real values.
+# local.properties already holds sdk.dir; just append these two lines.
+
+supabase.url=https://your-project.supabase.co
+supabase.anonKey=your-anon-key

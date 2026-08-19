@@ -1,0 +1,32 @@
+CREATE TABLE sightingEntity (
+    id TEXT NOT NULL PRIMARY KEY,
+    timestamp INTEGER NOT NULL,
+    lat REAL NOT NULL,
+    lng REAL NOT NULL,
+    heading TEXT NOT NULL,
+    countWhites INTEGER NOT NULL DEFAULT 0,
+    countGreys INTEGER NOT NULL DEFAULT 0,
+    countCalves INTEGER NOT NULL DEFAULT 0,
+    countUnknown INTEGER NOT NULL DEFAULT 0,
+    photoUrl TEXT,
+    isSynced INTEGER NOT NULL DEFAULT 0,
+    observedAt INTEGER NOT NULL DEFAULT 0,
+    observerType TEXT NOT NULL DEFAULT 'SELF'
+);
+
+-- Queries for local offline viewing and syncing
+selectAllSightings:
+SELECT * FROM sightingEntity ORDER BY timestamp DESC;
+
+insertOrReplaceSighting:
+INSERT OR REPLACE INTO sightingEntity(
+    id, timestamp, lat, lng, heading,
+    countWhites, countGreys, countCalves, countUnknown, photoUrl, isSynced,
+    observedAt, observerType
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectUnsyncedSightings:
+SELECT * FROM sightingEntity WHERE isSynced = 0;
+
+markAsSynced:
+UPDATE sightingEntity SET isSynced = 1 WHERE id = ?;
