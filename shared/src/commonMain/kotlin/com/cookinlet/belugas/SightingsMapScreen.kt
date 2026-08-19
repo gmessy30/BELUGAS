@@ -63,20 +63,44 @@ fun SightingsMapScreen(
         combined.sortedBy { it.timestamp }
     }
 
-    // 2. Playback State Sanitization
-    val minTime = remember(allSightings) {
-        allSightings.minOfOrNull { it.timestamp } ?: currentTimeMillis()
+    // 2. Playback State Sanitization — only sightings with a real (positive) timestamp
+    // define the timeline. A missing observedAtEpochMs previously defaulted to 0L, which
+    // dragged minTime down to the Unix epoch (Dec 31 1969 in negative-UTC-offset zones like
+    // Alaska) and forced the slider to span decades of empty data.
+    val validTimestamps = remember(allSightings) {
+        allSightings.map { it.timestamp }.filter { it > 0L }
     }
-    val maxTime = remember(allSightings) {
-        val last = allSightings.maxOfOrNull { it.timestamp } ?: currentTimeMillis()
+    val minTime = remember(validTimestamps) {
+        validTimestamps.minOrNull() ?: (currentTimeMillis() - 30L * 24 * 60 * 60 * 1000L)
+    }
+    val maxTime = remember(validTimestamps, minTime) {
+        val last = validTimestamps.maxOrNull() ?: currentTimeMillis()
         if (last <= minTime) minTime + 1000L else last
     }
-    
+
     var playbackTimeMs by remember(allSightings) { mutableLongStateOf(maxTime) }
     var isPlaying by remember { mutableStateOf(false) }
 
     // Playback visibility toggle (Default: OFF)
     var isPlaybackVisible by remember { mutableStateOf(false) }
+    var isPlaybackMinimized by remember { mutableStateOf(false) }
+
+    // Scrubbable range within [minTime, maxTime]. Defaults to All Time but is narrowed by
+    // the quick-range shortcuts or manual date entry below.
+    var selectedQuickRange by remember { mutableStateOf(QuickRange.ALL_TIME) }
+    var rangeStart by remember(minTime) { mutableLongStateOf(minTime) }
+    var rangeEnd by remember(maxTime) { mutableLongStateOf(maxTime) }
+    var showStartDatePicker by remember { mutableStateOf(false) }
+    var showEndDatePicker by remember { mutableStateOf(false) }
+
+    fun applyQuickRange(range: QuickRange) {
+        selectedQuickRange = range
+        val (start, end) = range.resolve(minTime, maxTime, currentTimeMillis())
+        rangeStart = start
+        rangeEnd = end
+        playbackTimeMs = start
+        isPlaying = false
+    }
 
     // Advanced Controls State
     val speedOptions = listOf(1, 5, 10, 30, 60)
@@ -92,17 +116,17 @@ fun SightingsMapScreen(
     }
 
     // 3. Automated playback ticker
-    LaunchedEffect(isPlaying, isPlaybackVisible, minTime, maxTime, speedMultiplier) {
+    LaunchedEffect(isPlaying, isPlaybackVisible, rangeStart, rangeEnd, speedMultiplier) {
         if (isPlaying && isPlaybackVisible) {
             val baseStepMs = 60_000L // 1 minute per tick at 1x
             val effectiveStepMs = baseStepMs * speedMultiplier
-            
+
             while (isPlaying && isPlaybackVisible) {
-                delay(100) 
-                if (playbackTimeMs >= maxTime) {
+                delay(100)
+                if (playbackTimeMs >= rangeEnd) {
                     isPlaying = false
                 } else {
-                    playbackTimeMs = (playbackTimeMs + effectiveStepMs).coerceAtMost(maxTime)
+                    playbackTimeMs = (playbackTimeMs + effectiveStepMs).coerceAtMost(rangeEnd)
                 }
             }
         }
@@ -250,9 +274,9 @@ fun SightingsMapScreen(
         // Playback Mode Toggle FAB (Shown when playback is hidden)
         if (!isPlaybackVisible) {
             FloatingActionButton(
-                onClick = { 
-                    playbackTimeMs = minTime // Start from the beginning
-                    isPlaybackVisible = true 
+                onClick = {
+                    playbackTimeMs = rangeStart // Start from the beginning of the selected range
+                    isPlaybackVisible = true
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -290,7 +314,7 @@ fun SightingsMapScreen(
                     modifier = Modifier.padding(12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Header Row: Active Date + Close Button
+                    // Header Row: Active Date + Minimize + Close
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -303,26 +327,48 @@ fun SightingsMapScreen(
                             fontWeight = FontWeight.Bold
                         )
 
-                        IconButton(
-                            onClick = { 
-                                isPlaying = false
-                                isPlaybackVisible = false 
-                            }, 
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Text("✕", color = Color.Gray, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { isPlaybackMinimized = !isPlaybackMinimized },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Text(
+                                    if (isPlaybackMinimized) "⌃" else "⌄",
+                                    color = Color.Gray,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    isPlaying = false
+                                    isPlaybackVisible = false
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Text("✕", color = Color.Gray, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // Scrubber Row: Play/Pause + Slider
+                    // Scrubber Row: Play/Pause + Slider — kept visible even when minimized so
+                    // playback stays controllable while the rest of the panel is tucked away.
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Button(
-                            onClick = { isPlaying = !isPlaying },
+                            onClick = {
+                                // Replaying after reaching the end otherwise silently does
+                                // nothing: the ticker's very first check sees playbackTimeMs
+                                // already >= rangeEnd and immediately flips isPlaying back off.
+                                if (!isPlaying && playbackTimeMs >= rangeEnd) {
+                                    playbackTimeMs = rangeStart
+                                }
+                                isPlaying = !isPlaying
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
                             modifier = Modifier.height(36.dp).padding(end = 8.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp)
@@ -330,14 +376,14 @@ fun SightingsMapScreen(
                             Text(if (isPlaying) "⏸ PAUSE" else "▶ PLAY", color = Color.White, fontSize = 11.sp)
                         }
 
-                        if (maxTime > minTime) {
+                        if (rangeEnd > rangeStart) {
                             Slider(
-                                value = playbackTimeMs.toFloat(),
-                                onValueChange = { 
+                                value = playbackTimeMs.coerceIn(rangeStart, rangeEnd).toFloat(),
+                                onValueChange = {
                                     playbackTimeMs = it.toLong()
-                                    isPlaying = false 
+                                    isPlaying = false
                                 },
-                                valueRange = minTime.toFloat()..maxTime.toFloat(),
+                                valueRange = rangeStart.toFloat()..rangeEnd.toFloat(),
                                 modifier = Modifier.weight(1f),
                                 colors = SliderDefaults.colors(
                                     thumbColor = Color.Yellow,
@@ -348,23 +394,20 @@ fun SightingsMapScreen(
                         }
                     }
 
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
+                    if (!isPlaybackMinimized) {
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
 
-                    // Advanced Toggles: Speed & Fade
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Speed Multiplier Row
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("SPEED:", color = Color.Gray, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 4.dp))
-                            speedOptions.forEach { speed ->
+                        // Quick-range shortcuts, so users aren't stuck scrubbing years of
+                        // mostly-empty timeline to find the handful of days with real data.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            QuickRange.entries.forEach { range ->
                                 FilterChip(
-                                    selected = speedMultiplier == speed,
-                                    onClick = { speedMultiplier = speed },
-                                    label = { Text("${speed}x", fontSize = 9.sp) },
-                                    modifier = Modifier.padding(horizontal = 2.dp),
+                                    selected = selectedQuickRange == range,
+                                    onClick = { applyQuickRange(range) },
+                                    label = { Text(range.label, fontSize = 9.sp) },
                                     colors = FilterChipDefaults.filterChipColors(
                                         selectedContainerColor = Color.Yellow,
                                         selectedLabelColor = Color.Black,
@@ -375,27 +418,116 @@ fun SightingsMapScreen(
                             }
                         }
 
-                        // Fade Window Row
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("FADE:", color = Color.Gray, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 4.dp))
-                            fadeOptionsHours.forEach { hours ->
-                                val label = if (hours == Long.MAX_VALUE) "ALL" else "${hours}h"
-                                FilterChip(
-                                    selected = selectedFadeHours == hours,
-                                    onClick = { selectedFadeHours = hours },
-                                    label = { Text(label, fontSize = 9.sp) },
-                                    modifier = Modifier.padding(horizontal = 2.dp),
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = Color(0xFF00E5FF),
-                                        selectedLabelColor = Color.Black,
-                                        containerColor = Color(0xFF2A2A2A),
-                                        labelColor = Color.White
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Manual start/end date entry for a custom range.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            TextButton(onClick = { showStartDatePicker = true }, modifier = Modifier.weight(1f)) {
+                                Text("FROM ${formatDateLabel(rangeStart)}", fontSize = 10.sp, color = Color(0xFF00E5FF))
+                            }
+                            TextButton(onClick = { showEndDatePicker = true }, modifier = Modifier.weight(1f)) {
+                                Text("TO ${formatDateLabel(rangeEnd)}", fontSize = 10.sp, color = Color(0xFF00E5FF))
+                            }
+                        }
+
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
+
+                        // Advanced Toggles: Speed & Fade
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Speed Multiplier Row
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("SPEED:", color = Color.Gray, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 4.dp))
+                                speedOptions.forEach { speed ->
+                                    FilterChip(
+                                        selected = speedMultiplier == speed,
+                                        onClick = { speedMultiplier = speed },
+                                        label = { Text("${speed}x", fontSize = 9.sp) },
+                                        modifier = Modifier.padding(horizontal = 2.dp),
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = Color.Yellow,
+                                            selectedLabelColor = Color.Black,
+                                            containerColor = Color(0xFF2A2A2A),
+                                            labelColor = Color.White
+                                        )
                                     )
-                                )
+                                }
+                            }
+
+                            // Fade Window Row
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("FADE:", color = Color.Gray, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 4.dp))
+                                fadeOptionsHours.forEach { hours ->
+                                    val label = if (hours == Long.MAX_VALUE) "ALL" else "${hours}h"
+                                    FilterChip(
+                                        selected = selectedFadeHours == hours,
+                                        onClick = { selectedFadeHours = hours },
+                                        label = { Text(label, fontSize = 9.sp) },
+                                        modifier = Modifier.padding(horizontal = 2.dp),
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = Color(0xFF00E5FF),
+                                            selectedLabelColor = Color.Black,
+                                            containerColor = Color(0xFF2A2A2A),
+                                            labelColor = Color.White
+                                        )
+                                    )
+                                }
                             }
                         }
                     }
                 }
+            }
+        }
+
+        if (showStartDatePicker) {
+            val datePickerState = rememberDatePickerState(initialSelectedDateMillis = rangeStart)
+            DatePickerDialog(
+                onDismissRequest = { showStartDatePicker = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        datePickerState.selectedDateMillis?.let { picked ->
+                            rangeStart = picked.coerceIn(minTime, maxTime).coerceAtMost(rangeEnd - 1000L)
+                            selectedQuickRange = QuickRange.CUSTOM
+                            playbackTimeMs = rangeStart
+                            isPlaying = false
+                        }
+                        showStartDatePicker = false
+                    }) { Text("OK", color = Color.Yellow) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showStartDatePicker = false }) { Text("CANCEL", color = Color.White) }
+                }
+            ) {
+                DatePicker(state = datePickerState)
+            }
+        }
+
+        if (showEndDatePicker) {
+            val datePickerState = rememberDatePickerState(initialSelectedDateMillis = rangeEnd)
+            DatePickerDialog(
+                onDismissRequest = { showEndDatePicker = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        datePickerState.selectedDateMillis?.let { picked ->
+                            rangeEnd = picked.coerceIn(minTime, maxTime).coerceAtLeast(rangeStart + 1000L)
+                            selectedQuickRange = QuickRange.CUSTOM
+                            if (playbackTimeMs > rangeEnd) playbackTimeMs = rangeEnd
+                            isPlaying = false
+                        }
+                        showEndDatePicker = false
+                    }) { Text("OK", color = Color.Yellow) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEndDatePicker = false }) { Text("CANCEL", color = Color.White) }
+                }
+            ) {
+                DatePicker(state = datePickerState)
             }
         }
 

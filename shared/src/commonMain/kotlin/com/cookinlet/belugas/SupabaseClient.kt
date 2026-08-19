@@ -7,7 +7,6 @@ import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.serializer.KotlinXSerializer
 import io.github.jan.supabase.storage.Storage
 import io.github.jan.supabase.storage.storage
-import io.github.jan.supabase.storage.upload
 import io.ktor.http.ContentType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -53,7 +52,10 @@ object SupabaseApi {
             println("SYNC SUCCESS: Record transmitted to Supabase.")
             true
         } catch (e: Exception) {
-            println("SYNC ERROR DETAILS: ${e.message}")
+            // Include the exception type alongside the message: a schema mismatch (missing
+            // column) and a network/timeout failure both just print a terse message otherwise,
+            // and telling those apart is the whole ballgame when a queued item won't drain.
+            println("SYNC ERROR DETAILS: [${e::class.simpleName}] ${e.message}")
             e.printStackTrace()
             false
         }
@@ -85,7 +87,7 @@ object SupabaseApi {
             println("PHOTO_UPLOAD_SUCCESS: $url")
             url
         } catch (e: Exception) {
-            println("PHOTO_UPLOAD_ERROR: ${e.message}")
+            println("PHOTO_UPLOAD_ERROR: [${e::class.simpleName}] ${e.message}")
             e.printStackTrace()
             null
         }

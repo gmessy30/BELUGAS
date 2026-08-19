@@ -447,9 +447,10 @@ fun MainMenuDrawer(
 
         Column(
             modifier = Modifier
-                .align(Alignment.CenterStart)
+                .align(Alignment.CenterEnd)
                 .fillMaxHeight(),
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.End
         ) {
             // Sync Status Banner at Top of Menu
             Row(
