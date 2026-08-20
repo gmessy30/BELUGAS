@@ -85,6 +85,16 @@ fun SightingsMapScreen(
     var isPlaybackVisible by remember { mutableStateOf(false) }
     var isPlaybackMinimized by remember { mutableStateOf(false) }
 
+    // Auto-collapse to the minimized (header + play/pause + slider only) layout while
+    // playing, since the full panel eats a lot of the map at ~60% of screen height — and
+    // expand back out on pause/stop. Keyed only on isPlaying, so it fires once per
+    // play/pause transition rather than fighting a manual toggle tap made mid-playback: a
+    // user can still re-expand while playing (or re-collapse while paused) via the existing
+    // header button, and that choice sticks until the next transition.
+    LaunchedEffect(isPlaying) {
+        isPlaybackMinimized = isPlaying
+    }
+
     // Scrubbable range within [minTime, maxTime]. Defaults to All Time but is narrowed by
     // the quick-range shortcuts or manual date entry below.
     var selectedQuickRange by remember { mutableStateOf(QuickRange.ALL_TIME) }
