@@ -5,7 +5,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.launch
@@ -445,42 +447,22 @@ fun MainMenuDrawer(
             }
         }
 
+        // The pending-sync badge in the top-right row above already shows the live count and
+        // triggers the same transmit action on click, so a second "N queued / TRANSMIT NOW"
+        // banner here was pure duplication — and since it was the one child using
+        // fillMaxWidth(), it also forced this whole Column to measure at the full screen
+        // width, which fought the right-justified/centered layout below it and (on the
+        // short landscape-locked screen height) pushed content up far enough to overlap the
+        // top-right row entirely. verticalScroll is added defensively so a long menu can
+        // never overflow into that row again, on any screen size.
         Column(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .fillMaxHeight(),
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.End
         ) {
-            // Sync Status Banner at Top of Menu
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 20.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (pendingCount > 0) {
-                    Text(
-                        text = "$pendingCount sightings queued for transmission",
-                        color = Color(0xFFFFCC80),
-                        fontSize = 13.sp
-                    )
-                    Button(
-                        onClick = { SyncEngine.processQueueInBackground(scope, storage) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.2f))
-                    ) {
-                        Text("TRANSMIT NOW", fontSize = 11.sp, color = Color.White)
-                    }
-                } else {
-                    Text(
-                        text = "✓ All sightings synced to Supabase",
-                        color = Color(0xFFA5D6A7),
-                        fontSize = 13.sp
-                    )
-                }
-            }
-
             val menuItems = listOf(
                 "REPORT MANUALLY",
                 "SIGHTINGS LIST",
