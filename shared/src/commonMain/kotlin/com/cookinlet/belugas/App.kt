@@ -11,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.sp
 
 // Navigation States
 enum class Screen {
+    SPLASH,
     CAPTURE,
     PHOTO_LOGGING,
     MANUAL_LOGGING,
@@ -37,12 +39,16 @@ enum class Screen {
     SIGHTINGS_LIST
 }
 
+// How long the splash screen stays up before navigating to the launch-preference screen.
+private const val SPLASH_DURATION_MS = 2000L
+
 @Composable
 fun App() {
     val scope = rememberCoroutineScope()
-    var currentScreen by remember { mutableStateOf(Screen.CAPTURE) }
+    var currentScreen by remember { mutableStateOf(Screen.SPLASH) }
     var capturedPhotoPath by remember { mutableStateOf<String?>(null) }
     val storage = rememberLocalFileStorage()
+    val appPreferences = rememberAppPreferences()
     val database = remember { createDatabase(DatabaseDriverFactory()) }
     val locationService = rememberLocationService()
     var activeRegion by remember { mutableStateOf(Regions.COOK_INLET) }
@@ -69,6 +75,20 @@ fun App() {
         refreshRemoteSightings()
     }
 
+    // Splash: load the launch-screen preference in parallel with the fixed display duration
+    // (loading a couple bytes from SharedPreferences/NSUserDefaults is far faster than
+    // SPLASH_DURATION_MS, so this just makes sure a slow read can't extend the splash rather
+    // than trying to shave time off it).
+    LaunchedEffect(Unit) {
+        val launchScreen = appPreferences.getLaunchScreen()
+        delay(SPLASH_DURATION_MS)
+        currentScreen = when (launchScreen) {
+            LaunchScreen.CAMERA -> Screen.CAPTURE
+            LaunchScreen.MAP -> Screen.MAP
+            LaunchScreen.MENU -> Screen.MENU
+        }
+    }
+
     // Top-level region and altitude detection
     LaunchedEffect(currentScreen) {
         if (currentScreen == Screen.CAPTURE || currentScreen == Screen.MAP) {
@@ -89,6 +109,9 @@ fun App() {
 
     MaterialTheme {
         when (currentScreen) {
+            Screen.SPLASH -> {
+                SplashScreen()
+            }
             Screen.CAPTURE -> {
                 CaptureScreen(
                     onPhotoCaptured = { path ->
@@ -141,7 +164,8 @@ fun App() {
                     onNavigateToManualLog = { currentScreen = Screen.MANUAL_LOGGING },
                     onNavigateToList = { currentScreen = Screen.SIGHTINGS_LIST },
                     storage = storage,
-                    currentAltitude = currentAltitude
+                    currentAltitude = currentAltitude,
+                    appPreferences = appPreferences
                 )
             }
             Screen.SIGHTINGS_LIST -> {
@@ -162,6 +186,48 @@ fun App() {
                     onCloseMap = { currentScreen = Screen.MENU }
                 )
             }
+        }
+    }
+}
+
+// ==============================================================
+// SPLASH SCREEN
+// ==============================================================
+@Composable
+fun SplashScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(colors = listOf(Color(0xFF007F7F), Color(0xFF004D4D)))),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // Placeholder logo mark. Swap for real artwork once it exists: add the image to
+            // shared/src/commonMain/composeResources/drawable/ (already wired up via the
+            // compose.components.resources dependency) and replace this Box with
+            // Image(painterResource(Res.drawable.<name>), contentDescription = null,
+            // modifier = Modifier.size(120.dp)).
+            Box(
+                modifier = Modifier
+                    .size(120.dp)
+                    .background(Color(0xFF00E5FF), shape = CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("🐋", fontSize = 56.sp)
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(
+                text = "BELUGAS",
+                color = Color.White,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 4.sp
+            )
+            Text(
+                text = "Cook Inlet Beluga Monitoring",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 13.sp
+            )
         }
     }
 }
@@ -413,11 +479,17 @@ fun MainMenuDrawer(
     onNavigateToManualLog: () -> Unit,
     onNavigateToList: () -> Unit,
     storage: LocalFileStorage,
-    currentAltitude: Double
+    currentAltitude: Double,
+    appPreferences: AppPreferences
 ) {
     // Observe pending count in real time
     val pendingCount by OfflineSightingRepository.pendingCount.collectAsState()
     val scope = rememberCoroutineScope()
+
+    var launchScreen by remember { mutableStateOf<LaunchScreen?>(null) }
+    LaunchedEffect(Unit) {
+        launchScreen = appPreferences.getLaunchScreen()
+    }
 
     val glacialBlueGreen = Brush.verticalGradient(
         colors = listOf(Color(0xFF007F7F), Color(0xFF004D4D))
@@ -489,6 +561,36 @@ fun MainMenuDrawer(
                             }
                         }
                 )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Launch-screen preference. No dedicated Settings screen yet, so this lives here.
+            Text(
+                text = "OPEN APP TO",
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                LaunchScreen.entries.forEach { option ->
+                    FilterChip(
+                        selected = launchScreen == option,
+                        onClick = {
+                            launchScreen = option
+                            scope.launch { appPreferences.setLaunchScreen(option) }
+                        },
+                        label = { Text(option.label, fontSize = 11.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color.Yellow,
+                            selectedLabelColor = Color.Black,
+                            containerColor = Color.White.copy(alpha = 0.1f),
+                            labelColor = Color.White
+                        )
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
