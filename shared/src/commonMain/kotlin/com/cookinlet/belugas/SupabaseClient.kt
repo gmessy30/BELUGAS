@@ -3,6 +3,7 @@ package com.cookinlet.belugas
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.serializer.KotlinXSerializer
 import io.github.jan.supabase.storage.Storage
@@ -11,6 +12,7 @@ import io.ktor.http.ContentType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -39,6 +41,37 @@ val supabase = createSupabaseClient(
 
 // Data model matching our Supabase 'sightings' table schema
 enum class ObserverType { SELF, OTHER }
+
+// Matches supabase/migrations/20260823000000_add_device_tokens_and_notify_trigger.sql --
+// flat device-token registry for the minimal broadcast notification pipeline (no
+// subscriber/zone targeting yet).
+@Serializable
+private data class DeviceTokenRecord(
+    @SerialName("fcm_token")
+    val fcmToken: String
+)
+
+// Matches supabase/migrations/20260823120000_add_articles.sql. "SELF" is not involved here --
+// content_type distinguishes general news from research papers so the News Feed screen can
+// keep the two in separate sections/tabs rather than mixed together.
+enum class ArticleContentType(val dbValue: String) {
+    NEWS("news"),
+    RESEARCH_PAPER("research_paper")
+}
+
+@Serializable
+data class ArticleRecord(
+    val id: String = "",
+    val title: String,
+    val summary: String? = null,
+    @SerialName("source_url")
+    val sourceUrl: String,
+    @SerialName("submitted_by")
+    val submittedBy: String? = null,
+    @SerialName("content_type")
+    val contentType: String,
+    val status: String = "pending_review"
+)
 
 object SupabaseApi {
     /**
@@ -90,6 +123,77 @@ object SupabaseApi {
             println("PHOTO_UPLOAD_ERROR: [${e::class.simpleName}] ${e.message}")
             e.printStackTrace()
             null
+        }
+    }
+
+    /**
+     * Registers (or refreshes) this device's FCM token in the flat device_tokens broadcast
+     * list. Upserts on fcm_token so re-registering the same token (e.g. on every app launch,
+     * not just on a real refresh) is a no-op rather than an error.
+     */
+    suspend fun registerDeviceToken(token: String): Boolean {
+        return try {
+            supabase.postgrest["device_tokens"].upsert(DeviceTokenRecord(token)) {
+                onConflict = "fcm_token"
+            }
+            println("DEVICE_TOKEN_REGISTER_SUCCESS")
+            true
+        } catch (e: Exception) {
+            println("DEVICE_TOKEN_REGISTER_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Fetches published articles of one content type (news or research paper), newest first.
+     * Unapproved (pending_review) submissions are excluded by RLS on the server side, not
+     * filtered here -- this only ever sees what's actually public.
+     */
+    suspend fun getArticles(contentType: ArticleContentType): List<ArticleRecord> {
+        return try {
+            supabase.postgrest["articles"].select {
+                filter {
+                    eq("content_type", contentType.dbValue)
+                    eq("status", "published")
+                }
+                order("created_at", Order.DESCENDING)
+            }.decodeList<ArticleRecord>()
+        } catch (e: Exception) {
+            println("ARTICLES_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    /**
+     * Submits a user-suggested article/paper. Always lands as pending_review (the RLS insert
+     * policy enforces this server-side too) -- there's no moderation UI yet, so approval is a
+     * manual status edit in the Supabase dashboard.
+     */
+    suspend fun submitArticle(
+        title: String,
+        sourceUrl: String,
+        summary: String?,
+        submittedBy: String?,
+        contentType: ArticleContentType
+    ): Boolean {
+        return try {
+            supabase.postgrest["articles"].insert(
+                ArticleRecord(
+                    title = title,
+                    summary = summary,
+                    sourceUrl = sourceUrl,
+                    submittedBy = submittedBy,
+                    contentType = contentType.dbValue
+                )
+            )
+            println("ARTICLE_SUBMIT_SUCCESS")
+            true
+        } catch (e: Exception) {
+            println("ARTICLE_SUBMIT_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            false
         }
     }
 

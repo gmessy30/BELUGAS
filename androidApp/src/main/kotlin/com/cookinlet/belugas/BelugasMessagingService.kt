@@ -10,10 +10,11 @@ import kotlinx.coroutines.launch
 private const val TAG = "BelugasFCM"
 
 /**
- * Registers the device for FCM and captures its token. Dispatch (subscribing this token to
- * zones via the subscriptions table's subscriber_id) is a deliberate follow-up, not built
- * here -- this is just getting the device registered and the token persisted somewhere the
- * shared layer can read it from later.
+ * Registers the device for FCM and captures its token: persisted locally via AppPreferences,
+ * and upserted to Supabase's flat device_tokens table so the notify-new-sighting edge
+ * function can broadcast to it. Zone/subscriber targeting (the subscriptions table's
+ * subscriber_id) is a deliberate follow-up, not built here -- every registered device gets
+ * every sighting for now.
  */
 class BelugasMessagingService : FirebaseMessagingService() {
 
@@ -37,6 +38,7 @@ class BelugasMessagingService : FirebaseMessagingService() {
         Log.d(TAG, "New FCM token: $token")
         CoroutineScope(Dispatchers.IO).launch {
             AppPreferences().setFcmToken(token)
+            SupabaseApi.registerDeviceToken(token)
         }
     }
 
