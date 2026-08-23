@@ -36,7 +36,9 @@ enum class Screen {
     MANUAL_LOGGING,
     MAP,
     MENU,
-    SIGHTINGS_LIST
+    SIGHTINGS_LIST,
+    NEWS_FEED,
+    RESOURCES
 }
 
 // How long the splash screen stays up before navigating to the launch-preference screen.
@@ -170,6 +172,8 @@ fun App() {
                     onNavigateToMap = { currentScreen = Screen.MAP },
                     onNavigateToManualLog = { currentScreen = Screen.MANUAL_LOGGING },
                     onNavigateToList = { currentScreen = Screen.SIGHTINGS_LIST },
+                    onNavigateToNewsFeed = { currentScreen = Screen.NEWS_FEED },
+                    onNavigateToResources = { currentScreen = Screen.RESOURCES },
                     storage = storage,
                     currentAltitude = currentAltitude,
                     appPreferences = appPreferences
@@ -182,6 +186,12 @@ fun App() {
                     isLoadingRemote = isLoadingRemote,
                     onBack = { currentScreen = Screen.MENU }
                 )
+            }
+            Screen.NEWS_FEED -> {
+                NewsFeedScreen(onBack = { currentScreen = Screen.MENU })
+            }
+            Screen.RESOURCES -> {
+                ResourcesScreen(onBack = { currentScreen = Screen.MENU })
             }
             Screen.MAP -> {
                 SightingsMapScreen(
@@ -485,6 +495,8 @@ fun MainMenuDrawer(
     onNavigateToMap: () -> Unit,
     onNavigateToManualLog: () -> Unit,
     onNavigateToList: () -> Unit,
+    onNavigateToNewsFeed: () -> Unit,
+    onNavigateToResources: () -> Unit,
     storage: LocalFileStorage,
     currentAltitude: Double,
     appPreferences: AppPreferences
@@ -563,6 +575,8 @@ fun MainMenuDrawer(
                                 "REPORT MANUALLY" -> onNavigateToManualLog()
                                 "SIGHTINGS LIST" -> onNavigateToList()
                                 "SIGHTINGS MAP" -> onNavigateToMap()
+                                "NEWS FEED" -> onNavigateToNewsFeed()
+                                "RESOURCES" -> onNavigateToResources()
                             }
                         }
                 )
