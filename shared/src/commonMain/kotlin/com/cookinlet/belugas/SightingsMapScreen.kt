@@ -179,12 +179,25 @@ fun SightingsMapScreen(
                 // there in this direction/range", not another point-in-time marker).
                 val sectorGeoJsonString = remember(remoteSightings, region) {
                     val features = remoteSightings.mapNotNull { s ->
-                        val degrees = s.headingDegrees ?: return@mapNotNull null
                         val radiusMeters = s.distanceRadiusMeters ?: return@mapNotNull null
                         if (!region.containsLocation(s.lat, s.lng)) return@mapNotNull null
-                        val headingSource = HeadingSource.entries.firstOrNull { it.name == s.headingSource }
-                            ?: HeadingSource.MANUAL
-                        val heading = HeadingEstimate(degrees, headingSource, s.headingAccuracyDegrees)
+
+                        // An explicit heading is trusted as-is unless it points back at land
+                        // (checkable only where we have real coastline data -- see
+                        // CoastlineGeometry.headingPointsAtLand). Missing or land-pointing
+                        // headings default to offshore, algorithmically derived rather than
+                        // manually entered, so they get MANUAL's existing (widest) confidence
+                        // tier rather than a new source tier.
+                        val explicitDegrees = s.headingDegrees
+                        val heading = if (explicitDegrees != null && !headingPointsAtLand(s.lat, s.lng, explicitDegrees)) {
+                            val headingSource = HeadingSource.entries.firstOrNull { it.name == s.headingSource }
+                                ?: HeadingSource.MANUAL
+                            HeadingEstimate(explicitDegrees, headingSource, s.headingAccuracyDegrees)
+                        } else {
+                            val offshoreDegrees = computeDefaultOffshoreHeadingDegrees(s.lat, s.lng)
+                            HeadingEstimate(offshoreDegrees, HeadingSource.MANUAL)
+                        }
+
                         buildSectorGeoJsonFeature(s.lat, s.lng, heading, radiusMeters)
                     }
                     """{ "type": "FeatureCollection", "features": [ ${features.joinToString(",")} ] }"""
