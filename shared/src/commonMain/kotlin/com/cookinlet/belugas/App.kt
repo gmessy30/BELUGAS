@@ -75,17 +75,24 @@ fun App() {
         refreshRemoteSightings()
     }
 
-    // Splash: load the launch-screen preference in parallel with the fixed display duration
-    // (loading a couple bytes from SharedPreferences/NSUserDefaults is far faster than
-    // SPLASH_DURATION_MS, so this just makes sure a slow read can't extend the splash rather
-    // than trying to shave time off it).
+    // Splash: only shown when landing on Map or Menu. Camera is the pre-existing default
+    // behavior, so a Camera preference skips the splash (and its fixed delay) entirely rather
+    // than adding a startup delay users never had before. For Map/Menu, the launch-screen
+    // preference loads in parallel with the fixed display duration (loading a couple bytes
+    // from SharedPreferences/NSUserDefaults is far faster than SPLASH_DURATION_MS, so this
+    // just makes sure a slow read can't extend the splash rather than trying to shave time
+    // off it).
     LaunchedEffect(Unit) {
         val launchScreen = appPreferences.getLaunchScreen()
-        delay(SPLASH_DURATION_MS)
-        currentScreen = when (launchScreen) {
-            LaunchScreen.CAMERA -> Screen.CAPTURE
-            LaunchScreen.MAP -> Screen.MAP
-            LaunchScreen.MENU -> Screen.MENU
+        if (launchScreen == LaunchScreen.CAMERA) {
+            currentScreen = Screen.CAPTURE
+        } else {
+            delay(SPLASH_DURATION_MS)
+            currentScreen = when (launchScreen) {
+                LaunchScreen.MAP -> Screen.MAP
+                LaunchScreen.MENU -> Screen.MENU
+                LaunchScreen.CAMERA -> Screen.CAPTURE
+            }
         }
     }
 
@@ -159,7 +166,7 @@ fun App() {
             }
             Screen.MENU -> {
                 MainMenuDrawer(
-                    onCloseMenu = { currentScreen = Screen.CAPTURE },
+                    onNavigateToCamera = { currentScreen = Screen.CAPTURE },
                     onNavigateToMap = { currentScreen = Screen.MAP },
                     onNavigateToManualLog = { currentScreen = Screen.MANUAL_LOGGING },
                     onNavigateToList = { currentScreen = Screen.SIGHTINGS_LIST },
@@ -474,7 +481,7 @@ fun SightingListItem(
 // ==============================================================
 @Composable
 fun MainMenuDrawer(
-    onCloseMenu: () -> Unit,
+    onNavigateToCamera: () -> Unit,
     onNavigateToMap: () -> Unit,
     onNavigateToManualLog: () -> Unit,
     onNavigateToList: () -> Unit,
@@ -495,7 +502,15 @@ fun MainMenuDrawer(
         colors = listOf(Color(0xFF007F7F), Color(0xFF004D4D))
     )
 
-    Box(
+    // A Column here (header row, then the rest) instead of a Box with two full-bleed
+    // overlapping children: the previous Box layout had the scrollable menu-items Column
+    // (fillMaxHeight, right-aligned) spatially overlapping the top-right header row, and a
+    // scrollable container claims pointer/drag events across its whole bounds, not just
+    // where its visible content sits -- so it was silently stealing taps from the button in
+    // the row underneath it (this is what broke the old CLOSE button). Splitting into
+    // sibling regions (header takes its natural height, content takes the rest via weight)
+    // makes that overlap structurally impossible instead of working around it again.
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(glacialBlueGreen)
@@ -503,39 +518,28 @@ fun MainMenuDrawer(
             .padding(24.dp)
     ) {
         Row(
-            modifier = Modifier.align(Alignment.TopEnd),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
             PendingSyncBadge(
                 count = pendingCount,
-                modifier = Modifier.padding(end = 12.dp),
                 onClick = {
                     SyncEngine.processQueueInBackground(scope, storage)
                 }
             )
-
-            Button(onClick = onCloseMenu) {
-                Text("CLOSE")
-            }
         }
 
-        // The pending-sync badge in the top-right row above already shows the live count and
-        // triggers the same transmit action on click, so a second "N queued / TRANSMIT NOW"
-        // banner here was pure duplication — and since it was the one child using
-        // fillMaxWidth(), it also forced this whole Column to measure at the full screen
-        // width, which fought the right-justified/centered layout below it and (on the
-        // short landscape-locked screen height) pushed content up far enough to overlap the
-        // top-right row entirely. verticalScroll is added defensively so a long menu can
-        // never overflow into that row again, on any screen size.
         Column(
             modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
+                .weight(1f)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.End
         ) {
             val menuItems = listOf(
+                "CAMERA",
                 "REPORT MANUALLY",
                 "SIGHTINGS LIST",
                 "SIGHTINGS MAP",
@@ -555,6 +559,7 @@ fun MainMenuDrawer(
                         .padding(vertical = 8.dp)
                         .clickable {
                             when (title) {
+                                "CAMERA" -> onNavigateToCamera()
                                 "REPORT MANUALLY" -> onNavigateToManualLog()
                                 "SIGHTINGS LIST" -> onNavigateToList()
                                 "SIGHTINGS MAP" -> onNavigateToMap()
