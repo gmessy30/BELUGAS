@@ -49,29 +49,69 @@ with check (true);
 -- Supabase project without needing any dashboard step first.
 create extension if not exists pg_net;
 
+-- SECURITY FIX (see git history on this file): the webhook secret used to be a literal
+-- string right here in this migration, which is committed to the repo -- anyone with read
+-- access to the git history could read it and trigger a broadcast notification to every
+-- registered device. Not scrubbing the old value from history yet (that's a separate,
+-- deliberate follow-up), but it must be treated as burned: the value now looked up below is
+-- a freshly generated replacement that was never committed anywhere.
+--
+-- The secret now lives in Supabase Vault (a Postgres extension for encrypted secret storage,
+-- https://supabase.com/docs/guides/database/vault) instead of in this file. This migration
+-- only creates the plumbing that reads it -- the actual secret value must be set separately,
+-- OUTSIDE any committed file, by running this ONCE in the SQL editor (not saved anywhere):
+--
+--   select vault.create_secret(
+--     '<the new secret value>',
+--     'notify_new_sighting_webhook_secret',
+--     'Shared secret the notify-new-sighting trigger sends and the edge function validates'
+--   );
+--
+-- Note Supabase's own Vault docs warn that INSERT-style statements (which create_secret
+-- wraps) get captured in Supabase's query logs by default -- so the plaintext value is safe
+-- from git, but not necessarily from project logs. Acceptable for a value that only gates
+-- one internal webhook, but worth knowing.
+-- CREATE EXTENSION ... WITH SCHEMA requires the target schema to already exist (it does not
+-- create it), unlike pg_net above which manages its own schema implicitly.
+create schema if not exists vault;
+create extension if not exists supabase_vault with schema vault;
+
 -- security definer: sightings inserts come from the app via the anon role, which doesn't
--- necessarily have EXECUTE on net.http_post granted directly -- running this function as its
--- owner (the migration role) sidesteps that instead of needing to grant anon access to pg_net.
+-- necessarily have EXECUTE on net.http_post or SELECT on vault.decrypted_secrets granted
+-- directly -- running this function as its owner (the migration role) sidesteps needing to
+-- grant anon access to either.
 --
 -- Auth: the edge function is deployed with --no-verify-jwt (a DB trigger has no user JWT to
 -- present) and instead validates the x-webhook-secret header below against a WEBHOOK_SECRET
--- edge function secret you set separately. This value is a purpose-built shared secret
--- invented just for this one webhook -- NOT a real Supabase API key -- but still treat it as
--- sensitive: anyone with it can trigger a broadcast notification to every registered device.
--- Set the identical value via `supabase secrets set WEBHOOK_SECRET=...` (see the edge
--- function's header comment for the full setup steps).
+-- edge function secret (a *separate* store from Vault -- see the edge function's header
+-- comment for the `supabase secrets set` step, which must be given the same new value).
 create or replace function public.notify_new_sighting()
 returns trigger
 language plpgsql
 security definer
 as $$
+declare
+  v_webhook_secret text;
 begin
+  select decrypted_secret into v_webhook_secret
+  from vault.decrypted_secrets
+  where name = 'notify_new_sighting_webhook_secret'
+  limit 1;
+
+  if v_webhook_secret is null then
+    -- Don't fail the sighting insert just because notification setup isn't finished yet --
+    -- log and skip the dispatch instead.
+    raise warning 'notify_new_sighting: no secret found in Vault under name %, skipping dispatch',
+      'notify_new_sighting_webhook_secret';
+    return new;
+  end if;
+
   perform net.http_post(
     url := 'https://vwbcrctzsqukutvlbqwy.supabase.co/functions/v1/notify-new-sighting',
     body := jsonb_build_object('type', 'INSERT', 'table', 'sightings', 'record', to_jsonb(new)),
     headers := jsonb_build_object(
       'Content-type', 'application/json',
-      'x-webhook-secret', 'REDACTED-SECRET'
+      'x-webhook-secret', v_webhook_secret
     ),
     timeout_milliseconds := 5000
   );

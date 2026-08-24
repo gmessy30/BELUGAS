@@ -22,9 +22,13 @@
 //    auto-provisioned by the platform for every edge function -- only these two need setting):
 //      supabase secrets set FIREBASE_SERVICE_ACCOUNT_JSON="$(cat /path/to/service-account.json)" --project-ref vwbcrctzsqukutvlbqwy
 //      supabase secrets set WEBHOOK_SECRET="REDACTED-SECRET" --project-ref vwbcrctzsqukutvlbqwy
-//    (that WEBHOOK_SECRET value must exactly match the one baked into the trigger's header in
-//    the migration above -- it's a purpose-built shared secret for this one webhook, not a
-//    real Supabase/Firebase credential, but still worth treating as sensitive.)
+//    (that WEBHOOK_SECRET value must exactly match the value stored in Supabase Vault under
+//    the name notify_new_sighting_webhook_secret -- see the trigger migration's header
+//    comment for the one-time, not-committed-anywhere `vault.create_secret` command that
+//    sets it on the database side. It's a purpose-built shared secret for this one webhook,
+//    not a real Supabase/Firebase credential, but still worth treating as sensitive -- an
+//    earlier version of this value was committed to the migration file in plaintext and is
+//    burned; this is a fresh replacement that was never committed.)
 //
 // 4. Run the migration (creates device_tokens + the trigger that calls this function).
 
