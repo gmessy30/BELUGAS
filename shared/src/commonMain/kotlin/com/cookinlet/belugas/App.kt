@@ -116,7 +116,19 @@ fun App() {
         .mapToList(Dispatchers.Default)
         .collectAsState(initial = emptyList())
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        SyncEngine.events.collect { event ->
+            val message = when (event) {
+                is SyncEngine.SyncEvent.ItemSynced -> "Sighting synced"
+                is SyncEngine.SyncEvent.ItemFailed -> event.reason
+            }
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
     MaterialTheme {
+      Box(modifier = Modifier.fillMaxSize()) {
         when (currentScreen) {
             Screen.SPLASH -> {
                 SplashScreen()
@@ -200,10 +212,17 @@ fun App() {
                     isLoading = isLoadingRemote,
                     region = activeRegion,
                     currentAltitude = currentAltitude,
-                    onCloseMap = { currentScreen = Screen.MENU }
+                    onCloseMap = { currentScreen = Screen.MENU },
+                    onRefreshRemote = { refreshRemoteSightings() }
                 )
             }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
+      }
     }
 }
 
@@ -276,6 +295,7 @@ fun ObserverElevationTip(currentAltitudeMeters: Double, modifier: Modifier = Mod
 @Composable
 fun PendingSyncBadge(
     count: Int,
+    isSyncing: Boolean = false,
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {}
 ) {
@@ -286,17 +306,25 @@ fun PendingSyncBadge(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         modifier = modifier
             .background(Color(0xFFFF9800), shape = CircleShape) // High-visibility amber orange
-            .clickable { onClick() }
+            .clickable(enabled = !isSyncing) { onClick() } // A run is already in flight -- don't stack a redundant one
             .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
-        // Glowing status indicator icon
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(Color.White, shape = CircleShape)
-        )
+        if (isSyncing) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(8.dp),
+                color = Color.Black,
+                strokeWidth = 1.5.dp
+            )
+        } else {
+            // Glowing status indicator icon
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(Color.White, shape = CircleShape)
+            )
+        }
         Text(
-            text = "$count QUEUED",
+            text = if (isSyncing) "SYNCING…" else "$count QUEUED",
             color = Color.Black,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold
@@ -501,8 +529,9 @@ fun MainMenuDrawer(
     currentAltitude: Double,
     appPreferences: AppPreferences
 ) {
-    // Observe pending count in real time
+    // Observe pending count and in-flight sync status in real time
     val pendingCount by OfflineSightingRepository.pendingCount.collectAsState()
+    val isSyncing by SyncEngine.isSyncing.collectAsState()
     val scope = rememberCoroutineScope()
 
     var launchScreen by remember { mutableStateOf<LaunchScreen?>(null) }
@@ -536,6 +565,7 @@ fun MainMenuDrawer(
         ) {
             PendingSyncBadge(
                 count = pendingCount,
+                isSyncing = isSyncing,
                 onClick = {
                     SyncEngine.processQueueInBackground(scope, storage)
                 }

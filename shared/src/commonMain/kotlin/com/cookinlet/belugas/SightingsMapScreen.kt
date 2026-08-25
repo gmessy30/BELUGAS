@@ -39,8 +39,17 @@ fun SightingsMapScreen(
     isLoading: Boolean,
     region: RegionConfig = Regions.COOK_INLET,
     currentAltitude: Double,
-    onCloseMap: () -> Unit
+    onCloseMap: () -> Unit,
+    onRefreshRemote: () -> Unit = {}
 ) {
+    // Landing here directly (deep nav, or as the configured launch screen) previously never
+    // triggered a fetch at all, so the map could show a stale in-memory snapshot indefinitely
+    // until some unrelated action happened to refresh it. Firing on every entry into this
+    // screen's composition guarantees a fresh fetch regardless of how we got here.
+    LaunchedEffect(Unit) {
+        onRefreshRemote()
+    }
+
     // 1. Unified Sighting Source for playback logic
     val allSightings = remember(localSightings, remoteSightings) {
         val combined = mutableListOf<SightingDisplayModel>()

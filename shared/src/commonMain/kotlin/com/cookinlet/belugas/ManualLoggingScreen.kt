@@ -107,7 +107,10 @@ fun ManualLoggingScreen(
                     lng = center.longitude
                 )
                 OfflineSightingRepository.queueSighting(storage, updatedRecord)
-                SyncEngine.processQueueInBackground(scope, storage)
+                // Wait for the sync attempt to actually finish before handing control back --
+                // otherwise the caller's post-save refresh races the sync and may run before
+                // the new sighting has landed remotely.
+                SyncEngine.processQueueInBackground(scope, storage).join()
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {

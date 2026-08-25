@@ -68,7 +68,10 @@ fun LoggingScreen(
     fun saveAndFinish(record: SightingRecord) {
         scope.launch {
             OfflineSightingRepository.queueSighting(storage, record, localPhotoPath = capturedPhotoPath)
-            SyncEngine.processQueueInBackground(scope, storage)
+            // Wait for the sync attempt to actually finish before handing control back --
+            // otherwise the caller's post-save refresh races the sync and may run before the
+            // new sighting has landed remotely.
+            SyncEngine.processQueueInBackground(scope, storage).join()
             onDoneClick()
         }
     }
