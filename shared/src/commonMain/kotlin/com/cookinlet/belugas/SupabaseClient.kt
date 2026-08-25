@@ -15,6 +15,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlin.time.Duration.Companion.seconds
 
 // Public bucket created by supabase/migrations/20260818000000_add_photo_url_to_sightings.sql
 const val SIGHTING_PHOTOS_BUCKET = "sighting-photos"
@@ -37,6 +38,11 @@ val supabase = createSupabaseClient(
     install(Storage)
     install(Realtime)
     defaultSerializer = KotlinXSerializer(jsonConfig)
+    // Default (10s) is sized for lightweight JSON calls and applies uniformly to every
+    // request this client makes, including Storage photo uploads -- a multi-MB camera photo
+    // on a slow/congested cellular connection can easily exceed that, surfacing as a spurious
+    // "will retry" even though nothing is actually broken server-side.
+    requestTimeout = 60.seconds
 }
 
 // Data model matching our Supabase 'sightings' table schema
