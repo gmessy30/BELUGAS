@@ -108,6 +108,8 @@ kotlin {
                 implementation(libs.maplibre.spatialk.geojson)
                 implementation(libs.androidx.sqlite)
                 implementation(libs.androidx.sqlite.bundled)
+                implementation(libs.coil.compose)
+                implementation(libs.coil.network.ktor3)
 
                 // Shared Supabase & Ktor Core
                 implementation(project.dependencies.platform(libs.supabase.bom))

@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,13 +21,16 @@ import com.cookinlet.belugas.db.DatabaseDriverFactory
 import com.cookinlet.belugas.db.createDatabase
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
 
 // Navigation States
 enum class Screen {
@@ -115,6 +119,8 @@ fun App() {
         .asFlow()
         .mapToList(Dispatchers.Default)
         .collectAsState(initial = emptyList())
+
+    rememberSightingPhotoImageLoaderSetup()
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(Unit) {
@@ -386,6 +392,7 @@ fun OfflineSightingsList(
                                 lat = sighting.lat,
                                 lng = sighting.lng,
                                 observedAtMs = sighting.timestamp,
+                                photoUrl = sighting.photoUrl,
                                 isLocal = true
                             )
                         }
@@ -407,6 +414,7 @@ fun OfflineSightingsList(
                                 lat = sighting.lat,
                                 lng = sighting.lng,
                                 observedAtMs = sighting.observedAtEpochMs ?: 0L,
+                                photoUrl = sighting.photoUrl,
                                 isLocal = false
                             )
                         }
@@ -438,6 +446,7 @@ fun SightingListItem(
     lat: Double,
     lng: Double,
     observedAtMs: Long,
+    photoUrl: String?,
     isLocal: Boolean
 ) {
     val total = countWhites + countGreys + countCalves + countUnknown
@@ -449,7 +458,20 @@ fun SightingListItem(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
+            if (!photoUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = photoUrl,
+                    contentDescription = "Sighting photo",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF2A2A2A))
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
             // Header: Day of Week, Date & Time
             Text(
                 text = if (observedAtMs > 0) formatDateTime(observedAtMs) else "Date Not Recorded",
@@ -509,6 +531,7 @@ fun SightingListItem(
                         fontSize = 11.sp
                     )
                 }
+            }
             }
         }
     }

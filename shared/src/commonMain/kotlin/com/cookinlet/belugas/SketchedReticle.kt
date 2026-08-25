@@ -17,6 +17,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+// Size of the rectangular reticle below, in dp. Exposed so the platform camera capture code
+// can crop the saved photo down to this same region without duplicating the magic numbers.
+const val RETICLE_WIDTH_DP = 360f
+const val RETICLE_HEIGHT_DP = 180f
+
 @Composable
 fun SketchedReticle(
     modifier: Modifier = Modifier,
@@ -48,7 +53,7 @@ fun SketchedReticle(
 
         // --- 2. RECTANGULAR LANDSCAPE RETICLE (360dp x 180dp) ---
         Box(
-            modifier = Modifier.size(width = 360.dp, height = 180.dp),
+            modifier = Modifier.size(width = RETICLE_WIDTH_DP.dp, height = RETICLE_HEIGHT_DP.dp),
             contentAlignment = Alignment.Center
         ) {
             if (reticleArtwork != null) {

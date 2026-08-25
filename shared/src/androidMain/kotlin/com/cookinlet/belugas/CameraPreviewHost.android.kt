@@ -2,6 +2,8 @@ package com.cookinlet.belugas
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,8 +22,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,6 +35,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.shape.RoundedCornerShape
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -39,9 +46,16 @@ actual fun CameraPreviewHost(
     onPhotoCaptured: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var camera by remember { mutableStateOf<Camera?>(null) }
     var zoomRatio by remember { mutableStateOf(1f) }
+
+    // Pixel size of this composable's own root Box, which fills exactly the same area as the
+    // sibling SketchedReticle overlay in CaptureScreen -- lets the capture callback below work
+    // out what fraction of the frame the reticle covers without needing to reach into a
+    // different composable's layout.
+    var hostSizePx by remember { mutableStateOf<IntSize?>(null) }
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -59,10 +73,13 @@ actual fun CameraPreviewHost(
         }
     )
 
-    // CameraX ImageCapture Use Case
+    // CameraX ImageCapture Use Case. No fixed target aspect ratio: this use case is bound
+    // together with Preview inside a ViewPort-scoped UseCaseGroup below, which is what
+    // actually determines the captured frame's crop/aspect (matching what's shown on screen)
+    // -- forcing a separate ratio here would fight that and reintroduce the preview/capture
+    // field-of-view mismatch the reticle crop below depends on not having.
     val imageCapture = remember {
         ImageCapture.Builder()
-            .setTargetAspectRatio(AspectRatio.RATIO_16_9)
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
             .build()
     }
@@ -93,6 +110,17 @@ actual fun CameraPreviewHost(
                 ContextCompat.getMainExecutor(context),
                 object : ImageCapture.OnImageSavedCallback {
                     override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                        val hostSize = hostSizePx
+                        if (hostSize != null) {
+                            try {
+                                cropToReticleSquare(photoFile, hostSize, density)
+                            } catch (e: Exception) {
+                                // Not fatal -- fall through and upload the uncropped frame
+                                // rather than losing the sighting over a crop failure.
+                                println("RETICLE_CROP_ERROR: [${e::class.simpleName}] ${e.message}")
+                                e.printStackTrace()
+                            }
+                        }
                         // Pass the absolute file path to LoggingScreen
                         onPhotoCaptured(photoFile.absolutePath)
                     }
@@ -120,11 +148,13 @@ actual fun CameraPreviewHost(
         }
     } else {
         Box(
-            modifier = modifier.pointerInput(Unit) {
-                detectTransformGestures { _, _, zoom, _ ->
-                    zoomRatio = (zoomRatio * zoom).coerceIn(1f, 5f)
+            modifier = modifier
+                .onGloballyPositioned { coordinates -> hostSizePx = coordinates.size }
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, _, zoom, _ ->
+                        zoomRatio = (zoomRatio * zoom).coerceIn(1f, 5f)
+                    }
                 }
-            }
         ) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
@@ -142,7 +172,6 @@ actual fun CameraPreviewHost(
                     cameraProviderFuture.addListener({
                         val cameraProvider = cameraProviderFuture.get()
                         val preview = Preview.Builder()
-                            .setTargetAspectRatio(AspectRatio.RATIO_16_9)
                             .build()
                             .also {
                                 it.setSurfaceProvider(previewView.surfaceProvider)
@@ -151,13 +180,25 @@ actual fun CameraPreviewHost(
 
                         try {
                             cameraProvider.unbindAll()
-                            // Bind BOTH Preview and ImageCapture and store the Camera instance
-                            camera = cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                cameraSelector,
-                                preview,
-                                imageCapture
-                            )
+                            // Bind Preview and ImageCapture through a shared ViewPort so the
+                            // captured photo's crop matches what's actually shown on screen --
+                            // without this, ImageCapture's own aspect ratio can differ from the
+                            // FILL_CENTER-scaled preview, and the reticle crop above would be
+                            // cropping the wrong region. previewView.viewPort is only non-null
+                            // once the view has been laid out at least once; fall back to a
+                            // plain (unmatched) bind on the rare first-frame race rather than
+                            // skip binding the camera entirely.
+                            val viewPort = previewView.viewPort
+                            camera = if (viewPort != null) {
+                                val useCaseGroup = UseCaseGroup.Builder()
+                                    .setViewPort(viewPort)
+                                    .addUseCase(preview)
+                                    .addUseCase(imageCapture)
+                                    .build()
+                                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, useCaseGroup)
+                            } else {
+                                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageCapture)
+                            }
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
@@ -190,5 +231,41 @@ actual fun CameraPreviewHost(
                 )
             }
         }
+    }
+}
+
+/**
+ * Crops the just-captured JPEG down to a square region matching the on-screen reticle, then
+ * overwrites [photoFile] with the result. [hostSize] is the pixel size of this composable's
+ * own root Box (which the sibling SketchedReticle overlay in CaptureScreen shares exactly),
+ * and [density] converts the reticle's fixed dp size into that same pixel space.
+ *
+ * The square's side is the reticle's height (its smaller dimension, so the crop stays fully
+ * within the reticle's rectangular bounds) and is centered on the same point the reticle is
+ * -- the screen/host center. This only produces the right region because Preview and
+ * ImageCapture are bound through a shared ViewPort (see the binding above), which keeps the
+ * saved photo's aspect ratio and framing matched to what's actually shown on screen.
+ */
+private fun cropToReticleSquare(photoFile: File, hostSize: IntSize, density: Density) {
+    if (hostSize.width <= 0 || hostSize.height <= 0) return
+
+    val reticleHeightPx = with(density) { RETICLE_HEIGHT_DP.dp.toPx() }
+    val squareFractionOfHostHeight = (reticleHeightPx / hostSize.height).coerceIn(0f, 1f)
+
+    val original = BitmapFactory.decodeFile(photoFile.absolutePath) ?: return
+    try {
+        val squareSide = (squareFractionOfHostHeight * original.height)
+            .toInt()
+            .coerceIn(1, minOf(original.width, original.height))
+        val left = ((original.width - squareSide) / 2).coerceIn(0, original.width - squareSide)
+        val top = ((original.height - squareSide) / 2).coerceIn(0, original.height - squareSide)
+
+        val cropped = Bitmap.createBitmap(original, left, top, squareSide, squareSide)
+        FileOutputStream(photoFile).use { out ->
+            cropped.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
+        if (cropped !== original) cropped.recycle()
+    } finally {
+        original.recycle()
     }
 }
