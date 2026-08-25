@@ -49,10 +49,20 @@ enum class DistanceBucket(val label: String) {
         }
     }
 
-    fun rangeLabel(isAerial: Boolean): String {
+    /**
+     * Comparator + distance (e.g. "~500m"), no bucket name -- compact enough that all three
+     * chips reliably fit on one line even in landscape's reduced dialog height (a wrapped
+     * second line can get squeezed out of the dialog's constrained vertical space there).
+     */
+    fun shortLabel(isAerial: Boolean): String {
         val meters = radiusMeters(isAerial)
         val distanceText = if (meters >= 1000.0) "${(meters / 1000.0)}km" else "${meters.toInt()}m"
-        return "$label (~$distanceText)"
+        val comparator = when (this) {
+            CLOSE -> "<"
+            MEDIUM -> "~"
+            FAR -> ">"
+        }
+        return "$comparator$distanceText"
     }
 
     companion object {

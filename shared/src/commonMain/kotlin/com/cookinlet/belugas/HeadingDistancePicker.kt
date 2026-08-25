@@ -165,6 +165,12 @@ private fun HeadingDistanceDialog(
                     // overflowing chips (past SW) were laid out beyond the dialog's clipped
                     // bounds and unreachable. Wrapping onto a second line keeps every direction
                     // reliably visible and tappable without needing a scroll gesture at all.
+                    // Note: horizontalArrangement intentionally does NOT use the
+                    // spacedBy(space, alignment) overload here (e.g. Alignment.CenterHorizontally)
+                    // -- combined with FlowRow in this Compose Foundation version (1.10.4), that
+                    // overload silently drops whichever chips overflow onto a wrapped line
+                    // instead of wrapping them (confirmed on-device: the last chip just vanished
+                    // from the tree entirely). Plain spacedBy keeps every chip visible.
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -193,19 +199,28 @@ private fun HeadingDistanceDialog(
 
                 Spacer(Modifier.height(16.dp))
                 Text("Distance", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                // A wrapped second line here (previously via FlowRow) could get squeezed out of
+                // the dialog's vertical space in landscape, where the dialog has much less
+                // height to work with. Short comparator+distance labels (e.g. "~500m" instead
+                // of "Medium (~500m)") keep all three chips narrow enough to always fit on one
+                // line, and equal weight makes them share the row evenly regardless of the
+                // dialog's width in either orientation.
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(top = 4.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp)
                 ) {
                     DistanceBucket.entries.forEach { bucket ->
                         FilterChip(
                             selected = selectedDistance == bucket,
                             onClick = { selectedDistance = bucket },
-                            label = { Text(bucket.rangeLabel(isAerial), fontSize = 10.sp) },
+                            label = { Text(bucket.shortLabel(isAerial), fontSize = 10.sp) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = Color(0xFF00E5FF),
                                 selectedLabelColor = Color.Black
-                            )
+                            ),
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
