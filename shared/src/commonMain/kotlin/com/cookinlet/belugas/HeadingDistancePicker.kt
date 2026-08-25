@@ -3,9 +3,11 @@ package com.cookinlet.belugas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
@@ -158,7 +160,16 @@ private fun HeadingDistanceDialog(
 
                 if (useManual) {
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // FlowRow instead of Row: the dialog isn't wide enough to fit all 8 compass
+                    // chips on one line, and a plain Row neither wraps nor scrolls, so the
+                    // overflowing chips (past SW) were laid out beyond the dialog's clipped
+                    // bounds and unreachable. Wrapping onto a second line keeps every direction
+                    // reliably visible and tappable without needing a scroll gesture at all.
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         COMPASS_POINTS.forEach { (label, deg) ->
                             FilterChip(
                                 selected = manualDegrees == deg,
