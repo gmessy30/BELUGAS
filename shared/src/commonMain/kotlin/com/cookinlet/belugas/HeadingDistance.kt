@@ -96,7 +96,7 @@ fun sectorEndpointWithinGeofence(
     region: RegionConfig
 ): Boolean {
     val (endLat, endLng) = destinationPoint(originLat, originLng, heading.degrees, radiusMeters)
-    return GeofenceUtils.isWithin3DFunnel(endLat, endLng, altitudeMeters, region.shorelinePolygon)
+    return GeofenceUtils.isWithin3DFunnel(endLat, endLng, altitudeMeters, region)
 }
 
 /**

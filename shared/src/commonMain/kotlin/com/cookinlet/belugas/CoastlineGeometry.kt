@@ -4,11 +4,14 @@ import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * Coastline data extracted from the notification-zone polygons seeded in
- * supabase/migrations/20260819130000_seed_notification_zones_and_point_presets.sql, used to
- * default a sighting's sector direction offshore when no (valid) heading was given.
+ * supabase/migrations/20260819130000_seed_notification_zones_and_point_presets.sql. Used to
+ * default a sighting's sector direction offshore when no (valid) heading was given, and (see
+ * isWithinWellSourcedWater below) as a real replacement for GeofenceUtils' old sparse 7-point
+ * distance check, which had ~100km+ gaps on a coastline that's actually ~300km long.
  *
  * Only the six well-sourced zones are included here (kenai, lower_inlet_south,
  * ship_creek_knik_arm_anchorage, turnagain_arm_northern, turnagain_arm_mid,
@@ -359,7 +362,12 @@ private fun initialBearingDegrees(lat1: Double, lng1: Double, lat2: Double, lng2
     return (theta * 180.0 / PI + 360.0) % 360.0
 }
 
-private data class NearestSegmentResult(val nearestLat: Double, val nearestLng: Double, val bearingDegrees: Double)
+private data class NearestSegmentResult(
+    val nearestLat: Double,
+    val nearestLng: Double,
+    val bearingDegrees: Double,
+    val distanceMeters: Double
+)
 
 // Nearest point across every segment of the polyline (not just nearest vertex), via a local
 // flat-meters projection -- accurate enough since individual coastline segments here span at
@@ -392,7 +400,8 @@ private fun nearestSegment(lat: Double, lng: Double, polyline: List<Pair<Double,
             best = NearestSegmentResult(
                 nearestLat = nearY / METERS_PER_DEGREE_LAT,
                 nearestLng = nearX / mPerLng,
-                bearingDegrees = initialBearingDegrees(lat1, lng1, lat2, lng2)
+                bearingDegrees = initialBearingDegrees(lat1, lng1, lat2, lng2),
+                distanceMeters = sqrt(distSq)
             )
         }
     }
@@ -451,4 +460,94 @@ fun headingPointsAtLand(lat: Double, lng: Double, headingDegrees: Double): Boole
         return !pointInPolygon(testLat, testLng, zone.fullRing)
     }
     return false
+}
+
+// KENAI.fullRing's river "spikes" (see that zone's header comment) trace up the Kenai/Kasilof
+// River centerlines and directly back down the same nodes -- a zero-width slit with no
+// interior area at all. A plain point-in-polygon test can never validate a point near either
+// river (e.g. a park on the riverbank, not standing exactly on the GPS-traced centerline)
+// because of this, so isWithinWellSourcedWater below checks proximity to these centerlines
+// directly, the same way it checks proximity to real coastline. Same literal coordinates
+// already embedded in KENAI.fullRing (indices 11-15 and 25-29 respectively) -- kept as their
+// own named lists here since they're conceptually a distinct, reusable "real line to measure
+// distance to", not restated by re-deriving or guessing new numbers.
+private val KENAI_RIVER_CENTERLINE = listOf(
+    60.5486469 to -151.2621273,
+    60.5406886 to -151.2327182,
+    60.5250928 to -151.2266779,
+    60.5212876 to -151.1731440,
+    60.5459337 to -151.1252208
+)
+
+private val KASILOF_RIVER_CENTERLINE = listOf(
+    60.3860366 to -151.3021596,
+    60.3424351 to -151.2890138,
+    60.3172346 to -151.2621582,
+    60.3102738 to -151.2475703,
+    60.3056840 to -151.2222750
+)
+
+// Every real linestring (coastline +, for kenai, its two river centerlines) a given
+// well-sourced zone can be measured against for the buffer-distance fallback below.
+private fun realLinesForZone(zone: CoastlineZone): List<List<Pair<Double, Double>>> {
+    val lines = mutableListOf(zone.coastlineOnly)
+    if (zone.slug == "kenai") {
+        lines.add(KENAI_RIVER_CENTERLINE)
+        lines.add(KASILOF_RIVER_CENTERLINE)
+    }
+    return lines
+}
+
+// How far out a well-sourced zone's real data is considered authoritative for. Generous
+// enough to cover a zone's own mapped offshore extent (the computed closure edges reach
+// 12-15km out) plus real margin, without being so wide it starts confidently rejecting points
+// that are actually just outside well-sourced coverage entirely (e.g. in
+// turnagain_arm_southern or susitna_delta, which isWithinWellSourcedWater has no data for).
+private const val ZONE_AUTHORITATIVE_REACH_KM = 25.0
+
+/**
+ * Real-polygon-and-coastline replacement for GeofenceUtils' old sparse 7-point distance check,
+ * for the Cook Inlet zones this file actually has precise coastline data for (see the
+ * WELL_SOURCED_ZONES doc comment for which -- turnagain_arm_southern and susitna_delta are
+ * NOT covered). Returns null, not false, when the point isn't within reach of any well-sourced
+ * zone at all: this function having no data isn't evidence the point is invalid, and callers
+ * must fall back to a coarser check in that case rather than treat null as a rejection.
+ *
+ * Ground truth in tiers, keeping the same altitude-scaled buffer semantics
+ * GeofenceUtils.isWithin3DFunnel already used:
+ *  1. The point falls inside a zone's real water polygon -> unambiguously valid regardless of
+ *     altitude (there's no more direct evidence than "the point IS water").
+ *  2. Outside every polygon, but within the altitude-scaled buffer distance of the nearest
+ *     real coastline or river-centerline segment (river centerlines specifically because a
+ *     zone's river spike has zero interior area, per KENAI_RIVER_CENTERLINE's comment above)
+ *     -> valid.
+ *  3. Neither, but still within ZONE_AUTHORITATIVE_REACH_KM of a well-sourced zone -> a
+ *     confident rejection (false, not null) -- we have real data here and it's genuinely too
+ *     far from water.
+ *  4. Out of reach of every well-sourced zone -> null, defer to the sparse-point fallback.
+ */
+fun isWithinWellSourcedWater(lat: Double, lng: Double, altitudeMeters: Double): Boolean? {
+    val allowedBufferKm = if (altitudeMeters > 50.0) {
+        0.8 + ((altitudeMeters / 100.0) * 1.2)
+    } else {
+        0.8
+    }
+
+    var withinReachOfAnyZone = false
+
+    for (zone in WELL_SOURCED_ZONES) {
+        if (pointInPolygon(lat, lng, zone.fullRing)) return true
+
+        var nearestKm = Double.MAX_VALUE
+        for (line in realLinesForZone(zone)) {
+            val segment = nearestSegment(lat, lng, line) ?: continue
+            val distKm = segment.distanceMeters / 1000.0
+            if (distKm < nearestKm) nearestKm = distKm
+        }
+
+        if (nearestKm <= allowedBufferKm) return true
+        if (nearestKm <= ZONE_AUTHORITATIVE_REACH_KM) withinReachOfAnyZone = true
+    }
+
+    return if (withinReachOfAnyZone) false else null
 }

@@ -188,7 +188,7 @@ fun ManualLoggingScreen(
                         distanceRadiusMeters = distanceBucket?.radiusMeters(isAerial)
                     )
 
-                    if (!GeofenceUtils.isWithin3DFunnel(targetCenter.latitude, targetCenter.longitude, sightingAlt, region.shorelinePolygon)) {
+                    if (!GeofenceUtils.isWithin3DFunnel(targetCenter.latitude, targetCenter.longitude, sightingAlt, region)) {
                         pendingRecord = record
                         showGeofenceWarning = true
                         isSaving = false

@@ -19,7 +19,7 @@ data class RegionConfig(
     }
 
     fun isWithinSightline(lat: Double, lng: Double, altitudeMeters: Double): Boolean {
-        return GeofenceUtils.isWithin3DFunnel(lat, lng, altitudeMeters, shorelinePolygon)
+        return GeofenceUtils.isWithin3DFunnel(lat, lng, altitudeMeters, this)
     }
 }
 
