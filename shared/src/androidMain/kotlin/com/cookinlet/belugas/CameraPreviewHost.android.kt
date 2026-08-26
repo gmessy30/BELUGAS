@@ -4,6 +4,9 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.view.OrientationEventListener
+import android.view.Surface
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -56,6 +60,16 @@ actual fun CameraPreviewHost(
     // out what fraction of the frame the reticle covers without needing to reach into a
     // different composable's layout.
     var hostSizePx by remember { mutableStateOf<IntSize?>(null) }
+    var previewView by remember { mutableStateOf<PreviewView?>(null) }
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+
+    // Tracks the device's physical rotation (independent of any UI orientation lock) so
+    // ImageCapture's targetRotation -- and therefore the EXIF orientation baked into each
+    // captured JPEG -- always matches how the phone is actually being held, not just whatever
+    // rotation happened to be current when the use case was first built. The activity declares
+    // configChanges for orientation (see AndroidManifest) so it's never recreated on rotation,
+    // meaning nothing else would ever refresh this.
+    var surfaceRotation by remember { mutableStateOf(Surface.ROTATION_0) }
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -90,8 +104,72 @@ actual fun CameraPreviewHost(
         }
     }
 
-    // Apply zoom ratio to camera hardware
-    LaunchedEffect(zoomRatio) {
+    DisposableEffect(Unit) {
+        val listener = object : OrientationEventListener(context) {
+            override fun onOrientationChanged(orientationDegrees: Int) {
+                if (orientationDegrees == ORIENTATION_UNKNOWN) return
+                surfaceRotation = when (orientationDegrees) {
+                    in 45 until 135 -> Surface.ROTATION_270
+                    in 135 until 225 -> Surface.ROTATION_180
+                    in 225 until 315 -> Surface.ROTATION_90
+                    else -> Surface.ROTATION_0
+                }
+            }
+        }
+        listener.enable()
+        onDispose { listener.disable() }
+    }
+
+    LaunchedEffect(Unit) {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        cameraProviderFuture.addListener({
+            cameraProvider = cameraProviderFuture.get()
+        }, ContextCompat.getMainExecutor(context))
+    }
+
+    // (Re)bind Preview + ImageCapture whenever the provider, the view, the on-screen size, or
+    // the device rotation change. hostSizePx changing is what fires on a device rotation (the
+    // activity survives it, see the surfaceRotation comment above) -- rebinding through a
+    // freshly-read previewView.viewPort each time is what keeps the ImageCapture crop matching
+    // the *current* orientation's preview framing, instead of staying locked to whatever
+    // orientation was active the first time this ran.
+    LaunchedEffect(cameraProvider, previewView, hostSizePx, surfaceRotation) {
+        val provider = cameraProvider ?: return@LaunchedEffect
+        val view = previewView ?: return@LaunchedEffect
+        val size = hostSizePx ?: return@LaunchedEffect
+        if (size.width <= 0 || size.height <= 0) return@LaunchedEffect
+
+        imageCapture.targetRotation = surfaceRotation
+
+        val preview = Preview.Builder()
+            .build()
+            .also { it.setSurfaceProvider(view.surfaceProvider) }
+        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+        try {
+            provider.unbindAll()
+            // previewView.viewPort is only non-null once the view has been laid out at least
+            // once; fall back to a plain (unmatched) bind on the rare first-frame race rather
+            // than skip binding the camera entirely.
+            val viewPort = view.viewPort
+            camera = if (viewPort != null) {
+                val useCaseGroup = UseCaseGroup.Builder()
+                    .setViewPort(viewPort)
+                    .addUseCase(preview)
+                    .addUseCase(imageCapture)
+                    .build()
+                provider.bindToLifecycle(lifecycleOwner, cameraSelector, useCaseGroup)
+            } else {
+                provider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageCapture)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // Apply zoom ratio to camera hardware -- also re-applied after every (re)bind above, since
+    // a rebind resets the hardware zoom but shouldn't visibly reset the on-screen zoom label.
+    LaunchedEffect(camera, zoomRatio) {
         camera?.cameraControl?.setZoomRatio(zoomRatio)
     }
 
@@ -165,44 +243,7 @@ actual fun CameraPreviewHost(
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
                         scaleType = PreviewView.ScaleType.FILL_CENTER
-                    }
-                },
-                update = { previewView ->
-                    val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-                    cameraProviderFuture.addListener({
-                        val cameraProvider = cameraProviderFuture.get()
-                        val preview = Preview.Builder()
-                            .build()
-                            .also {
-                                it.setSurfaceProvider(previewView.surfaceProvider)
-                            }
-                        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                        try {
-                            cameraProvider.unbindAll()
-                            // Bind Preview and ImageCapture through a shared ViewPort so the
-                            // captured photo's crop matches what's actually shown on screen --
-                            // without this, ImageCapture's own aspect ratio can differ from the
-                            // FILL_CENTER-scaled preview, and the reticle crop above would be
-                            // cropping the wrong region. previewView.viewPort is only non-null
-                            // once the view has been laid out at least once; fall back to a
-                            // plain (unmatched) bind on the rare first-frame race rather than
-                            // skip binding the camera entirely.
-                            val viewPort = previewView.viewPort
-                            camera = if (viewPort != null) {
-                                val useCaseGroup = UseCaseGroup.Builder()
-                                    .setViewPort(viewPort)
-                                    .addUseCase(preview)
-                                    .addUseCase(imageCapture)
-                                    .build()
-                                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, useCaseGroup)
-                            } else {
-                                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageCapture)
-                            }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    }, ContextCompat.getMainExecutor(context))
+                    }.also { previewView = it }
                 }
             )
 
@@ -216,7 +257,7 @@ actual fun CameraPreviewHost(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("${"%.1f".format(zoomRatio)}x", color = Color.Yellow, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                
+
                 // Rotated Slider to act as a vertical control
                 Slider(
                     value = zoomRatio,
@@ -240,11 +281,14 @@ actual fun CameraPreviewHost(
  * own root Box (which the sibling SketchedReticle overlay in CaptureScreen shares exactly),
  * and [density] converts the reticle's fixed dp size into that same pixel space.
  *
- * The square's side is the reticle's height (its smaller dimension, so the crop stays fully
- * within the reticle's rectangular bounds) and is centered on the same point the reticle is
- * -- the screen/host center. This only produces the right region because Preview and
- * ImageCapture are bound through a shared ViewPort (see the binding above), which keeps the
- * saved photo's aspect ratio and framing matched to what's actually shown on screen.
+ * The square's side is the reticle's height (its constraining dimension, since the reticle box
+ * is always wider than tall) and is centered on the same point the reticle is -- the
+ * screen/host center. This produces the right region regardless of device orientation because:
+ * Preview and ImageCapture are bound through a shared, rotation-aware ViewPort (see the binding
+ * above, rebound on every orientation change), which keeps the saved photo's aspect ratio and
+ * framing matched to what's actually shown on screen; and the EXIF correction below undoes the
+ * rotation CameraX bakes into the JPEG's orientation tag, so the decoded bitmap's width/height
+ * axes line up with the host's on-screen width/height axes rather than the sensor's fixed ones.
  */
 private fun cropToReticleSquare(photoFile: File, hostSize: IntSize, density: Density) {
     if (hostSize.width <= 0 || hostSize.height <= 0) return
@@ -252,7 +296,21 @@ private fun cropToReticleSquare(photoFile: File, hostSize: IntSize, density: Den
     val reticleHeightPx = with(density) { RETICLE_HEIGHT_DP.dp.toPx() }
     val squareFractionOfHostHeight = (reticleHeightPx / hostSize.height).coerceIn(0f, 1f)
 
-    val original = BitmapFactory.decodeFile(photoFile.absolutePath) ?: return
+    val decoded = BitmapFactory.decodeFile(photoFile.absolutePath) ?: return
+    val rotationDegrees = try {
+        ExifInterface(photoFile.absolutePath).rotationDegrees
+    } catch (e: Exception) {
+        0
+    }
+    val original = if (rotationDegrees != 0) {
+        val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+        Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).also {
+            if (it !== decoded) decoded.recycle()
+        }
+    } else {
+        decoded
+    }
+
     try {
         val squareSide = (squareFractionOfHostHeight * original.height)
             .toInt()
