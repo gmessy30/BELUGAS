@@ -22,6 +22,11 @@ import androidx.compose.ui.unit.sp
 const val RETICLE_WIDTH_DP = 360f
 const val RETICLE_HEIGHT_DP = 180f
 
+// Shared between the "BELUGAS" and "GO HERE" labels so the two roughly mirror each other's
+// width (both are 7 characters) instead of the mismatched sizes they had before.
+private const val LABEL_FONT_SIZE_SP = 20
+private const val LABEL_LETTER_SPACING_SP = 3
+
 @Composable
 fun SketchedReticle(
     modifier: Modifier = Modifier,
@@ -35,18 +40,22 @@ fun SketchedReticle(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // --- 1. TOP PRINT: "BELUGAS" ---
+        // --- 1. TOP PRINT: "BELUGAS", framed by arrows pointing down/inward at the reticle ---
         if (topLabelArtwork != null) {
             topLabelArtwork()
         } else {
-            Text(
-                text = "BELUGAS",
-                color = Color.Yellow,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 4.sp,
-                textAlign = TextAlign.Center
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("↘", color = Color.Yellow, fontSize = LABEL_FONT_SIZE_SP.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "BELUGAS",
+                    color = Color.Yellow,
+                    fontSize = LABEL_FONT_SIZE_SP.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = LABEL_LETTER_SPACING_SP.sp,
+                    textAlign = TextAlign.Center
+                )
+                Text("↙", color = Color.Yellow, fontSize = LABEL_FONT_SIZE_SP.sp, fontWeight = FontWeight.Bold)
+            }
         }
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -71,18 +80,22 @@ fun SketchedReticle(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // --- 3. BOTTOM PRINT: "GO HERE" ---
+        // --- 3. BOTTOM PRINT: "GO HERE", framed by arrows pointing up/inward at the reticle ---
         if (bottomLabelArtwork != null) {
             bottomLabelArtwork()
         } else {
-            Text(
-                text = "▼ GO HERE ▼",
-                color = Color.Yellow,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 2.sp,
-                textAlign = TextAlign.Center
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("↗", color = Color.Yellow, fontSize = LABEL_FONT_SIZE_SP.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "GO HERE",
+                    color = Color.Yellow,
+                    fontSize = LABEL_FONT_SIZE_SP.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = LABEL_LETTER_SPACING_SP.sp,
+                    textAlign = TextAlign.Center
+                )
+                Text("↖", color = Color.Yellow, fontSize = LABEL_FONT_SIZE_SP.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

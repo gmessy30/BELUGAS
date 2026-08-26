@@ -1,5 +1,6 @@
 package com.cookinlet.belugas
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,11 +10,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import belugas.shared.generated.resources.Res
+import belugas.shared.generated.resources.beluga_capture_sketch
+import org.jetbrains.compose.resources.painterResource
 
 @Composable
 fun CaptureScreen(
@@ -83,21 +90,40 @@ fun CaptureScreen(
         // --- 4. SHUTTER TRIGGER BAR ("CAPTURE") ---
         Button(
             onClick = { triggerSnapshot = true },
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White),
             shape = RoundedCornerShape(24.dp),
+            contentPadding = PaddingValues(0.dp),
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .padding(end = 16.dp)
                 .width(85.dp)
                 .height(200.dp)
         ) {
-            Text(
-                text = if (triggerSnapshot) "SAVING..." else "CAPTURE",
-                color = Color.Black,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Black,
-                textAlign = TextAlign.Center
-            )
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Image(
+                    painter = painterResource(Res.drawable.beluga_capture_sketch),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(24.dp))
+                )
+                Text(
+                    text = if (triggerSnapshot) "SAVING..." else "CAPTURE",
+                    color = Color.Black,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .width(180.dp)
+                        .graphicsLayer { rotationZ = 270f }
+                        // Fully opaque, not translucent: at 0.75 alpha a dark region of the
+                        // sketch image underneath (e.g. the eye) could show through strongly
+                        // enough to blend with a letter and make it unreadable.
+                        .background(Color.White)
+                        .padding(vertical = 2.dp)
+                )
+            }
         }
     }
 }

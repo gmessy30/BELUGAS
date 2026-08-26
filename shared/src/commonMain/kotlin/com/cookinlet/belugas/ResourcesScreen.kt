@@ -1,6 +1,5 @@
 package com.cookinlet.belugas
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -10,7 +9,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
@@ -36,13 +34,9 @@ private const val AWA_BELUGA_CAMS_URL = "https://www.akwildlife.org/news/belugac
 @Composable
 fun ResourcesScreen(onBack: () -> Unit) {
     val uriHandler = LocalUriHandler.current
-    val glacialBlueGreen = Brush.verticalGradient(colors = listOf(Color(0xFF007F7F), Color(0xFF004D4D)))
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(glacialBlueGreen)
-    ) {
+    AppBackground {
+    Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -134,6 +128,7 @@ fun ResourcesScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(24.dp))
             }
         }
+    }
     }
 }
 

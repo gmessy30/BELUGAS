@@ -1,5 +1,6 @@
 package com.cookinlet.belugas
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,7 +23,6 @@ import com.cookinlet.belugas.db.createDatabase
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
@@ -30,7 +30,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import belugas.shared.generated.resources.Res
+import belugas.shared.generated.resources.beluga_background
+import belugas.shared.generated.resources.beluga_sketch
 import coil3.compose.AsyncImage
+import org.jetbrains.compose.resources.painterResource
 
 // Navigation States
 enum class Screen {
@@ -237,25 +241,27 @@ fun App() {
 // ==============================================================
 @Composable
 fun SplashScreen() {
+    AppBackground {
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(colors = listOf(Color(0xFF007F7F), Color(0xFF004D4D)))),
+        modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // Placeholder logo mark. Swap for real artwork once it exists: add the image to
-            // shared/src/commonMain/composeResources/drawable/ (already wired up via the
-            // compose.components.resources dependency) and replace this Box with
-            // Image(painterResource(Res.drawable.<name>), contentDescription = null,
-            // modifier = Modifier.size(120.dp)).
+            // Temporary placeholder artwork (a hand-drawn sketch) until real logo art exists.
             Box(
                 modifier = Modifier
                     .size(120.dp)
-                    .background(Color(0xFF00E5FF), shape = CircleShape),
+                    .background(Color.White, shape = CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text("🐋", fontSize = 56.sp)
+                Image(
+                    painter = painterResource(Res.drawable.beluga_sketch),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                )
             }
             Spacer(modifier = Modifier.height(20.dp))
             Text(
@@ -271,6 +277,7 @@ fun SplashScreen() {
                 fontSize = 13.sp
             )
         }
+    }
     }
 }
 
@@ -355,20 +362,23 @@ fun OfflineSightingsList(
         .mapToList(Dispatchers.Default) // commonMain standard dispatcher
         .collectAsState(initial = emptyList())
 
+    AppBackground {
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text("Historical Sightings") },
+                title = { Text("Historical Sightings", color = Color.White) },
                 navigationIcon = {
                     Button(onClick = onBack) { Text("BACK") }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             if (localSightings.isEmpty() && remoteSightings.isEmpty() && !isLoadingRemote) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No sightings logged yet.", color = Color.Gray)
+                    Text("No sightings logged yet.", color = Color.White.copy(alpha = 0.8f))
                 }
             } else {
                 LazyColumn(
@@ -434,6 +444,7 @@ fun OfflineSightingsList(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -443,8 +454,8 @@ fun SightingListItem(
     countGreys: Int,
     countCalves: Int,
     countUnknown: Int,
-    lat: Double,
-    lng: Double,
+    lat: Double?,
+    lng: Double?,
     observedAtMs: Long,
     photoUrl: String?,
     isLocal: Boolean
@@ -519,7 +530,11 @@ fun SightingListItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Lat: ${formatCoord(lat)}, Lng: ${formatCoord(lng)}",
+                    text = if (lat != null && lng != null) {
+                        "Lat: ${formatCoord(lat)}, Lng: ${formatCoord(lng)}"
+                    } else {
+                        "Location not recorded"
+                    },
                     color = Color.Gray,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace
@@ -562,10 +577,6 @@ fun MainMenuDrawer(
         launchScreen = appPreferences.getLaunchScreen()
     }
 
-    val glacialBlueGreen = Brush.verticalGradient(
-        colors = listOf(Color(0xFF007F7F), Color(0xFF004D4D))
-    )
-
     // A Column here (header row, then the rest) instead of a Box with two full-bleed
     // overlapping children: the previous Box layout had the scrollable menu-items Column
     // (fillMaxHeight, right-aligned) spatially overlapping the top-right header row, and a
@@ -574,10 +585,10 @@ fun MainMenuDrawer(
     // the row underneath it (this is what broke the old CLOSE button). Splitting into
     // sibling regions (header takes its natural height, content takes the rest via weight)
     // makes that overlap structurally impossible instead of working around it again.
+    AppBackground {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(glacialBlueGreen)
             .statusBarsPadding()
             .padding(24.dp)
     ) {
@@ -668,5 +679,6 @@ fun MainMenuDrawer(
             Spacer(modifier = Modifier.height(24.dp))
             ObserverElevationTip(currentAltitudeMeters = currentAltitude)
         }
+    }
     }
 }
