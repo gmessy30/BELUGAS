@@ -62,9 +62,15 @@ fun SightingsMapScreen(
             ))
         }
         
+        // A remote sighting with no coordinates (e.g. bad manual/test data) has nowhere to
+        // place a pin -- skip it here rather than crash; it still shows up in the sightings
+        // list (which doesn't need a location) via remoteSightings directly.
         remoteSightings.forEach { s ->
+            val lat = s.lat
+            val lng = s.lng
+            if (lat == null || lng == null) return@forEach
             combined.add(SightingDisplayModel(
-                lat = s.lat, lng = s.lng, timestamp = s.observedAtEpochMs ?: 0L,
+                lat = lat, lng = lng, timestamp = s.observedAtEpochMs ?: 0L,
                 total = s.countWhites + s.countGreys + s.countCalves + s.countUnknown,
                 isLocal = false, heading = s.heading ?: "NONE"
             ))
@@ -188,8 +194,12 @@ fun SightingsMapScreen(
                 // there in this direction/range", not another point-in-time marker).
                 val sectorGeoJsonString = remember(remoteSightings, region) {
                     val features = remoteSightings.mapNotNull { s ->
+                        // No coordinates -- nowhere to draw a sector from, skip it (same as the
+                        // pin-placement skip above for allSightings).
+                        val lat = s.lat ?: return@mapNotNull null
+                        val lng = s.lng ?: return@mapNotNull null
                         val radiusMeters = s.distanceRadiusMeters ?: return@mapNotNull null
-                        if (!region.containsLocation(s.lat, s.lng)) return@mapNotNull null
+                        if (!region.containsLocation(lat, lng)) return@mapNotNull null
 
                         // An explicit heading is trusted as-is unless it points back at land
                         // (checkable only where we have real coastline data -- see
@@ -198,16 +208,16 @@ fun SightingsMapScreen(
                         // manually entered, so they get MANUAL's existing (widest) confidence
                         // tier rather than a new source tier.
                         val explicitDegrees = s.headingDegrees
-                        val heading = if (explicitDegrees != null && !headingPointsAtLand(s.lat, s.lng, explicitDegrees)) {
+                        val heading = if (explicitDegrees != null && !headingPointsAtLand(lat, lng, explicitDegrees)) {
                             val headingSource = HeadingSource.entries.firstOrNull { it.name == s.headingSource }
                                 ?: HeadingSource.MANUAL
                             HeadingEstimate(explicitDegrees, headingSource, s.headingAccuracyDegrees)
                         } else {
-                            val offshoreDegrees = computeDefaultOffshoreHeadingDegrees(s.lat, s.lng)
+                            val offshoreDegrees = computeDefaultOffshoreHeadingDegrees(lat, lng)
                             HeadingEstimate(offshoreDegrees, HeadingSource.MANUAL)
                         }
 
-                        buildSectorGeoJsonFeature(s.lat, s.lng, heading, radiusMeters)
+                        buildSectorGeoJsonFeature(lat, lng, heading, radiusMeters)
                     }
                     """{ "type": "FeatureCollection", "features": [ ${features.joinToString(",")} ] }"""
                 }

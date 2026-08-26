@@ -8,11 +8,15 @@ data class SightingRecord(
     @SerialName("id")
     val id: String = "",
 
+    // Nullable: a stray row with missing coordinates (e.g. bad test/manual data) shouldn't be
+    // able to fail decoding for the entire fetched list -- callers that need a location (map
+    // pins, sector rendering) skip a sighting with a null lat/lng; the sightings list still
+    // shows it, just without coordinates.
     @SerialName("lat")
-    val lat: Double = 0.0,
+    val lat: Double? = null,
 
     @SerialName("lng")
-    val lng: Double = 0.0,
+    val lng: Double? = null,
 
     // Pod movement direction relative to the observer (AWAY/LEFT/RIGHT/NONE) — distinct from
     // headingDegrees below, which is the compass bearing FROM the observer TO the sighting.
