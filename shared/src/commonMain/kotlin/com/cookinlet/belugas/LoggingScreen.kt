@@ -37,6 +37,7 @@ fun LoggingScreen(
     var unknownCount by remember { mutableStateOf(0) }
 
     var showGeofenceWarning by remember { mutableStateOf(false) }
+    var showZeroCountWarning by remember { mutableStateOf(false) }
     var pendingRecord by remember { mutableStateOf<SightingRecord?>(null) }
     var isSaving by remember { mutableStateOf(false) }
 
@@ -108,6 +109,10 @@ fun LoggingScreen(
             Button(
                 onClick = {
                     if (isSaving) return@Button
+                    if (whiteCount + greyCount + calfCount + unknownCount == 0) {
+                        showZeroCountWarning = true
+                        return@Button
+                    }
                     isSaving = true
                     scope.launch {
                         val coords = locationService.getCurrentLocation()
@@ -288,6 +293,30 @@ fun LoggingScreen(
                 dismissButton = {
                     TextButton(onClick = { showGeofenceWarning = false }) {
                         Text("CANCEL", color = Color.White)
+                    }
+                },
+                containerColor = Color(0xFF1E293B),
+                titleContentColor = Color.White,
+                textContentColor = Color.LightGray
+            )
+        }
+
+        // --- ZERO-COUNT WARNING DIALOG ---
+        if (showZeroCountWarning) {
+            AlertDialog(
+                onDismissRequest = { showZeroCountWarning = false },
+                title = {
+                    Text(text = "Invalid Report", fontWeight = FontWeight.Bold)
+                },
+                text = {
+                    Text(text = "0 whales is not a valid report.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { showZeroCountWarning = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                    ) {
+                        Text("OK", color = Color.Black, fontWeight = FontWeight.Black)
                     }
                 },
                 containerColor = Color(0xFF1E293B),

@@ -37,7 +37,7 @@ fun ManualLoggingScreen(
     locationService: LocationService,
     region: RegionConfig = Regions.COOK_INLET,
     onDoneClick: () -> Unit,
-    onOpenCameraClick: () -> Unit
+    onOpenMenuClick: () -> Unit
 ) {
     // Sighting Position State (Defaults safely to region center)
     var sightingLat by remember { mutableStateOf(region.defaultCenterLat) }
@@ -58,6 +58,7 @@ fun ManualLoggingScreen(
 
     // Geofence & Save Controls
     var showGeofenceWarning by remember { mutableStateOf(false) }
+    var showZeroCountWarning by remember { mutableStateOf(false) }
     var pendingRecord by remember { mutableStateOf<SightingRecord?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var isRecentering by remember { mutableStateOf(false) }
@@ -170,8 +171,12 @@ fun ManualLoggingScreen(
             Button(
                 onClick = {
                     if (isSaving) return@Button
+                    if (whiteCount + greyCount + calfCount + unknownCount == 0) {
+                        showZeroCountWarning = true
+                        return@Button
+                    }
                     isSaving = true
-                    
+
                     // Use target map coordinates for the record
                     val targetCenter = cameraState.position.target
                     val record = SightingRecord(
@@ -202,16 +207,16 @@ fun ManualLoggingScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.85f)),
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text("← DONE", color = Color.Yellow, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Text("← SUBMIT", color = Color.Yellow, fontSize = 18.sp, fontWeight = FontWeight.Black)
             }
 
-            // Upper Right: Dedicated CAMERA Capture Button
+            // Upper Right: Return to Main Menu
             Button(
-                onClick = onOpenCameraClick,
+                onClick = onOpenMenuClick,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text("📷 CAMERA", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                Text("☰ MENU", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Black)
             }
         }
 
@@ -443,6 +448,30 @@ fun ManualLoggingScreen(
                 dismissButton = {
                     TextButton(onClick = { showGeofenceWarning = false }) {
                         Text("CANCEL", color = Color.White)
+                    }
+                },
+                containerColor = Color(0xFF1E293B),
+                titleContentColor = Color.White,
+                textContentColor = Color.LightGray
+            )
+        }
+
+        // --- ZERO-COUNT WARNING DIALOG ---
+        if (showZeroCountWarning) {
+            AlertDialog(
+                onDismissRequest = { showZeroCountWarning = false },
+                title = {
+                    Text(text = "Invalid Report", fontWeight = FontWeight.Bold)
+                },
+                text = {
+                    Text(text = "0 whales is not a valid report.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { showZeroCountWarning = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                    ) {
+                        Text("OK", color = Color.Black, fontWeight = FontWeight.Black)
                     }
                 },
                 containerColor = Color(0xFF1E293B),

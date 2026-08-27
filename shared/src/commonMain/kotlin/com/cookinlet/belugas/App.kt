@@ -182,11 +182,11 @@ fun App() {
                     storage = storage,
                     locationService = locationService,
                     region = activeRegion,
-                    onDoneClick = { 
+                    onDoneClick = {
                         currentScreen = Screen.CAPTURE
                         refreshRemoteSightings() // Refresh after new data
                     },
-                    onOpenCameraClick = { currentScreen = Screen.CAPTURE }
+                    onOpenMenuClick = { currentScreen = Screen.MENU }
                 )
             }
             Screen.MENU -> {
