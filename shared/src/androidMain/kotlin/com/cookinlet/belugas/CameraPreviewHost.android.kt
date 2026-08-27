@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -258,17 +259,34 @@ actual fun CameraPreviewHost(
             ) {
                 Text("${"%.1f".format(zoomRatio)}x", color = Color.Yellow, fontSize = 12.sp, fontWeight = FontWeight.Bold)
 
-                // Rotated Slider to act as a vertical control
+                // Rotated Slider to act as a vertical control. A Slider always maps its drag
+                // range to its own pre-rotation *width*, not however long it looks on screen --
+                // sizing it height(150).width(40) then rotating left the actual draggable range
+                // confined to that 40dp width (looking, after rotation, like only a fraction of
+                // the visible 150dp track was interactive). Sizing it width(150).height(40)
+                // instead gives it the full 150dp as its drag axis; the `layout` modifier then
+                // swaps what size the *parent* sees (40 wide x 150 tall) to match the rotated
+                // visual footprint, and re-centers the placement to compensate for rotating
+                // around a differently-shaped box than what the parent now reserves.
                 Slider(
                     value = zoomRatio,
                     onValueChange = { zoomRatio = it },
                     valueRange = 1f..5f,
                     modifier = Modifier
-                        .height(150.dp)
-                        .width(40.dp)
+                        .layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints)
+                            layout(placeable.height, placeable.width) {
+                                placeable.place(
+                                    x = -(placeable.width / 2 - placeable.height / 2),
+                                    y = -(placeable.height / 2 - placeable.width / 2)
+                                )
+                            }
+                        }
                         .graphicsLayer {
                             rotationZ = 270f
                         }
+                        .width(150.dp)
+                        .height(40.dp)
                 )
             }
         }
