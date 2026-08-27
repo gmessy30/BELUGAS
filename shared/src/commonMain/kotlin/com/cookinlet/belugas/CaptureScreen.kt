@@ -12,7 +12,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -108,21 +107,28 @@ fun CaptureScreen(
                         .fillMaxSize()
                         .clip(RoundedCornerShape(24.dp))
                 )
-                Text(
-                    text = if (triggerSnapshot) "SAVING..." else "CAPTURE",
-                    color = Color.Black,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Black,
-                    textAlign = TextAlign.Center,
+                // Letters stacked vertically (each upright, one per line) rather than the
+                // whole word rotated sideways as a single string -- reads top to bottom.
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
-                        .width(180.dp)
-                        .graphicsLayer { rotationZ = 270f }
                         // Fully opaque, not translucent: at 0.75 alpha a dark region of the
                         // sketch image underneath (e.g. the eye) could show through strongly
                         // enough to blend with a letter and make it unreadable.
                         .background(Color.White)
-                        .padding(vertical = 2.dp)
-                )
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    val label = if (triggerSnapshot) "SAVING..." else "CAPTURE"
+                    label.forEach { char ->
+                        Text(
+                            text = char.toString(),
+                            color = Color.Black,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Black,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
             }
         }
     }
