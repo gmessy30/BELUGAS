@@ -111,12 +111,7 @@ fun CaptureScreen(
                 // whole word rotated sideways as a single string -- reads top to bottom.
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        // Fully opaque, not translucent: at 0.75 alpha a dark region of the
-                        // sketch image underneath (e.g. the eye) could show through strongly
-                        // enough to blend with a letter and make it unreadable.
-                        .background(Color.White)
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
                     val label = if (triggerSnapshot) "SAVING..." else "CAPTURE"
                     label.forEach { char ->
