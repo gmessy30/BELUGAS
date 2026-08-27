@@ -16,8 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Placeholder pending a real address from Luna -- swap this out before shipping to real users.
-private const val LUNA_ARTWORK_INQUIRY_EMAIL = "TODO-add-lunas-email@example.com"
+private const val LUNA_ARTWORK_INQUIRY_EMAIL = "REDACTED"
 
 @Composable
 fun AboutScreen(onBack: () -> Unit) {
@@ -46,7 +45,7 @@ fun AboutScreen(onBack: () -> Unit) {
             ) {
                 AboutSection(title = "DEVELOPMENT") {
                     Text(
-                        "BELUGAS is developed by Gregory.",
+                        "BELUGAS is developed by Ryan Messimer.",
                         color = Color.White.copy(alpha = 0.85f),
                         fontSize = 13.sp
                     )
