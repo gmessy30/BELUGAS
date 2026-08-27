@@ -19,9 +19,10 @@ class BelugasApplication : Application() {
             val channel = NotificationChannel(
                 getString(R.string.default_notification_channel_id),
                 "Sighting Alerts",
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Notifications about beluga whale sightings near your subscribed zones."
+                enableVibration(true)
             }
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }

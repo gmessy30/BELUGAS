@@ -1,6 +1,9 @@
 <resources>
     <string name="app_name">BELUGAS</string>
     <!-- Shared between the FCM manifest meta-data below and
-         BelugasApplication's createNotificationChannel call, so both sides can't drift apart. -->
-    <string name="default_notification_channel_id" translatable="false">belugas_sightings</string>
+         BelugasApplication's createNotificationChannel call, so both sides can't drift apart.
+         Renamed from "belugas_sightings" to "belugas_sightings_v2" when importance/vibration
+         changed, since channels are immutable once created on a device: bumping the settings
+         in code alone wouldn't take effect on any install that already has the old channel id. -->
+    <string name="default_notification_channel_id" translatable="false">belugas_sightings_v2</string>
 </resources>
