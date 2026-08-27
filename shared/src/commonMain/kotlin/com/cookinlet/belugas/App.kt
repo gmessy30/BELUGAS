@@ -46,7 +46,8 @@ enum class Screen {
     MENU,
     SIGHTINGS_LIST,
     NEWS_FEED,
-    RESOURCES
+    RESOURCES,
+    ABOUT
 }
 
 // How long the splash screen stays up before navigating to the launch-preference screen.
@@ -196,6 +197,7 @@ fun App() {
                     onNavigateToList = { currentScreen = Screen.SIGHTINGS_LIST },
                     onNavigateToNewsFeed = { currentScreen = Screen.NEWS_FEED },
                     onNavigateToResources = { currentScreen = Screen.RESOURCES },
+                    onNavigateToAbout = { currentScreen = Screen.ABOUT },
                     storage = storage,
                     currentAltitude = currentAltitude,
                     appPreferences = appPreferences
@@ -214,6 +216,9 @@ fun App() {
             }
             Screen.RESOURCES -> {
                 ResourcesScreen(onBack = { currentScreen = Screen.MENU })
+            }
+            Screen.ABOUT -> {
+                AboutScreen(onBack = { currentScreen = Screen.MENU })
             }
             Screen.MAP -> {
                 SightingsMapScreen(
@@ -563,6 +568,7 @@ fun MainMenuDrawer(
     onNavigateToList: () -> Unit,
     onNavigateToNewsFeed: () -> Unit,
     onNavigateToResources: () -> Unit,
+    onNavigateToAbout: () -> Unit,
     storage: LocalFileStorage,
     currentAltitude: Double,
     appPreferences: AppPreferences
@@ -621,6 +627,7 @@ fun MainMenuDrawer(
                 "SIGHTINGS MAP",
                 "NEWS FEED",
                 "RESOURCES",
+                "ABOUT",
                 "SCREEN NAME",
                 "(DE)REGISTER"
             )
@@ -641,6 +648,7 @@ fun MainMenuDrawer(
                                 "SIGHTINGS MAP" -> onNavigateToMap()
                                 "NEWS FEED" -> onNavigateToNewsFeed()
                                 "RESOURCES" -> onNavigateToResources()
+                                "ABOUT" -> onNavigateToAbout()
                             }
                         }
                 )
