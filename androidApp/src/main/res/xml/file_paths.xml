@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backs the FileProvider used to share data-export files (see FileSharer.android.kt).
+     "exports" matches the cacheDir subdirectory FileSharer writes into. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="exports" path="exports/" />
+</paths>

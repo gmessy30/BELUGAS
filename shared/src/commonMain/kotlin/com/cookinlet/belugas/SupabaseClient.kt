@@ -15,6 +15,8 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import kotlin.time.Duration.Companion.seconds
 
 // Public bucket created by supabase/migrations/20260818000000_add_photo_url_to_sightings.sql
@@ -65,6 +67,21 @@ enum class ArticleContentType(val dbValue: String) {
     RESEARCH_PAPER("research_paper")
 }
 
+// Matches supabase/migrations/20260819000000_add_notification_zones_and_subscriptions.sql +
+// the seeded rows in 20260819130000_seed_notification_zones_and_point_presets.sql. `boundary`
+// is deliberately not modeled here -- the app never needs the raw polygon client-side, only
+// the slug to hand back to the export_sightings RPC, which does containment in PostGIS.
+@Serializable
+data class ZoneRecord(
+    val id: String = "",
+    val slug: String,
+    val name: String,
+    @SerialName("region_id")
+    val regionId: String,
+    @SerialName("display_order")
+    val displayOrder: Int = 0
+)
+
 @Serializable
 data class ArticleRecord(
     val id: String = "",
@@ -77,6 +94,19 @@ data class ArticleRecord(
     @SerialName("content_type")
     val contentType: String,
     val status: String = "pending_review"
+)
+
+// Parameter names must match export_sightings' SQL argument names exactly -- Postgrest RPC
+// serializes this object's fields directly as the call's named arguments.
+@Serializable
+private data class ExportSightingsParams(
+    @SerialName("p_start_ms") val startMs: Long,
+    @SerialName("p_end_ms") val endMs: Long,
+    @SerialName("p_min_lat") val minLat: Double,
+    @SerialName("p_max_lat") val maxLat: Double,
+    @SerialName("p_min_lng") val minLng: Double,
+    @SerialName("p_max_lng") val maxLng: Double,
+    @SerialName("p_zone_slug") val zoneSlug: String? = null
 )
 
 object SupabaseApi {
@@ -201,6 +231,54 @@ object SupabaseApi {
             e.printStackTrace()
             false
         }
+    }
+
+    /**
+     * Fetches the curated zone presets for one region (e.g. "cook_inlet"), ordered for display,
+     * for the export screen's zone picker. Empty for a region with no seeded zones (e.g.
+     * St. Lawrence) -- callers should fall back to region-only filtering in that case.
+     */
+    suspend fun getZones(regionId: String): List<ZoneRecord> {
+        return try {
+            supabase.postgrest["zones"].select {
+                filter { eq("region_id", regionId) }
+                order("display_order", Order.ASCENDING)
+            }.decodeList<ZoneRecord>()
+        } catch (e: Exception) {
+            println("ZONES_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    /**
+     * Fetches sightings for the data-export feature: within [startMs, endMs] and inside
+     * [region]'s bounding box, additionally narrowed to a single zone's real polygon
+     * (server-side, via export_sightings' PostGIS containment check) when [zoneSlug] is given.
+     *
+     * Deliberately does NOT swallow failures to an empty list the way getSightings() below
+     * does -- the export screen needs to tell "genuinely no matches" apart from "the RPC call
+     * itself failed" (e.g. the migration adding export_sightings hasn't been run yet), so this
+     * lets the caller's try/catch surface the real exception message instead.
+     */
+    suspend fun exportSightings(
+        startMs: Long,
+        endMs: Long,
+        region: RegionConfig,
+        zoneSlug: String?
+    ): List<SightingRecord> {
+        val params = jsonConfig.encodeToJsonElement(
+            ExportSightingsParams(
+                startMs = startMs,
+                endMs = endMs,
+                minLat = region.minLat,
+                maxLat = region.maxLat,
+                minLng = region.minLng,
+                maxLng = region.maxLng,
+                zoneSlug = zoneSlug
+            )
+        ).jsonObject
+        return supabase.postgrest.rpc("export_sightings", params).decodeList<SightingRecord>()
     }
 
     /**

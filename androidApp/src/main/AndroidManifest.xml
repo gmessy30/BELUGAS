@@ -48,6 +48,19 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- Grants the share-sheet chooser Intent.ACTION_SEND launches temporary read access
+             to a data-export file living under cacheDir/exports (see FileSharer.android.kt),
+             without exposing the app's files broadly via a file:// URI. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.cookinlet.belugas.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>
