@@ -30,8 +30,10 @@ import org.maplibre.compose.expressions.value.StringValue
 import org.maplibre.compose.expressions.value.EquatableValue
 import androidx.compose.ui.unit.em
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.animation.*
 import androidx.compose.foundation.shape.CircleShape
+import org.maplibre.compose.util.ClickResult
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -166,6 +168,7 @@ fun SightingsMapScreen(
             zoom = region.defaultZoom
         )
     )
+    val coroutineScope = rememberCoroutineScope()
 
     Box(modifier = Modifier.fillMaxSize()) {
         // --- 1. ONLINE MAPLIBRE VECTOR MAP ---
@@ -309,6 +312,22 @@ fun SightingsMapScreen(
                     .eq(const(false).cast<EquatableValue>())
                 val isCluster = feature.has("point_count")
 
+                // Tapping a cluster badge zooms/animates the camera in to exactly the zoom
+                // level at which MapLibre's clustering would split it back into its individual
+                // sightings (native getClusterExpansionZoom), rather than leaving the user to
+                // manually zoom in and hope they land past the threshold.
+                fun onClusterClick(clickedFeatures: List<org.maplibre.spatialk.geojson.Feature<out org.maplibre.spatialk.geojson.Geometry, kotlinx.serialization.json.JsonObject?>>): ClickResult {
+                    val clusterFeature = clickedFeatures.firstOrNull() ?: return ClickResult.Pass
+                    val clusterPoint = clusterFeature.geometry as? Point ?: return ClickResult.Pass
+                    val expansionZoom = source.getClusterExpansionZoom(clusterFeature)
+                    coroutineScope.launch {
+                        cameraState.animateTo(
+                            CameraPosition(target = clusterPoint.coordinates, zoom = expansionZoom)
+                        )
+                    }
+                    return ClickResult.Consume
+                }
+
                 // Circle Layer as a reliable fallback (always visible). Filtered to unclustered
                 // points only -- clustered points are represented by the badge layers below
                 // instead of stacking individual dots on top of each other.
@@ -354,7 +373,8 @@ fun SightingsMapScreen(
                     color = const(Color(0xFFFF6D00)),
                     radius = const(14.dp),
                     strokeColor = const(Color.Black),
-                    strokeWidth = const(2.dp)
+                    strokeWidth = const(2.dp),
+                    onClick = ::onClusterClick
                 )
                 SymbolLayer(
                     id = "sightings-cluster-count",
@@ -363,7 +383,8 @@ fun SightingsMapScreen(
                     textField = format(span(feature.get("point_count_abbreviated").cast<StringValue>())),
                     textColor = const(Color.White),
                     textSize = const(12.sp),
-                    textAllowOverlap = const(true)
+                    textAllowOverlap = const(true),
+                    onClick = ::onClusterClick
                 )
             }
         }
