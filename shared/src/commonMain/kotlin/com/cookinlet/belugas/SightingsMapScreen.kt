@@ -22,10 +22,12 @@ import org.maplibre.compose.layers.FillLayer
 import org.maplibre.compose.layers.LineLayer
 import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.compose.sources.GeoJsonData
+import org.maplibre.compose.sources.GeoJsonOptions
 import org.maplibre.spatialk.geojson.Point
 import kotlinx.serialization.json.JsonPrimitive
 import org.maplibre.compose.expressions.dsl.*
 import org.maplibre.compose.expressions.value.StringValue
+import org.maplibre.compose.expressions.value.EquatableValue
 import androidx.compose.ui.unit.em
 import kotlinx.coroutines.delay
 import androidx.compose.animation.*
@@ -294,12 +296,26 @@ fun SightingsMapScreen(
                     """{ "type": "FeatureCollection", "features": [ ${features.joinToString(",")} ] }"""
                 }
 
-                val source = rememberGeoJsonSource(data = GeoJsonData.JsonString(geoJsonString))
+                // Clustering groups points by screen-space (pixel) proximity, not ground
+                // distance, and is recomputed per zoom level -- so sightings that visually
+                // overlap at the current zoom collapse into one badge, then separate back into
+                // individual markers as the user zooms in past clusterMaxZoom. clusterRadius is
+                // left at its default (50px) to match MapLibre's usual clustering feel.
+                val source = rememberGeoJsonSource(
+                    data = GeoJsonData.JsonString(geoJsonString),
+                    options = GeoJsonOptions(cluster = true)
+                )
+                val isUnclustered = feature.has("point_count").cast<EquatableValue>()
+                    .eq(const(false).cast<EquatableValue>())
+                val isCluster = feature.has("point_count")
 
-                // Circle Layer as a reliable fallback (always visible)
+                // Circle Layer as a reliable fallback (always visible). Filtered to unclustered
+                // points only -- clustered points are represented by the badge layers below
+                // instead of stacking individual dots on top of each other.
                 CircleLayer(
                     id = "sightings-circles",
                     source = source,
+                    filter = isUnclustered,
                     color = const(Color.Yellow),
                     radius = const(10.dp),
                     strokeColor = const(Color.Black),
@@ -315,6 +331,7 @@ fun SightingsMapScreen(
                 SymbolLayer(
                     id = "sightings-labels",
                     source = source,
+                    filter = isUnclustered,
                     sortKey = feature.get("sortKey").cast(),
                     textField = format(span(feature.get("title").cast<StringValue>())),
                     textColor = const(Color.Black),
@@ -323,6 +340,29 @@ fun SightingsMapScreen(
                     textSize = const(11.sp),
                     textOffset = offset(0.em, 2.em),
                     textOpacity = feature.get("alpha").cast(),
+                    textAllowOverlap = const(true)
+                )
+
+                // Cluster badge: replaces the individual dots/labels above once enough
+                // sightings land close enough together on screen. Color is distinct from the
+                // plain yellow sighting dot so a badge always reads as "N sightings here",
+                // never as a single sighting.
+                CircleLayer(
+                    id = "sightings-cluster-circles",
+                    source = source,
+                    filter = isCluster,
+                    color = const(Color(0xFFFF6D00)),
+                    radius = const(14.dp),
+                    strokeColor = const(Color.Black),
+                    strokeWidth = const(2.dp)
+                )
+                SymbolLayer(
+                    id = "sightings-cluster-count",
+                    source = source,
+                    filter = isCluster,
+                    textField = format(span(feature.get("point_count_abbreviated").cast<StringValue>())),
+                    textColor = const(Color.White),
+                    textSize = const(12.sp),
                     textAllowOverlap = const(true)
                 )
             }
