@@ -17,10 +17,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Size of the rectangular reticle below, in dp. Exposed so the platform camera capture code
-// can crop the saved photo down to this same region without duplicating the magic numbers.
-const val RETICLE_WIDTH_DP = 360f
-const val RETICLE_HEIGHT_DP = 180f
+// Side length of the square reticle below, in dp -- the single source of truth for "this is
+// the capture area". Exposed so the platform camera capture code can crop the saved photo down
+// to this same region without duplicating the magic number or risking it drifting out of sync
+// with what's drawn on screen.
+const val RETICLE_SIZE_DP = 180f
 
 // Shared between the "BELUGAS" and "GO HERE" labels so the two roughly mirror each other's
 // width (both are 7 characters) instead of the mismatched sizes they had before.
@@ -60,9 +61,9 @@ fun SketchedReticle(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // --- 2. RECTANGULAR LANDSCAPE RETICLE (360dp x 180dp) ---
+        // --- 2. SQUARE RETICLE (180dp x 180dp) -- matches the actual photo crop area ---
         Box(
-            modifier = Modifier.size(width = RETICLE_WIDTH_DP.dp, height = RETICLE_HEIGHT_DP.dp),
+            modifier = Modifier.size(RETICLE_SIZE_DP.dp),
             contentAlignment = Alignment.Center
         ) {
             if (reticleArtwork != null) {

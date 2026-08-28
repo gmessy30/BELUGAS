@@ -299,20 +299,20 @@ actual fun CameraPreviewHost(
  * own root Box (which the sibling SketchedReticle overlay in CaptureScreen shares exactly),
  * and [density] converts the reticle's fixed dp size into that same pixel space.
  *
- * The square's side is the reticle's height (its constraining dimension, since the reticle box
- * is always wider than tall) and is centered on the same point the reticle is -- the
- * screen/host center. This produces the right region regardless of device orientation because:
- * Preview and ImageCapture are bound through a shared, rotation-aware ViewPort (see the binding
- * above, rebound on every orientation change), which keeps the saved photo's aspect ratio and
- * framing matched to what's actually shown on screen; and the EXIF correction below undoes the
- * rotation CameraX bakes into the JPEG's orientation tag, so the decoded bitmap's width/height
- * axes line up with the host's on-screen width/height axes rather than the sensor's fixed ones.
+ * The square's side is RETICLE_SIZE_DP -- the same constant the visible reticle box is drawn
+ * at -- and is centered on the same point the reticle is -- the screen/host center. This
+ * produces the right region regardless of device orientation because: Preview and ImageCapture
+ * are bound through a shared, rotation-aware ViewPort (see the binding above, rebound on every
+ * orientation change), which keeps the saved photo's aspect ratio and framing matched to what's
+ * actually shown on screen; and the EXIF correction below undoes the rotation CameraX bakes into
+ * the JPEG's orientation tag, so the decoded bitmap's width/height axes line up with the host's
+ * on-screen width/height axes rather than the sensor's fixed ones.
  */
 private fun cropToReticleSquare(photoFile: File, hostSize: IntSize, density: Density) {
     if (hostSize.width <= 0 || hostSize.height <= 0) return
 
-    val reticleHeightPx = with(density) { RETICLE_HEIGHT_DP.dp.toPx() }
-    val squareFractionOfHostHeight = (reticleHeightPx / hostSize.height).coerceIn(0f, 1f)
+    val reticleSizePx = with(density) { RETICLE_SIZE_DP.dp.toPx() }
+    val squareFractionOfHostHeight = (reticleSizePx / hostSize.height).coerceIn(0f, 1f)
 
     val decoded = BitmapFactory.decodeFile(photoFile.absolutePath) ?: return
     val rotationDegrees = try {
