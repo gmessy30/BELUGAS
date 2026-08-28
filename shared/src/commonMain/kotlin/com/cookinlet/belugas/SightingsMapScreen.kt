@@ -2,6 +2,8 @@ package com.cookinlet.belugas
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -170,6 +172,11 @@ fun SightingsMapScreen(
     )
     val coroutineScope = rememberCoroutineScope()
 
+    // Populated when a tapped cluster's sightings all share one exact coordinate (so no
+    // further zoom could ever spatially separate them) -- (timestamp, title) pairs, most
+    // recent first. Non-null shows the same-location sightings as a bottom sheet.
+    var samePointSightings by remember { mutableStateOf<List<Pair<Long, String>>?>(null) }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // --- 1. ONLINE MAPLIBRE VECTOR MAP ---
         // Forcing a surface re-bind ensures the GL context isn't lost on mode changes or data updates
@@ -312,13 +319,33 @@ fun SightingsMapScreen(
                     .eq(const(false).cast<EquatableValue>())
                 val isCluster = feature.has("point_count")
 
-                // Tapping a cluster badge zooms/animates the camera in to exactly the zoom
-                // level at which MapLibre's clustering would split it back into its individual
-                // sightings (native getClusterExpansionZoom), rather than leaving the user to
-                // manually zoom in and hope they land past the threshold.
+                // Tapping a cluster badge normally zooms/animates the camera in to exactly the
+                // zoom level at which MapLibre's clustering would split it back into its
+                // individual sightings (native getClusterExpansionZoom). But when every
+                // sighting in the cluster shares the exact same coordinates -- the predominant
+                // case in practice, since manual reports are almost always logged from one of a
+                // handful of fixed vantage points -- no amount of zooming will ever visually
+                // separate them. Detect that directly, by pulling the cluster's actual leaf
+                // sightings and checking whether they all land on one point, rather than
+                // inferring it indirectly from the expansion zoom number; if so, list them
+                // instead of animating the camera nowhere useful.
                 fun onClusterClick(clickedFeatures: List<org.maplibre.spatialk.geojson.Feature<out org.maplibre.spatialk.geojson.Geometry, kotlinx.serialization.json.JsonObject?>>): ClickResult {
                     val clusterFeature = clickedFeatures.firstOrNull() ?: return ClickResult.Pass
                     val clusterPoint = clusterFeature.geometry as? Point ?: return ClickResult.Pass
+
+                    val leaves = source.getClusterLeaves(clusterFeature, limit = Long.MAX_VALUE, offset = 0L).features
+                    val distinctPositions = leaves.mapNotNull { (it.geometry as? Point)?.coordinates }.distinct()
+
+                    if (distinctPositions.size <= 1) {
+                        samePointSightings = leaves.mapNotNull { leaf ->
+                            val properties = leaf.properties ?: return@mapNotNull null
+                            val title = (properties["title"] as? JsonPrimitive)?.content ?: return@mapNotNull null
+                            val sortKey = (properties["sortKey"] as? JsonPrimitive)?.content?.toLongOrNull() ?: 0L
+                            sortKey to title
+                        }.sortedByDescending { it.first }
+                        return ClickResult.Consume
+                    }
+
                     val expansionZoom = source.getClusterExpansionZoom(clusterFeature)
                     coroutineScope.launch {
                         cameraState.animateTo(
@@ -659,6 +686,26 @@ fun SightingsMapScreen(
                 }
             ) {
                 DatePicker(state = datePickerState)
+            }
+        }
+
+        // Same-location sightings sheet: shown instead of a cluster-expansion zoom when the
+        // tapped cluster's sightings all share one exact coordinate, so the individual reports
+        // are still reachable even though the map can never spatially separate them.
+        samePointSightings?.let { sightings ->
+            ModalBottomSheet(onDismissRequest = { samePointSightings = null }) {
+                Text(
+                    "${sightings.size} sightings at this location",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(sightings) { (_, title) ->
+                        Text(title, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                        HorizontalDivider()
+                    }
+                }
             }
         }
 
