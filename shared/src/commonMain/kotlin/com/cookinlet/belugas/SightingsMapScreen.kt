@@ -176,6 +176,27 @@ fun SightingsMapScreen(
                 baseStyle = BaseStyle.Uri("https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"),
                 options = getMapOptions()
             ) {
+                // Warm up the style's font glyph cache as soon as the map mounts, instead of
+                // waiting for the first real sighting label to need it. FillLayer/LineLayer
+                // (the sector wedges) paint straight from in-memory geometry, but SymbolLayer
+                // text requires glyph ranges fetched from the style's font server the first
+                // time any text is rasterized -- previously that fetch only kicked off once
+                // real sighting data produced a label, after the (also async) sightings fetch
+                // completed. Mounting an invisible label immediately lets glyph loading run in
+                // parallel with the sightings fetch instead of strictly after it.
+                val glyphWarmupSource = rememberGeoJsonSource(
+                    data = GeoJsonData.JsonString(
+                        """{ "type": "FeatureCollection", "features": [ { "type": "Feature", "geometry": { "type": "Point", "coordinates": [${region.defaultCenterLng}, ${region.defaultCenterLat}] }, "properties": {} } ] }"""
+                    )
+                )
+                SymbolLayer(
+                    id = "glyph-warmup",
+                    source = glyphWarmupSource,
+                    textField = format(span(const("0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz,.·"))),
+                    textOpacity = const(0f),
+                    textAllowOverlap = const(true)
+                )
+
                 // Filter logic based on current mode
                 val visibleSightings = if (!isPlaybackVisible) {
                     // Standard Mode: Show everything
@@ -264,7 +285,8 @@ fun SightingsMapScreen(
                           "properties": {
                             "title": "$captionText",
                             "alpha": $alpha,
-                            "source": "${if (s.isLocal) "Local" else "Supabase"}"
+                            "source": "${if (s.isLocal) "Local" else "Supabase"}",
+                            "sortKey": ${s.timestamp}
                           }
                         }
                         """.trimIndent()
@@ -285,17 +307,23 @@ fun SightingsMapScreen(
                     opacity = feature.get("alpha").cast()
                 )
 
-                // Label Layer for text
+                // Label Layer for text. textAllowOverlap disables MapLibre's default label
+                // collision detection, which otherwise silently hides all but one label when
+                // multiple sightings share the same (or very close) coordinates. sortKey
+                // (by timestamp) makes the resulting draw order deterministic -- the most
+                // recent sighting's label paints on top -- instead of an arbitrary tie-break.
                 SymbolLayer(
                     id = "sightings-labels",
                     source = source,
+                    sortKey = feature.get("sortKey").cast(),
                     textField = format(span(feature.get("title").cast<StringValue>())),
                     textColor = const(Color.Black),
                     textHaloColor = const(Color.White),
                     textHaloWidth = const(2.dp),
                     textSize = const(11.sp),
                     textOffset = offset(0.em, 2.em),
-                    textOpacity = feature.get("alpha").cast()
+                    textOpacity = feature.get("alpha").cast(),
+                    textAllowOverlap = const(true)
                 )
             }
         }
