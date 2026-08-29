@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 private const val PREFS_NAME = "belugas_prefs"
 private const val KEY_LAUNCH_SCREEN = "launch_screen"
 private const val KEY_FCM_TOKEN = "fcm_token"
+private const val KEY_SUBSCRIBER_ID = "subscriber_id"
 
 actual class AppPreferences actual constructor() {
     private val prefs by lazy {
@@ -28,5 +29,13 @@ actual class AppPreferences actual constructor() {
 
     actual suspend fun setFcmToken(token: String): Unit = withContext(Dispatchers.IO) {
         prefs.edit().putString(KEY_FCM_TOKEN, token).apply()
+    }
+
+    actual suspend fun getSubscriberId(): String? = withContext(Dispatchers.IO) {
+        prefs.getString(KEY_SUBSCRIBER_ID, null)
+    }
+
+    actual suspend fun setSubscriberId(id: String): Unit = withContext(Dispatchers.IO) {
+        prefs.edit().putString(KEY_SUBSCRIBER_ID, id).apply()
     }
 }

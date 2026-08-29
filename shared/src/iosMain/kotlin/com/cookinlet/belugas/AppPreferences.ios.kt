@@ -6,6 +6,7 @@ import platform.Foundation.NSUserDefaults
 
 private const val KEY_LAUNCH_SCREEN = "launch_screen"
 private const val KEY_FCM_TOKEN = "fcm_token"
+private const val KEY_SUBSCRIBER_ID = "subscriber_id"
 
 actual class AppPreferences actual constructor() {
     private val defaults = NSUserDefaults.standardUserDefaults
@@ -27,5 +28,13 @@ actual class AppPreferences actual constructor() {
 
     actual suspend fun setFcmToken(token: String): Unit = withContext(Dispatchers.Default) {
         defaults.setObject(token, forKey = KEY_FCM_TOKEN)
+    }
+
+    actual suspend fun getSubscriberId(): String? = withContext(Dispatchers.Default) {
+        defaults.stringForKey(KEY_SUBSCRIBER_ID)
+    }
+
+    actual suspend fun setSubscriberId(id: String): Unit = withContext(Dispatchers.Default) {
+        defaults.setObject(id, forKey = KEY_SUBSCRIBER_ID)
     }
 }

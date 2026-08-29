@@ -48,7 +48,8 @@ enum class Screen {
     NEWS_FEED,
     RESOURCES,
     ABOUT,
-    EXPORT
+    EXPORT,
+    SUBSCRIPTIONS
 }
 
 // How long the splash screen stays up before navigating to the launch-preference screen.
@@ -200,6 +201,7 @@ fun App() {
                     onNavigateToResources = { currentScreen = Screen.RESOURCES },
                     onNavigateToAbout = { currentScreen = Screen.ABOUT },
                     onNavigateToExport = { currentScreen = Screen.EXPORT },
+                    onNavigateToSubscriptions = { currentScreen = Screen.SUBSCRIPTIONS },
                     storage = storage,
                     currentAltitude = currentAltitude,
                     appPreferences = appPreferences
@@ -224,6 +226,12 @@ fun App() {
             }
             Screen.EXPORT -> {
                 ExportScreen(onBack = { currentScreen = Screen.MENU })
+            }
+            Screen.SUBSCRIPTIONS -> {
+                SubscriptionsScreen(
+                    onBack = { currentScreen = Screen.MENU },
+                    appPreferences = appPreferences
+                )
             }
             Screen.MAP -> {
                 SightingsMapScreen(
@@ -575,6 +583,7 @@ fun MainMenuDrawer(
     onNavigateToResources: () -> Unit,
     onNavigateToAbout: () -> Unit,
     onNavigateToExport: () -> Unit,
+    onNavigateToSubscriptions: () -> Unit,
     storage: LocalFileStorage,
     currentAltitude: Double,
     appPreferences: AppPreferences
@@ -635,6 +644,7 @@ fun MainMenuDrawer(
                 "RESOURCES",
                 "ABOUT",
                 "EXPORT DATA",
+                "ALERTS",
                 "SCREEN NAME",
                 "(DE)REGISTER"
             )
@@ -657,6 +667,7 @@ fun MainMenuDrawer(
                                 "RESOURCES" -> onNavigateToResources()
                                 "ABOUT" -> onNavigateToAbout()
                                 "EXPORT DATA" -> onNavigateToExport()
+                                "ALERTS" -> onNavigateToSubscriptions()
                             }
                         }
                 )

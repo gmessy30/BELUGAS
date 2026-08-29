@@ -82,6 +82,34 @@ data class ZoneRecord(
     val displayOrder: Int = 0
 )
 
+// The `confidence_filter` values a zone subscription can be created with. Matches
+// public.subscription_confidence_filter in
+// supabase/migrations/20260819000000_add_notification_zones_and_subscriptions.sql.
+enum class SubscriptionConfidenceFilter(val dbValue: String, val label: String) {
+    ALL("all", "All Sightings"),
+    VERIFIED_ONLY("verified_only", "Verified Observer Only")
+}
+
+// Matches the columns Stage 1 (zone-kind subscription management) touches on
+// public.subscriptions -- custom_polygon/point/radius_meters/expires_at/updated_at aren't
+// modeled here since nothing in this stage reads or writes them. `kind` is always the literal
+// "zone" for now; other kinds (custom_polygon, point_radius) are a later stage.
+@Serializable
+data class SubscriptionRecord(
+    val id: String = "",
+    @SerialName("subscriber_id")
+    val subscriberId: String,
+    val kind: String,
+    @SerialName("confidence_filter")
+    val confidenceFilter: String = SubscriptionConfidenceFilter.ALL.dbValue,
+    @SerialName("is_active")
+    val isActive: Boolean = true,
+    @SerialName("zone_id")
+    val zoneId: String? = null,
+    @SerialName("created_at")
+    val createdAt: String? = null
+)
+
 @Serializable
 data class ArticleRecord(
     val id: String = "",
@@ -248,6 +276,67 @@ object SupabaseApi {
             println("ZONES_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
             e.printStackTrace()
             emptyList()
+        }
+    }
+
+    /**
+     * Fetches one subscriber's zone-watch subscriptions, newest first, for the subscriptions
+     * management screen.
+     */
+    suspend fun getSubscriptions(subscriberId: String): List<SubscriptionRecord> {
+        return try {
+            supabase.postgrest["subscriptions"].select {
+                filter { eq("subscriber_id", subscriberId) }
+                order("created_at", Order.DESCENDING)
+            }.decodeList<SubscriptionRecord>()
+        } catch (e: Exception) {
+            println("SUBSCRIPTIONS_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    /**
+     * Creates a kind='zone' subscription watching [zoneId] for [subscriberId]. Returns true on
+     * success, false on failure (network or RLS).
+     */
+    suspend fun createZoneSubscription(
+        subscriberId: String,
+        zoneId: String,
+        confidenceFilter: SubscriptionConfidenceFilter
+    ): Boolean {
+        return try {
+            supabase.postgrest["subscriptions"].insert(
+                SubscriptionRecord(
+                    subscriberId = subscriberId,
+                    kind = "zone",
+                    confidenceFilter = confidenceFilter.dbValue,
+                    zoneId = zoneId
+                )
+            )
+            println("SUBSCRIPTION_CREATE_SUCCESS")
+            true
+        } catch (e: Exception) {
+            println("SUBSCRIPTION_CREATE_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Deletes a subscription by id. Returns true on success, false on failure.
+     */
+    suspend fun deleteSubscription(id: String): Boolean {
+        return try {
+            supabase.postgrest["subscriptions"].delete {
+                filter { eq("id", id) }
+            }
+            println("SUBSCRIPTION_DELETE_SUCCESS")
+            true
+        } catch (e: Exception) {
+            println("SUBSCRIPTION_DELETE_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            false
         }
     }
 
