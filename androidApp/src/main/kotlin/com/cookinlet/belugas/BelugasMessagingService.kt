@@ -11,10 +11,9 @@ private const val TAG = "BelugasFCM"
 
 /**
  * Registers the device for FCM and captures its token: persisted locally via AppPreferences,
- * and upserted to Supabase's flat device_tokens table so the notify-new-sighting edge
- * function can broadcast to it. Zone/subscriber targeting (the subscriptions table's
- * subscriber_id) is a deliberate follow-up, not built here -- every registered device gets
- * every sighting for now.
+ * and upserted to Supabase's device_tokens table (linked to this device's subscriber_id) so
+ * the notify-new-sighting edge function's match_notification_recipients RPC can target it
+ * based on its actual subscriptions -- falling back to a broadcast if it has none active.
  */
 class BelugasMessagingService : FirebaseMessagingService() {
 
@@ -37,8 +36,9 @@ class BelugasMessagingService : FirebaseMessagingService() {
         super.onNewToken(token)
         Log.d(TAG, "New FCM token: $token")
         CoroutineScope(Dispatchers.IO).launch {
-            AppPreferences().setFcmToken(token)
-            SupabaseApi.registerDeviceToken(token)
+            val appPreferences = AppPreferences()
+            appPreferences.setFcmToken(token)
+            SupabaseApi.registerDeviceToken(token, appPreferences.getOrCreateSubscriberId())
         }
     }
 

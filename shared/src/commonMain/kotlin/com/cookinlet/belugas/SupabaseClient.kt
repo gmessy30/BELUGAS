@@ -51,13 +51,19 @@ val supabase = createSupabaseClient(
 // Data model matching our Supabase 'sightings' table schema
 enum class ObserverType { SELF, OTHER }
 
-// Matches supabase/migrations/20260823000000_add_device_tokens_and_notify_trigger.sql --
-// flat device-token registry for the minimal broadcast notification pipeline (no
-// subscriber/zone targeting yet).
+// Matches supabase/migrations/20260823000000_add_device_tokens_and_notify_trigger.sql, plus
+// the subscriber_id link added in
+// supabase/migrations/20260829010000_add_subscription_matching.sql -- Stage 3's
+// match_notification_recipients RPC joins on it to find a subscriber's device(s). Nullable
+// on the table (and here) since a device that hasn't re-registered since that migration
+// shipped won't have one yet -- the RPC treats that the same as "no active subscriptions"
+// (broadcast fallback), so nothing silently stops getting notified during rollout.
 @Serializable
 private data class DeviceTokenRecord(
     @SerialName("fcm_token")
-    val fcmToken: String
+    val fcmToken: String,
+    @SerialName("subscriber_id")
+    val subscriberId: String
 )
 
 // Matches supabase/migrations/20260823120000_add_articles.sql. "SELF" is not involved here --
@@ -230,13 +236,15 @@ object SupabaseApi {
     }
 
     /**
-     * Registers (or refreshes) this device's FCM token in the flat device_tokens broadcast
-     * list. Upserts on fcm_token so re-registering the same token (e.g. on every app launch,
-     * not just on a real refresh) is a no-op rather than an error.
+     * Registers (or refreshes) this device's FCM token, linked to [subscriberId] so Stage 3's
+     * match_notification_recipients RPC can find this device's subscriptions. Upserts on
+     * fcm_token so re-registering the same token (e.g. on every app launch, not just on a real
+     * refresh) is a no-op rather than an error -- also keeps subscriber_id in sync if it were
+     * ever somehow stale.
      */
-    suspend fun registerDeviceToken(token: String): Boolean {
+    suspend fun registerDeviceToken(token: String, subscriberId: String): Boolean {
         return try {
-            supabase.postgrest["device_tokens"].upsert(DeviceTokenRecord(token)) {
+            supabase.postgrest["device_tokens"].upsert(DeviceTokenRecord(token, subscriberId)) {
                 onConflict = "fcm_token"
             }
             println("DEVICE_TOKEN_REGISTER_SUCCESS")

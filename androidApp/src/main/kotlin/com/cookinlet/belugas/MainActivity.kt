@@ -45,8 +45,9 @@ class MainActivity : ComponentActivity() {
             if (task.isSuccessful) {
                 val token = task.result
                 CoroutineScope(Dispatchers.IO).launch {
-                    AppPreferences().setFcmToken(token)
-                    SupabaseApi.registerDeviceToken(token)
+                    val appPreferences = AppPreferences()
+                    appPreferences.setFcmToken(token)
+                    SupabaseApi.registerDeviceToken(token, appPreferences.getOrCreateSubscriberId())
                 }
             }
         }

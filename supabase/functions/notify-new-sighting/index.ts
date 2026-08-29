@@ -1,10 +1,12 @@
-// Minimal flat-broadcast notification pipeline. Triggered by a Postgres AFTER INSERT trigger
-// on public.sightings (see supabase/migrations/20260823000000_add_device_tokens_and_notify_trigger.sql):
-// fetches every row in device_tokens and sends each one an FCM push via the HTTP v1 send API.
-// No zone matching, confidence filtering, or dedup -- every registered device gets every
-// sighting, intentionally, for fast closed-testing turnaround. The real targeted system this
-// is meant to be superseded by is the notification zones/subscriptions schema in
-// 20260819000000_add_notification_zones_and_subscriptions.sql.
+// Notification dispatch. Triggered by a Postgres AFTER INSERT trigger on public.sightings (see
+// supabase/migrations/20260823000000_add_device_tokens_and_notify_trigger.sql): resolves which
+// device tokens should hear about this sighting via the match_notification_recipients RPC
+// (supabase/migrations/20260829010000_add_subscription_matching.sql -- zone/custom-polygon
+// containment, point+radius great-circle distance, confidence_filter, expires_at, and a
+// broadcast fallback for any device with zero active subscriptions, all computed in that one
+// SQL function so it can use PostGIS's indexes), then sends each a single FCM push via the
+// HTTP v1 send API. Dedup is inherent -- the RPC returns each fcm_token at most once even if
+// several of that device's subscriptions matched.
 //
 // SETUP (none of this can be done from the repo/CLI-less environment that wrote this file --
 // these are the manual steps to actually stand this up):
@@ -32,7 +34,14 @@
 //    including a freshly generated "fixed" one, belongs in a committed file, even as an
 //    example.
 //
-// 4. Run the migration (creates device_tokens + the trigger that calls this function).
+// 4. Run the migrations (creates device_tokens + the trigger that calls this function, and --
+//    as of Stage 3 -- 20260829010000_add_subscription_matching.sql, which this function's
+//    fetchMatchingDeviceTokens() depends on: without it, match_notification_recipients won't
+//    exist and every call to this function will fail).
+//
+// 5. Redeploy (step 2's command again) any time this file changes -- Stage 3 replaced the
+//    flat device_tokens broadcast with real subscription matching; a stale deployed version
+//    would keep broadcasting to everyone regardless of what the migration above adds.
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -45,6 +54,13 @@ interface SightingRow {
   count_greys?: number;
   count_calves?: number;
   count_unknown?: number;
+  // May be null -- a stray row with missing coordinates (see SightingRecord.kt's comment on
+  // the same fields). match_notification_recipients handles that gracefully: nobody's
+  // zone/point/polygon can match a null location, so only broadcast-fallback devices get it.
+  lat?: number | null;
+  lng?: number | null;
+  observer_type?: string | null;
+  is_geofence_verified?: boolean;
 }
 
 interface WebhookPayload {
@@ -71,9 +87,9 @@ Deno.serve(async (req: Request) => {
 
   const { title, body } = buildNotificationText(payload.record);
 
-  const tokens = await fetchDeviceTokens();
+  const tokens = await fetchMatchingDeviceTokens(payload.record);
   if (tokens.length === 0) {
-    return new Response(JSON.stringify({ sent: 0, failed: 0, reason: "no registered devices" }), {
+    return new Response(JSON.stringify({ sent: 0, failed: 0, reason: "no matching recipients" }), {
       status: 200,
     });
   }
@@ -112,15 +128,23 @@ function buildNotificationText(sighting: SightingRow): { title: string; body: st
   return { title: "BELUGAS", body };
 }
 
-async function fetchDeviceTokens(): Promise<string[]> {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/device_tokens?select=fcm_token`, {
+async function fetchMatchingDeviceTokens(sighting: SightingRow): Promise<string[]> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/match_notification_recipients`, {
+    method: "POST",
     headers: {
       apikey: SERVICE_ROLE_KEY,
       Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify({
+      p_lat: sighting.lat ?? null,
+      p_lng: sighting.lng ?? null,
+      p_observer_type: sighting.observer_type ?? null,
+      p_is_geofence_verified: sighting.is_geofence_verified ?? false,
+    }),
   });
   if (!res.ok) {
-    throw new Error(`Failed to fetch device_tokens: ${res.status} ${await res.text()}`);
+    throw new Error(`Failed to call match_notification_recipients: ${res.status} ${await res.text()}`);
   }
   const rows = (await res.json()) as { fcm_token: string }[];
   return rows.map((r) => r.fcm_token);
