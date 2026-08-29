@@ -111,3 +111,7 @@ expect fun formatTime(epochMs: Long): String
 expect fun formatDateTime(epochMs: Long): String
 expect fun formatDateLabel(epochMs: Long): String
 expect fun formatCoord(value: Double): String
+
+// ISO-8601 UTC, for values sent to a Postgres timestamptz column (e.g. subscriptions.expires_at)
+// -- distinct from the locale-formatted display strings above, which aren't valid DB input.
+expect fun formatIso8601Utc(epochMs: Long): String

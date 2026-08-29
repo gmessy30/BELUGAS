@@ -108,3 +108,12 @@ actual fun formatDateLabel(epochMs: Long): String {
 actual fun formatCoord(value: Double): String {
     return NSString.stringWithFormat("%.4f", value)
 }
+
+actual fun formatIso8601Utc(epochMs: Long): String {
+    val date = NSDate.dateWithTimeIntervalSince1970(epochMs / 1000.0)
+    val formatter = NSDateFormatter().apply {
+        dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        timeZone = NSTimeZone.timeZoneForSecondsFromGMT(0)
+    }
+    return formatter.stringFromDate(date)
+}

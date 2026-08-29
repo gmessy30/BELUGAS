@@ -3,6 +3,7 @@ package com.cookinlet.belugas
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.serializer.KotlinXSerializer
@@ -82,6 +83,26 @@ data class ZoneRecord(
     val displayOrder: Int = 0
 )
 
+// Matches public.point_presets, plus the lat/lng generated columns added in
+// supabase/migrations/20260829000000_add_point_preset_coordinates.sql -- NOT yet applied to the
+// live project as of this writing (see that migration's header). Until it's applied, selecting
+// these columns fails and getPointPresets() falls back to an empty list, same degrade path
+// getZones() already has for a region with no seeded zones.
+@Serializable
+data class PointPresetRecord(
+    val id: String = "",
+    val slug: String,
+    val name: String,
+    @SerialName("region_id")
+    val regionId: String,
+    val lat: Double,
+    val lng: Double,
+    @SerialName("default_radius_meters")
+    val defaultRadiusMeters: Double,
+    @SerialName("display_order")
+    val displayOrder: Int = 0
+)
+
 // The `confidence_filter` values a zone subscription can be created with. Matches
 // public.subscription_confidence_filter in
 // supabase/migrations/20260819000000_add_notification_zones_and_subscriptions.sql.
@@ -90,10 +111,17 @@ enum class SubscriptionConfidenceFilter(val dbValue: String, val label: String) 
     VERIFIED_ONLY("verified_only", "Verified Observer Only")
 }
 
-// Matches the columns Stage 1 (zone-kind subscription management) touches on
-// public.subscriptions -- custom_polygon/point/radius_meters/expires_at/updated_at aren't
-// modeled here since nothing in this stage reads or writes them. `kind` is always the literal
-// "zone" for now; other kinds (custom_polygon, point_radius) are a later stage.
+// Matches the columns Stage 1 + Stage 2 (all three subscription kinds) touch on
+// public.subscriptions. `updated_at` isn't modeled -- nothing yet edits an existing
+// subscription, only creates/deletes.
+//
+// `point`/`customPolygon` are write-only in practice: on create, they carry an EWKT string
+// (e.g. "SRID=4326;POINT(lng lat)") that Postgres/PostGIS casts into the geography/geometry
+// column. On a GET they'd decode PostgREST's default hex-WKB text for that column into this
+// same String field -- harmless (it still decodes, just as an opaque string) but never used,
+// since the WATCHING list only ever displays `label` + `radiusMeters`/`expiresAt` for a
+// point-kind subscription, matching the same "never need to parse the raw geometry back"
+// precedent as zones.boundary (see ZoneRecord above).
 @Serializable
 data class SubscriptionRecord(
     val id: String = "",
@@ -104,8 +132,19 @@ data class SubscriptionRecord(
     val confidenceFilter: String = SubscriptionConfidenceFilter.ALL.dbValue,
     @SerialName("is_active")
     val isActive: Boolean = true,
+    // User-facing display name. Null for 'zone' (falls back to the zone's own name) and
+    // 'custom_polygon' (falls back to a generic "Custom area" label) -- set explicitly at
+    // creation time only for 'point_radius' (the preset's name, or "Custom Point").
+    val label: String? = null,
     @SerialName("zone_id")
     val zoneId: String? = null,
+    val point: String? = null,
+    @SerialName("custom_polygon")
+    val customPolygon: String? = null,
+    @SerialName("radius_meters")
+    val radiusMeters: Double? = null,
+    @SerialName("expires_at")
+    val expiresAt: String? = null,
     @SerialName("created_at")
     val createdAt: String? = null
 )
@@ -279,18 +318,48 @@ object SupabaseApi {
         }
     }
 
+    // Deliberately excludes `point`/`custom_polygon` -- confirmed live that PostgREST returns
+    // geometry(Polygon,4326) as a nested GeoJSON object (not text), which would throw decoding
+    // into SubscriptionRecord's String field for every row once any custom_polygon subscription
+    // existed. The WATCHING list never needs either raw geometry back (same precedent as
+    // zones.boundary), so this just never asks for them.
+    private val SUBSCRIPTION_LIST_COLUMNS = Columns.list(
+        "id", "subscriber_id", "kind", "confidence_filter", "is_active",
+        "label", "zone_id", "radius_meters", "expires_at", "created_at"
+    )
+
     /**
-     * Fetches one subscriber's zone-watch subscriptions, newest first, for the subscriptions
-     * management screen.
+     * Fetches one subscriber's subscriptions (all three kinds), newest first, for the
+     * subscriptions management screen.
      */
     suspend fun getSubscriptions(subscriberId: String): List<SubscriptionRecord> {
         return try {
-            supabase.postgrest["subscriptions"].select {
+            supabase.postgrest["subscriptions"].select(columns = SUBSCRIPTION_LIST_COLUMNS) {
                 filter { eq("subscriber_id", subscriberId) }
                 order("created_at", Order.DESCENDING)
             }.decodeList<SubscriptionRecord>()
         } catch (e: Exception) {
             println("SUBSCRIPTIONS_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    /**
+     * Fetches the curated point presets for one region (AKBMP monitoring sites + Anchorage),
+     * ordered for display, for the subscriptions screen's point picker. Empty if the region has
+     * none seeded, OR if the lat/lng generated columns from
+     * supabase/migrations/20260829000000_add_point_preset_coordinates.sql haven't been applied
+     * yet -- see that migration's header.
+     */
+    suspend fun getPointPresets(regionId: String): List<PointPresetRecord> {
+        return try {
+            supabase.postgrest["point_presets"].select {
+                filter { eq("region_id", regionId) }
+                order("display_order", Order.ASCENDING)
+            }.decodeList<PointPresetRecord>()
+        } catch (e: Exception) {
+            println("POINT_PRESETS_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
             e.printStackTrace()
             emptyList()
         }
@@ -312,6 +381,71 @@ object SupabaseApi {
                     kind = "zone",
                     confidenceFilter = confidenceFilter.dbValue,
                     zoneId = zoneId
+                )
+            )
+            println("SUBSCRIPTION_CREATE_SUCCESS")
+            true
+        } catch (e: Exception) {
+            println("SUBSCRIPTION_CREATE_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Creates a kind='point_radius' subscription for [subscriberId]: [lat]/[lng]/[radiusMeters]
+     * are copied in as a point value at creation time -- no ongoing link back to a preset, per
+     * the schema's documented design. [label] is the preset's name, or "Custom Point" for a
+     * hand-dropped pin. [expiresAtEpochMs] null means a permanent subscription.
+     */
+    suspend fun createPointSubscription(
+        subscriberId: String,
+        lat: Double,
+        lng: Double,
+        radiusMeters: Double,
+        confidenceFilter: SubscriptionConfidenceFilter,
+        label: String,
+        expiresAtEpochMs: Long?
+    ): Boolean {
+        return try {
+            supabase.postgrest["subscriptions"].insert(
+                SubscriptionRecord(
+                    subscriberId = subscriberId,
+                    kind = "point_radius",
+                    confidenceFilter = confidenceFilter.dbValue,
+                    label = label,
+                    point = ewktPoint(lat, lng),
+                    radiusMeters = radiusMeters,
+                    expiresAt = expiresAtEpochMs?.let { formatIso8601Utc(it) }
+                )
+            )
+            println("SUBSCRIPTION_CREATE_SUCCESS")
+            true
+        } catch (e: Exception) {
+            println("SUBSCRIPTION_CREATE_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Creates a kind='custom_polygon' subscription for [subscriberId] from a finger-painted
+     * [vertices] ring (lat, lng pairs, at least 3, NOT pre-closed -- this closes the ring
+     * itself). `label` is left null: the WATCHING list shows the schema's documented generic
+     * "Custom area" fallback for this kind.
+     */
+    suspend fun createPolygonSubscription(
+        subscriberId: String,
+        vertices: List<Pair<Double, Double>>,
+        confidenceFilter: SubscriptionConfidenceFilter
+    ): Boolean {
+        return try {
+            supabase.postgrest["subscriptions"].insert(
+                SubscriptionRecord(
+                    subscriberId = subscriberId,
+                    kind = "custom_polygon",
+                    confidenceFilter = confidenceFilter.dbValue,
+                    customPolygon = ewktPolygon(vertices)
                 )
             )
             println("SUBSCRIPTION_CREATE_SUCCESS")
@@ -391,4 +525,18 @@ object SupabaseApi {
             emptyList()
         }
     }
+}
+
+// EWKT (WKT with an explicit SRID prefix) for the two subscription geometry columns. The
+// explicit "SRID=4326;" matters: without it, Postgres/PostGIS's typmod check on a
+// geometry(Polygon,4326)-declared column rejects an incoming WKT value (defaults to SRID 0,
+// which doesn't match the column's declared SRID) -- this sidesteps that entirely.
+private fun ewktPoint(lat: Double, lng: Double): String = "SRID=4326;POINT($lng $lat)"
+
+private fun ewktPolygon(vertices: List<Pair<Double, Double>>): String {
+    // Closes the ring back to its first vertex -- callers pass an open list of (lat, lng)
+    // pairs, same as a finger-painted polygon's raw tap sequence.
+    val ring = vertices + vertices.first()
+    val coords = ring.joinToString(", ") { (lat, lng) -> "$lng $lat" }
+    return "SRID=4326;POLYGON(($coords))"
 }

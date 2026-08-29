@@ -67,3 +67,10 @@ actual fun formatDateLabel(epochMs: Long): String {
 actual fun formatCoord(value: Double): String {
     return "%.4f".format(value)
 }
+
+actual fun formatIso8601Utc(epochMs: Long): String {
+    val date = java.util.Date(epochMs)
+    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+    sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+    return sdf.format(date)
+}
