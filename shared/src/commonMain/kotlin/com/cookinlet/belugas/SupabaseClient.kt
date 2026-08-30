@@ -17,8 +17,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.time.Duration.Companion.seconds
 
 // Public bucket created by supabase/migrations/20260818000000_add_photo_url_to_sightings.sql
@@ -239,6 +242,12 @@ private data class WatchedZoneStatusParams(
     @SerialName("p_lat") val lat: Double,
     @SerialName("p_lng") val lng: Double,
     @SerialName("p_lookback_ms") val lookbackMs: Long
+)
+
+@Serializable
+private data class CoastlineChannelParams(
+    @SerialName("p_lat") val lat: Double,
+    @SerialName("p_lng") val lng: Double
 )
 
 object SupabaseApi {
@@ -627,6 +636,43 @@ object SupabaseApi {
             println("WATCHED_ZONE_BOUNDARIES_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
             e.printStackTrace()
             emptyList()
+        }
+    }
+
+    /**
+     * Real-coastline-curve check for a point the client's own well-sourced-zone/sparse-point
+     * fallbacks (GeofenceUtils.isWithin3DFunnel / CoastlineGeometry.isWithinWellSourcedWater)
+     * couldn't resolve -- typically a genuinely far-offshore/mid-channel point neither of
+     * those shore-hugging checks has coverage for. See
+     * is_point_within_coastline_channel's own doc comment
+     * (supabase/migrations/20260830000000_add_coastline_traces.sql) for the actual
+     * closest-point/between-ness/width-bound method.
+     *
+     * Returns null both when the RPC itself has no coastline_traces coverage near this point
+     * (its own null case) and on any network/decode failure -- not currently called from
+     * anywhere (this app's geofence check is a synchronous, offline-capable function; wiring
+     * a network RPC into it is an intentionally separate decision, not made by adding this),
+     * so a caller that does use it must treat null as "no additional evidence either way" and
+     * fall back further, the same way isWithinWellSourcedWater's null is already handled.
+     */
+    suspend fun isPointWithinCoastlineChannel(lat: Double, lng: Double): Boolean? {
+        return try {
+            val params = jsonConfig.encodeToJsonElement(
+                CoastlineChannelParams(lat = lat, lng = lng)
+            ).jsonObject
+            // decodeAs<T>() requires T : Any, which a genuinely-nullable SQL boolean result
+            // doesn't satisfy -- the RPC's own null case (no coverage near this point) is a
+            // real, expected outcome here, not a decode failure, so this parses the raw JSON
+            // body directly instead (a bare `true`, `false`, or `null` literal).
+            val raw = supabase.postgrest.rpc("is_point_within_coastline_channel", params).data
+            when (val element = jsonConfig.parseToJsonElement(raw)) {
+                is JsonNull -> null
+                else -> element.jsonPrimitive.booleanOrNull
+            }
+        } catch (e: Exception) {
+            println("COASTLINE_CHANNEL_CHECK_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            null
         }
     }
 
