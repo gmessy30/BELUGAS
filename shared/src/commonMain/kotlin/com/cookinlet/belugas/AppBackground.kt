@@ -5,10 +5,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
 import belugas.shared.generated.resources.Res
 import belugas.shared.generated.resources.beluga_background
@@ -22,6 +26,13 @@ import org.jetbrains.compose.resources.painterResource
 // with no tint or overlay on top of it, so it renders in its own original colors. Used on every
 // screen except Capture and Manual Report, which keep the live camera/map feed as their own
 // full-bleed content.
+//
+// The artwork's light body tones leave standard white text with too little contrast, so a
+// subtle drop shadow is applied to every Text in `content` via LocalTextStyle -- Text() merges
+// its explicit color/fontSize params onto this base style, so the shadow carries through
+// without every screen needing to set it individually.
+private val TextLegibilityShadow = Shadow(color = Color.Black.copy(alpha = 0.55f), offset = Offset(0f, 1f), blurRadius = 3f)
+
 @Composable
 fun AppBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
     Box(
@@ -35,6 +46,10 @@ fun AppBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.(
             contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize()
         )
-        content()
+        CompositionLocalProvider(
+            LocalTextStyle provides LocalTextStyle.current.copy(shadow = TextLegibilityShadow)
+        ) {
+            content()
+        }
     }
 }

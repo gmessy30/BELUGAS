@@ -53,7 +53,7 @@ fun AboutScreen(onBack: () -> Unit) {
 
                 AboutSection(title = "ARTWORK") {
                     Text(
-                        "The beluga sketches used throughout the app are placeholder artwork by Luna.",
+                        "The beluga artwork used throughout the app is by Luna.",
                         color = Color.White.copy(alpha = 0.85f),
                         fontSize = 13.sp
                     )
