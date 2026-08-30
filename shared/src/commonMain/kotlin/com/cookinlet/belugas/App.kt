@@ -1,5 +1,7 @@
 package com.cookinlet.belugas
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -53,7 +55,7 @@ enum class Screen {
 }
 
 // How long the splash screen stays up before navigating to the launch-preference screen.
-private const val SPLASH_DURATION_MS = 2000L
+private const val SPLASH_DURATION_MS = 3000L
 
 @Composable
 fun App() {
@@ -338,9 +340,22 @@ fun App() {
 // ==============================================================
 // SPLASH SCREEN
 // ==============================================================
+// How long the icon sits alone on the plain backdrop before the background artwork fades in.
+private const val SPLASH_ICON_ONLY_DURATION_MS = 1500L
+
 @Composable
 fun SplashScreen() {
-    AppBackground {
+    var showBackgroundArt by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(SPLASH_ICON_ONLY_DURATION_MS)
+        showBackgroundArt = true
+    }
+    val backgroundArtAlpha by animateFloatAsState(
+        targetValue = if (showBackgroundArt) 1f else 0f,
+        animationSpec = tween(durationMillis = 500)
+    )
+
+    AppBackground(backgroundImageAlpha = backgroundArtAlpha) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
