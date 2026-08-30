@@ -14,13 +14,15 @@ import belugas.shared.generated.resources.Res
 import belugas.shared.generated.resources.beluga_background
 import org.jetbrains.compose.resources.painterResource
 
-// Temporary placeholder background photo (until real artwork exists) behind the app's usual
-// teal gradient, tinted translucent so the photo shows through while keeping the existing
-// palette and white-text legibility. Used on every screen except Capture and Manual Report,
-// which keep the live camera/map feed as their own full-bleed content.
+// Beluga artwork (transparent PNG) behind the app's usual teal gradient, tinted translucent
+// so the art shows through while keeping the existing palette and white-text legibility. A
+// solid backing fill sits behind the image so its transparent regions read as part of the
+// palette rather than showing through to whatever is beneath the Box. Used on every screen
+// except Capture and Manual Report, which keep the live camera/map feed as their own
+// full-bleed content.
 @Composable
 fun AppBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize().background(Color(0xFF0D2E2E))) {
         Image(
             painter = painterResource(Res.drawable.beluga_background),
             contentDescription = null,
