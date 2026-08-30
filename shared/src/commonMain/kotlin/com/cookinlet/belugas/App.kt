@@ -120,6 +120,66 @@ fun App() {
         }
     }
 
+    // "Belugas present" safety banner + map river-shading state -- hoisted here (rather than
+    // per-screen) since both need to keep working regardless of which screen is showing, and
+    // the map shading specifically needs to be visible unconditionally (not just wherever the
+    // banner's own gates happen to be satisfied). Four independent pieces:
+    //   - watchedZoneBoundaries: real polygon geometry for every watched zone, for the map's
+    //     FillLayer. Fetched once -- zone polygons don't change at runtime.
+    //   - watchedZoneStatuses: raw sighting-recency facts for every watched zone, no location
+    //     involved. Feeds the map (everyone sees it) and doubles as the banner's status lookup
+    //     once a relevant zone id is known. Refreshed periodically alongside this device's own
+    //     subscriptions, since the subscription check needs to know which zone ids are watched.
+    //   - nearbyWatchedZone: the closer of the banner's two visibility gates -- real distance,
+    //     not containment, per the spec (someone doesn't need to be in the river to see it).
+    //   - presenceStatus: the banner's own decayed color, recomputed on a short local tick
+    //     (see PresenceBanner.kt) so it keeps visibly aging between the infrequent network polls
+    //     above instead of only updating on fetch.
+    var watchedZoneBoundaries by remember { mutableStateOf<List<ZoneBoundaryRecord>>(emptyList()) }
+    var watchedZoneStatuses by remember { mutableStateOf<List<WatchedZoneSightingStatus>>(emptyList()) }
+    var subscribedWatchedZoneId by remember { mutableStateOf<String?>(null) }
+    var nearbyWatchedZone by remember { mutableStateOf<NearbyWatchedZone?>(null) }
+    var presenceStatus by remember { mutableStateOf(BelugaPresenceStatus.BLUE) }
+
+    LaunchedEffect(Unit) {
+        watchedZoneBoundaries = SupabaseApi.getWatchedZoneBoundaries()
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            val statuses = SupabaseApi.getWatchedZoneStatuses(DEFAULT_YELLOW_WINDOW_MS)
+            watchedZoneStatuses = statuses
+            val watchedZoneIds = statuses.map { it.zoneId }.toSet()
+            val subscriberId = appPreferences.getOrCreateSubscriberId()
+            subscribedWatchedZoneId = SupabaseApi.getSubscriptions(subscriberId)
+                .firstOrNull { it.isActive && it.kind == "zone" && it.zoneId in watchedZoneIds }
+                ?.zoneId
+            delay(LOCATION_POLL_INTERVAL_MS)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            val coords = locationService.getCurrentLocation()
+            nearbyWatchedZone = if (coords != null) {
+                SupabaseApi.findNearbyWatchedZone(coords.latitude, coords.longitude, DEFAULT_BANNER_PROXIMITY_METERS)
+            } else null
+            delay(LOCATION_POLL_INTERVAL_MS)
+        }
+    }
+
+    val relevantWatchedZoneId = nearbyWatchedZone?.zoneId ?: subscribedWatchedZoneId
+    val relevantWatchedZoneName = nearbyWatchedZone?.zoneName
+        ?: watchedZoneStatuses.find { it.zoneId == subscribedWatchedZoneId }?.zoneName
+
+    LaunchedEffect(relevantWatchedZoneId, watchedZoneStatuses) {
+        while (true) {
+            val relevantStatus = watchedZoneStatuses.find { it.zoneId == relevantWatchedZoneId }
+            presenceStatus = computeBelugaPresenceStatus(relevantStatus, currentTimeMillis())
+            delay(PRESENCE_DECAY_TICK_INTERVAL_MS)
+        }
+    }
+
     // Reactive list of all sightings for List and Map views
     val sightings by database.sightingEntityQueries
         .selectAllSightings()
@@ -240,16 +300,37 @@ fun App() {
                     isLoading = isLoadingRemote,
                     region = activeRegion,
                     currentAltitude = currentAltitude,
+                    watchedZoneBoundaries = watchedZoneBoundaries,
+                    watchedZoneStatuses = watchedZoneStatuses,
                     onCloseMap = { currentScreen = Screen.MENU },
                     onRefreshRemote = { refreshRemoteSightings() }
                 )
             }
         }
 
+        // Bottom banner: hidden on the two active-data-entry screens (Placement rule), AND
+        // only shown elsewhere when this device is subscribed to a watched zone or physically
+        // near one -- unlike the map's shading above, which every screen renders unconditionally
+        // once it's on the map. Within that gate, BLUE is still a real, shown state -- it only
+        // disappears because neither gate applies, never because of its own color.
+        val showPresenceBanner = currentScreen != Screen.CAPTURE &&
+            currentScreen != Screen.MANUAL_LOGGING &&
+            relevantWatchedZoneId != null
+
         SnackbarHost(
             hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = if (showPresenceBanner) 40.dp else 0.dp)
         )
+
+        if (showPresenceBanner) {
+            BelugaPresenceBanner(
+                status = presenceStatus,
+                zoneName = relevantWatchedZoneName,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
       }
     }
 }

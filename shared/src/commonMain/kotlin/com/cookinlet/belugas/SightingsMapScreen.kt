@@ -36,6 +36,11 @@ import kotlinx.coroutines.launch
 import androidx.compose.animation.*
 import androidx.compose.foundation.shape.CircleShape
 import org.maplibre.compose.util.ClickResult
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +50,11 @@ fun SightingsMapScreen(
     isLoading: Boolean,
     region: RegionConfig = Regions.COOK_INLET,
     currentAltitude: Double,
+    // "Belugas present" river shading -- shown to everyone unconditionally (no subscription
+    // or proximity gate, unlike the bottom banner in App.kt), same RED/YELLOW/BLUE model.
+    // Defaulted empty so nothing renders until App.kt's hoisted fetches land.
+    watchedZoneBoundaries: List<ZoneBoundaryRecord> = emptyList(),
+    watchedZoneStatuses: List<WatchedZoneSightingStatus> = emptyList(),
     onCloseMap: () -> Unit,
     onRefreshRemote: () -> Unit = {}
 ) {
@@ -208,6 +218,34 @@ fun SightingsMapScreen(
                     textOpacity = const(0f),
                     textAllowOverlap = const(true)
                 )
+
+                // "Belugas present" river shading -- one FillLayer+LineLayer pair per watched
+                // zone, colored by its own decayed status. Drawn before the sighting sectors/
+                // pins below so those stay on top of it. A plain const() color per zone (not a
+                // data-driven feature-property expression) is deliberate: there's exactly one
+                // watched zone (Kenai) as of this build, and Compose recomposition already
+                // handles re-coloring on status change without needing per-feature expressions.
+                watchedZoneBoundaries.forEach { zoneBoundary ->
+                    val zoneStatus = watchedZoneStatuses.find { it.zoneId == zoneBoundary.id }
+                    val zoneColor = colorForBelugaPresenceStatus(
+                        computeBelugaPresenceStatus(zoneStatus, currentTimeMillis())
+                    )
+                    val zoneSource = rememberGeoJsonSource(
+                        data = GeoJsonData.JsonString(buildZoneBoundaryFeatureCollectionGeoJson(zoneBoundary.boundary))
+                    )
+                    FillLayer(
+                        id = "watched-zone-${zoneBoundary.slug}-fill",
+                        source = zoneSource,
+                        color = const(zoneColor),
+                        opacity = const(0.35f)
+                    )
+                    LineLayer(
+                        id = "watched-zone-${zoneBoundary.slug}-outline",
+                        source = zoneSource,
+                        color = const(zoneColor),
+                        width = const(2.dp)
+                    )
+                }
 
                 // Filter logic based on current mode
                 val visibleSightings = if (!isPlaybackVisible) {
@@ -735,3 +773,19 @@ private data class SightingDisplayModel(
     val isLocal: Boolean,
     val heading: String
 )
+
+// Wraps a zone's already-GeoJSON boundary geometry (see ZoneBoundaryRecord's comment on how
+// PostgREST serializes it) into a single-feature FeatureCollection MapLibre's GeoJsonData can
+// consume directly.
+private fun buildZoneBoundaryFeatureCollectionGeoJson(boundary: JsonElement): String {
+    return buildJsonObject {
+        put("type", "FeatureCollection")
+        putJsonArray("features") {
+            addJsonObject {
+                put("type", "Feature")
+                put("geometry", boundary)
+                put("properties", buildJsonObject {})
+            }
+        }
+    }.toString()
+}

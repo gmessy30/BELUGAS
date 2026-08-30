@@ -16,6 +16,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlin.time.Duration.Companion.seconds
@@ -180,6 +181,64 @@ private data class ExportSightingsParams(
     @SerialName("p_min_lng") val minLng: Double,
     @SerialName("p_max_lng") val maxLng: Double,
     @SerialName("p_zone_slug") val zoneSlug: String? = null
+)
+
+// Matches supabase/migrations/20260829020000_add_beluga_presence_banner.sql's
+// get_watched_zone_statuses RPC -- one row per watched zone (is_banner_watched), regardless
+// of anyone's location. Raw facts only -- no computed color -- so PresenceBanner.kt can decay
+// RED/YELLOW/BLUE against its own tunable windows instead of a value baked into a migration.
+// Feeds both the map's unconditional river shading and (via a zone id lookup) the bottom
+// banner's status once the client knows which zone is relevant to it.
+@Serializable
+data class WatchedZoneSightingStatus(
+    @SerialName("zone_id") val zoneId: String,
+    @SerialName("zone_slug") val zoneSlug: String,
+    @SerialName("zone_name") val zoneName: String,
+    @SerialName("last_verified_sighting_epoch_ms") val lastVerifiedSightingEpochMs: Long? = null,
+    @SerialName("last_any_sighting_epoch_ms") val lastAnySightingEpochMs: Long? = null
+)
+
+@Serializable
+private data class WatchedZoneStatusesParams(
+    @SerialName("p_lookback_ms") val lookbackMs: Long
+)
+
+// Matches find_nearby_watched_zone's return shape -- the closer of the banner's two
+// visibility gates (the other, "subscribed to a watched zone," is a plain client-side check
+// against SubscriptionRecord, no RPC needed).
+@Serializable
+data class NearbyWatchedZone(
+    @SerialName("zone_id") val zoneId: String,
+    @SerialName("zone_slug") val zoneSlug: String,
+    @SerialName("zone_name") val zoneName: String,
+    @SerialName("distance_meters") val distanceMeters: Double
+)
+
+@Serializable
+private data class NearbyWatchedZoneParams(
+    @SerialName("p_lat") val lat: Double,
+    @SerialName("p_lng") val lng: Double,
+    @SerialName("p_proximity_meters") val proximityMeters: Double
+)
+
+// zones.boundary as PostgREST returns it for a plain select on this project: a nested GeoJSON
+// object (confirmed live against subscriptions.custom_polygon, the same geometry(...,4326)
+// column type -- see the Stage 2 commit fixing SubscriptionRecord's decode of it). Modeled as
+// JsonElement rather than a typed geometry class since nothing here needs to inspect it --
+// SightingsMapScreen just wraps it straight into a GeoJSON Feature for a FillLayer.
+@Serializable
+data class ZoneBoundaryRecord(
+    val id: String,
+    val slug: String,
+    val name: String,
+    val boundary: JsonElement
+)
+
+@Serializable
+private data class WatchedZoneStatusParams(
+    @SerialName("p_lat") val lat: Double,
+    @SerialName("p_lng") val lng: Double,
+    @SerialName("p_lookback_ms") val lookbackMs: Long
 )
 
 object SupabaseApi {
@@ -510,6 +569,65 @@ object SupabaseApi {
             )
         ).jsonObject
         return supabase.postgrest.rpc("export_sightings", params).decodeList<SightingRecord>()
+    }
+
+    /**
+     * Fetches raw sighting-recency facts for every watched (is_banner_watched) zone --
+     * unconditional, no location involved. Feeds the map's river shading (shown to everyone)
+     * and, via a zone id lookup, the bottom banner's status. Empty on failure or if nothing
+     * is watched yet.
+     */
+    suspend fun getWatchedZoneStatuses(lookbackMs: Long): List<WatchedZoneSightingStatus> {
+        return try {
+            val params = jsonConfig.encodeToJsonElement(
+                WatchedZoneStatusesParams(lookbackMs = lookbackMs)
+            ).jsonObject
+            supabase.postgrest.rpc("get_watched_zone_statuses", params)
+                .decodeList<WatchedZoneSightingStatus>()
+        } catch (e: Exception) {
+            println("WATCHED_ZONE_STATUSES_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    /**
+     * Resolves the closer half of the bottom banner's visibility gate: the nearest watched
+     * zone within [proximityMeters] of [lat]/[lng], or null if none is that close (or on
+     * failure). The other half -- "subscribed to a watched zone" -- is a plain client-side
+     * check against getSubscriptions(), no RPC needed.
+     */
+    suspend fun findNearbyWatchedZone(lat: Double, lng: Double, proximityMeters: Double): NearbyWatchedZone? {
+        return try {
+            val params = jsonConfig.encodeToJsonElement(
+                NearbyWatchedZoneParams(lat = lat, lng = lng, proximityMeters = proximityMeters)
+            ).jsonObject
+            supabase.postgrest.rpc("find_nearby_watched_zone", params)
+                .decodeList<NearbyWatchedZone>()
+                .firstOrNull()
+        } catch (e: Exception) {
+            println("NEARBY_WATCHED_ZONE_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * Fetches every watched zone's real boundary polygon (as PostgREST's default GeoJSON
+     * serialization of a geometry column), for the map's river-shading FillLayer. Deliberately
+     * NOT part of getZones() -- that one is used far more often (every zone picker) and never
+     * needed the raw polygon; this is the one place that actually does.
+     */
+    suspend fun getWatchedZoneBoundaries(): List<ZoneBoundaryRecord> {
+        return try {
+            supabase.postgrest["zones"].select(columns = Columns.list("id", "slug", "name", "boundary")) {
+                filter { eq("is_banner_watched", true) }
+            }.decodeList<ZoneBoundaryRecord>()
+        } catch (e: Exception) {
+            println("WATCHED_ZONE_BOUNDARIES_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            emptyList()
+        }
     }
 
     /**
