@@ -157,6 +157,23 @@ fun ManualLoggingScreen(
             drawCircle(Color.White, radius = w * 0.15f, center = androidx.compose.ui.geometry.Offset(w * 0.5f, h * 0.35f))
         }
 
+        // 2b. LIVE COORDINATE READOUT -- surfaces the exact target coordinates a submit would
+        // use (cameraState.position.target, same source as the SUBMIT button below), so a
+        // geofence-rejected location can be read directly off the screen and reported precisely
+        // instead of from memory.
+        Text(
+            text = "${formatCoord(cameraState.position.target.latitude)}, ${formatCoord(cameraState.position.target.longitude)}",
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 68.dp)
+                .background(Color.Black.copy(alpha = 0.75f), shape = RoundedCornerShape(6.dp))
+                .padding(horizontal = 10.dp, vertical = 4.dp)
+        )
+
         // --- 2. TOP HEADER BAR (DONE + RETURN TO CAMERA) ---
         Row(
             modifier = Modifier

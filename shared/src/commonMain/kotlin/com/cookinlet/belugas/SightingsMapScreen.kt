@@ -225,6 +225,16 @@ fun SightingsMapScreen(
                 // data-driven feature-property expression) is deliberate: there's exactly one
                 // watched zone (Kenai) as of this build, and Compose recomposition already
                 // handles re-coloring on status change without needing per-feature expressions.
+                //
+                // The zone's own boundary geometry (shared with GeofenceUtils/CoastlineGeometry's
+                // containment check, see that file's KENAI doc comment) traces each river as a
+                // zero-width slit -- up the centerline and back down the same nodes -- which is
+                // fine for point-in-polygon testing but MapLibre doesn't render a stroke for a
+                // line that immediately doubles back over itself, so the river itself shows as
+                // unstyled map (visually grey) while only the wider river-mouth/coastal body
+                // around it fills and outlines correctly. A separate LineLayer per real,
+                // single-direction river centerline (CoastlineGeometry.riverCenterlinesForZoneSlug,
+                // not the boundary's degenerate spike) is what actually colors the river.
                 watchedZoneBoundaries.forEach { zoneBoundary ->
                     val zoneStatus = watchedZoneStatuses.find { it.zoneId == zoneBoundary.id }
                     val zoneColor = colorForBelugaPresenceStatus(
@@ -243,8 +253,22 @@ fun SightingsMapScreen(
                         id = "watched-zone-${zoneBoundary.slug}-outline",
                         source = zoneSource,
                         color = const(zoneColor),
-                        width = const(2.dp)
+                        width = const(3.dp),
+                        opacity = const(0.7f)
                     )
+
+                    riverCenterlinesForZoneSlug(zoneBoundary.slug).forEachIndexed { index, centerline ->
+                        val riverSource = rememberGeoJsonSource(
+                            data = GeoJsonData.JsonString(buildRiverCenterlineGeoJson(centerline))
+                        )
+                        LineLayer(
+                            id = "watched-zone-${zoneBoundary.slug}-river-$index",
+                            source = riverSource,
+                            color = const(zoneColor),
+                            width = const(10.dp),
+                            opacity = const(0.7f)
+                        )
+                    }
                 }
 
                 // Filter logic based on current mode
@@ -788,4 +812,12 @@ private fun buildZoneBoundaryFeatureCollectionGeoJson(boundary: JsonElement): St
             }
         }
     }.toString()
+}
+
+// A watched zone's real, single-direction river centerline (CoastlineGeometry.
+// riverCenterlinesForZoneSlug) as a LineString feature, for the river-specific LineLayer next to
+// the zone's own boundary FillLayer/LineLayer above.
+private fun buildRiverCenterlineGeoJson(points: List<Pair<Double, Double>>): String {
+    val coords = points.joinToString(",") { (lat, lng) -> "[$lng,$lat]" }
+    return """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"LineString","coordinates":[$coords]},"properties":{}}]}"""
 }

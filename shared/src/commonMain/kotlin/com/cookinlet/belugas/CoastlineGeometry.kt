@@ -498,6 +498,18 @@ private fun realLinesForZone(zone: CoastlineZone): List<List<Pair<Double, Double
     return lines
 }
 
+/**
+ * Public accessor for a watched zone's river centerlines, for rendering (see
+ * SightingsMapScreen's "Belugas present" river shading). A zone's polygon boundary traces each
+ * river as a there-and-back spike (see KENAI's doc comment above) so its interior/outline can
+ * never actually render as a colored river on a map -- these clean, single-direction centerlines
+ * are what a river-specific LineLayer should draw instead. Empty for any zone without one.
+ */
+fun riverCenterlinesForZoneSlug(slug: String): List<List<Pair<Double, Double>>> = when (slug) {
+    "kenai" -> listOf(KENAI_RIVER_CENTERLINE, KASILOF_RIVER_CENTERLINE)
+    else -> emptyList()
+}
+
 // How far out a well-sourced zone's real data is considered authoritative for. Generous
 // enough to cover a zone's own mapped offshore extent (the computed closure edges reach
 // 12-15km out) plus real margin, without being so wide it starts confidently rejecting points

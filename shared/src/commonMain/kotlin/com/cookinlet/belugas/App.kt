@@ -163,10 +163,18 @@ fun App() {
     LaunchedEffect(Unit) {
         while (true) {
             val coords = locationService.getCurrentLocation()
-            nearbyWatchedZone = if (coords != null) {
-                SupabaseApi.findNearbyWatchedZone(coords.latitude, coords.longitude, DEFAULT_BANNER_PROXIMITY_METERS)
-            } else null
-            delay(LOCATION_POLL_INTERVAL_MS)
+            if (coords != null) {
+                nearbyWatchedZone = SupabaseApi.findNearbyWatchedZone(coords.latitude, coords.longitude, DEFAULT_BANNER_PROXIMITY_METERS)
+                delay(LOCATION_POLL_INTERVAL_MS)
+            } else {
+                // A single-shot fused-location request can easily return null on a cold GPS fix
+                // (e.g. right after launch) with no fault of the device actually being near a
+                // watched zone -- retry soon rather than leaving the banner's proximity gate
+                // starved of any data for the full 5-minute poll interval. Also deliberately
+                // doesn't clobber a previously-successful nearbyWatchedZone with null here, so a
+                // later transient failure can't make an already-shown banner disappear.
+                delay(LOCATION_RETRY_INTERVAL_MS)
+            }
         }
     }
 

@@ -32,6 +32,11 @@ const val DEFAULT_BANNER_PROXIMITY_METERS = 15000.0
 const val LOCATION_POLL_INTERVAL_MS = 5L * 60 * 1000
 const val PRESENCE_DECAY_TICK_INTERVAL_MS = 30L * 1000
 
+// How soon to retry the proximity location fetch specifically after it comes back null (a cold
+// GPS fix, most commonly right after launch) rather than waiting out the full poll interval --
+// see the retry LaunchedEffect in App.kt for the failure-vs-success branch this feeds.
+const val LOCATION_RETRY_INTERVAL_MS = 15L * 1000
+
 enum class BelugaPresenceStatus { RED, YELLOW, BLUE }
 
 /**
