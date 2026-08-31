@@ -467,24 +467,74 @@ fun headingPointsAtLand(lat: Double, lng: Double, headingDegrees: Double): Boole
 // interior area at all. A plain point-in-polygon test can never validate a point near either
 // river (e.g. a park on the riverbank, not standing exactly on the GPS-traced centerline)
 // because of this, so isWithinWellSourcedWater below checks proximity to these centerlines
-// directly, the same way it checks proximity to real coastline. Same literal coordinates
-// already embedded in KENAI.fullRing (indices 11-15 and 25-29 respectively) -- kept as their
-// own named lists here since they're conceptually a distinct, reusable "real line to measure
-// distance to", not restated by re-deriving or guessing new numbers.
+// directly, the same way it checks proximity to real coastline.
+//
+// REVISED 2026-08-31: upgraded from the original 5-point OSM-derived approximation (which is
+// still what KENAI.fullRing's own spike traces -- that only needs to be a degenerate slit for
+// containment purposes, no benefit to matching this file's higher detail) to the Kenai
+// Peninsula Borough's own "KPB 21.18 Anadromous Streams" layer (services.arcgis.com/
+// ba4DH9pIcqkXJVfl/.../KPB_2118_view/FeatureServer/0, a real esriGeometryPolyline dataset tied
+// to Alaska Fish & Game's Anadromous Waters Catalog), queried 2026-08-30 and downsampled to
+// ~25 vertices each. Cross-validated against the original 5 points before replacing them:
+// every original point landed within 58-161m (Kenai) / 8-122m (Kasilof) of this new data --
+// independent confirmation the two sources agree, not just a blind swap. Also extends real
+// coverage much further upstream than the old 11-mile cutoff (Kenai to ~-150.51, Kasilof to
+// ~-151.165), narrowing the low-confidence gap further inland.
 private val KENAI_RIVER_CENTERLINE = listOf(
-    60.5486469 to -151.2621273,
-    60.5406886 to -151.2327182,
-    60.5250928 to -151.2266779,
-    60.5212876 to -151.1731440,
-    60.5459337 to -151.1252208
+    60.5481177 to -151.2628143,
+    60.5459943 to -151.2258416,
+    60.5364630 to -151.2529895,
+    60.5228469 to -151.2347299,
+    60.5289495 to -151.1984428,
+    60.5388696 to -151.1760619,
+    60.5196138 to -151.1700443,
+    60.5272975 to -151.1575471,
+    60.5380675 to -151.1468747,
+    60.5447552 to -151.1272196,
+    60.5296969 to -151.0980622,
+    60.5115529 to -151.0917429,
+    60.5141038 to -151.1237396,
+    60.4911380 to -151.1117697,
+    60.4761064 to -151.0774373,
+    60.4741742 to -150.9866155,
+    60.4751520 to -150.9079036,
+    60.5112000 to -150.8481814,
+    60.5256408 to -150.7736083,
+    60.5179197 to -150.7395844,
+    60.5097734 to -150.6908752,
+    60.4901218 to -150.6361344,
+    60.4753455 to -150.5912116,
+    60.4657314 to -150.5845451,
+    60.4689391 to -150.5125450
 )
 
 private val KASILOF_RIVER_CENTERLINE = listOf(
-    60.3860366 to -151.3021596,
-    60.3424351 to -151.2890138,
-    60.3172346 to -151.2621582,
-    60.3102738 to -151.2475703,
-    60.3056840 to -151.2222750
+    60.3856162 to -151.3001040,
+    60.3853410 to -151.2921171,
+    60.3838591 to -151.2884694,
+    60.3816999 to -151.2884407,
+    60.3687538 to -151.2944009,
+    60.3439675 to -151.2885886,
+    60.3365727 to -151.2831084,
+    60.3314240 to -151.2888009,
+    60.3297376 to -151.2886958,
+    60.3281584 to -151.2889010,
+    60.3272984 to -151.2898664,
+    60.3241280 to -151.2839436,
+    60.3231834 to -151.2822675,
+    60.3166067 to -151.2556196,
+    60.3141346 to -151.2521767,
+    60.3034181 to -151.2457015,
+    60.3064964 to -151.2337315,
+    60.3093286 to -151.2196631,
+    60.3068714 to -151.2159767,
+    60.2855427 to -151.2224121,
+    60.2811945 to -151.2121225,
+    60.2664794 to -151.1919030,
+    60.2559505 to -151.1723807,
+    60.2531539 to -151.1718809,
+    60.2351628 to -151.1671602,
+    60.2329842 to -151.1653133
 )
 
 // Every real linestring (coastline +, for kenai, its two river centerlines) a given
