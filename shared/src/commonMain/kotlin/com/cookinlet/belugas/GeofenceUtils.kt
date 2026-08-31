@@ -1,8 +1,17 @@
 package com.cookinlet.belugas
 
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.*
 
 object GeofenceUtils {
+
+    // How long a caller's brief "checking..." state is willing to wait for the online
+    // coastline-channel fallback (see isWithinCoastlineChannelFallback) before giving up.
+    // Deliberately short and used in place of an explicit connectivity check: an offline
+    // device just won't get an answer within this window and falls through to the
+    // synchronous check's original rejection, exactly as if this fallback didn't exist,
+    // rather than leaving a submit button showing a spinner indefinitely.
+    private const val COASTLINE_CHANNEL_FALLBACK_TIMEOUT_MS = 6000L
 
     // Ground-level water line & active tidal river channel points. Sparse (only 7 points
     // across a coastline that's actually ~300km long) -- kept only as the last-resort
@@ -63,6 +72,27 @@ object GeofenceUtils {
 
         val minDistanceKm = getMinDistanceToWaterKm(lat, lng, region.shorelinePolygon)
         return minDistanceKm <= allowedBufferKm
+    }
+
+    /**
+     * Best-effort online-only upgrade for a point [isWithin3DFunnel] has already rejected --
+     * never called on its own, only from a caller's failure branch (see ManualLoggingScreen/
+     * LoggingScreen's SUBMIT handlers). Delegates to the real-coastline-curve RPC
+     * (SupabaseApi.isPointWithinCoastlineChannel / supabase/migrations/
+     * 20260830000000_add_coastline_traces.sql) that covers genuinely far-offshore points
+     * neither the well-sourced zones nor the sparse fallback above have data for.
+     *
+     * Bounded by [COASTLINE_CHANNEL_FALLBACK_TIMEOUT_MS] in place of an explicit
+     * connectivity check -- an offline device simply doesn't get an answer in time and this
+     * returns false, identical to the fallback not existing, so callers should treat false
+     * here the same as [isWithin3DFunnel]'s own false: a real rejection (or an inconclusive
+     * offline attempt), not a distinguishable error case.
+     */
+    suspend fun isWithinCoastlineChannelFallback(lat: Double, lng: Double): Boolean {
+        val result = withTimeoutOrNull(COASTLINE_CHANNEL_FALLBACK_TIMEOUT_MS) {
+            SupabaseApi.isPointWithinCoastlineChannel(lat, lng)
+        }
+        return result == true
     }
 
     // Haversine distance from point to nearest shoreline/river coordinate

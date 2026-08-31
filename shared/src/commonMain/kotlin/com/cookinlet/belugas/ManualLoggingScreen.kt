@@ -62,6 +62,10 @@ fun ManualLoggingScreen(
     var pendingRecord by remember { mutableStateOf<SightingRecord?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var isRecentering by remember { mutableStateOf(false) }
+    // Only true while the online coastline-channel fallback (GeofenceUtils.
+    // isWithinCoastlineChannelFallback) is running, i.e. only after the synchronous
+    // isWithin3DFunnel check has already failed -- never shown on a normal submit.
+    var isCheckingCoastlineFallback by remember { mutableStateOf(false) }
 
     var headingEstimate by remember { mutableStateOf<HeadingEstimate?>(null) }
     var distanceBucket by remember { mutableStateOf<DistanceBucket?>(null) }
@@ -213,12 +217,26 @@ fun ManualLoggingScreen(
                         distanceRadiusMeters = distanceBucket?.radiusMeters(isAerial)
                     )
 
-                    if (!GeofenceUtils.isWithin3DFunnel(targetCenter.latitude, targetCenter.longitude, sightingAlt, region)) {
-                        pendingRecord = record
-                        showGeofenceWarning = true
-                        isSaving = false
-                    } else {
+                    if (GeofenceUtils.isWithin3DFunnel(targetCenter.latitude, targetCenter.longitude, sightingAlt, region)) {
                         saveAndFinish(record)
+                    } else {
+                        // Only reachable once the synchronous check has already rejected the
+                        // point -- the online fallback never runs, and this loading state
+                        // never shows, on a normal (accepted) submit.
+                        scope.launch {
+                            isCheckingCoastlineFallback = true
+                            val validByChannel = GeofenceUtils.isWithinCoastlineChannelFallback(
+                                targetCenter.latitude, targetCenter.longitude
+                            )
+                            isCheckingCoastlineFallback = false
+                            if (validByChannel) {
+                                saveAndFinish(record)
+                            } else {
+                                pendingRecord = record
+                                showGeofenceWarning = true
+                                isSaving = false
+                            }
+                        }
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.85f)),
@@ -432,6 +450,29 @@ fun ManualLoggingScreen(
                 }
             ) {
                 DatePicker(state = datePickerState)
+            }
+        }
+
+        // --- ONLINE COASTLINE-CHANNEL FALLBACK CHECKING STATE ---
+        // Only ever visible for the few seconds (bounded by GeofenceUtils'
+        // COASTLINE_CHANNEL_FALLBACK_TIMEOUT_MS) between a synchronous geofence rejection and
+        // that fallback resolving -- never shown for an accepted point.
+        if (isCheckingCoastlineFallback) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Row(
+                    modifier = Modifier
+                        .background(Color(0xFF1E293B), shape = RoundedCornerShape(10.dp))
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = Color.Yellow,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text("CHECKING WATER DATA…", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
 
