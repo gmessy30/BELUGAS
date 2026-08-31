@@ -27,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -210,8 +212,28 @@ fun App() {
         }
     }
 
+    // Bottom banner: hidden on the two active-data-entry screens (Placement rule), AND
+    // only shown elsewhere when this device is subscribed to a watched zone or physically
+    // near one -- unlike the map's shading above, which every screen renders unconditionally
+    // once it's on the map. Within that gate, BLUE is still a real, shown state -- it only
+    // disappears because neither gate applies, never because of its own color.
+    val showPresenceBanner = currentScreen != Screen.CAPTURE &&
+        currentScreen != Screen.MANUAL_LOGGING &&
+        relevantWatchedZoneId != null
+
+    // The banner's actual rendered height (including its own navigationBarsPadding, which
+    // varies by device/nav style) -- measured, not guessed, so AppBackground's reserved
+    // bottom inset for each screen's own content is always exactly right. Stays at whatever
+    // it was last measured at across screen changes (harmless: it's only consumed while
+    // showPresenceBanner is true, and the banner's own height doesn't change screen to screen).
+    var presenceBannerHeightDp by remember { mutableStateOf(0.dp) }
+    val density = LocalDensity.current
+
     MaterialTheme {
       Box(modifier = Modifier.fillMaxSize()) {
+        CompositionLocalProvider(
+            LocalBottomContentInset provides if (showPresenceBanner) presenceBannerHeightDp else 0.dp
+        ) {
         when (currentScreen) {
             Screen.SPLASH -> {
                 SplashScreen()
@@ -317,15 +339,7 @@ fun App() {
                 )
             }
         }
-
-        // Bottom banner: hidden on the two active-data-entry screens (Placement rule), AND
-        // only shown elsewhere when this device is subscribed to a watched zone or physically
-        // near one -- unlike the map's shading above, which every screen renders unconditionally
-        // once it's on the map. Within that gate, BLUE is still a real, shown state -- it only
-        // disappears because neither gate applies, never because of its own color.
-        val showPresenceBanner = currentScreen != Screen.CAPTURE &&
-            currentScreen != Screen.MANUAL_LOGGING &&
-            relevantWatchedZoneId != null
+        }
 
         SnackbarHost(
             hostState = snackbarHostState,
@@ -338,7 +352,9 @@ fun App() {
             BelugaPresenceBanner(
                 status = presenceStatus,
                 zoneName = relevantWatchedZoneName,
-                modifier = Modifier.align(Alignment.BottomCenter)
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .onGloballyPositioned { presenceBannerHeightDp = with(density) { it.size.height.toDp() } }
             )
         }
       }

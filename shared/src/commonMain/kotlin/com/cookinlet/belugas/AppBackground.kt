@@ -5,10 +5,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -42,6 +45,16 @@ import org.jetbrains.compose.resources.painterResource
 // without every screen needing to set it individually.
 private val TextLegibilityShadow = Shadow(color = Color.Black.copy(alpha = 0.55f), offset = Offset(0f, 1f), blurRadius = 3f)
 
+// How much space, if any, a screen's own bottom-anchored content (a SUBMIT button, a bottom
+// nav row, etc.) should leave clear at the bottom of the screen -- set by App.kt to the real
+// measured height of the "Belugas present" banner (App.kt/PresenceBanner.kt) whenever it's
+// showing over this screen, 0.dp otherwise. AppBackground applies it as padding around
+// `content` (see below) so every screen using AppBackground automatically reserves the right
+// amount of space without each one needing its own banner-awareness or hardcoded padding --
+// the alternative (floating the banner on top of unaware content) is exactly what caused it to
+// cover screens' own bottom buttons in the first place.
+val LocalBottomContentInset = compositionLocalOf { 0.dp }
+
 @Composable
 fun AppBackground(
     modifier: Modifier = Modifier,
@@ -66,7 +79,9 @@ fun AppBackground(
         CompositionLocalProvider(
             LocalTextStyle provides LocalTextStyle.current.copy(shadow = TextLegibilityShadow)
         ) {
-            content()
+            Box(modifier = Modifier.fillMaxSize().padding(bottom = LocalBottomContentInset.current)) {
+                content()
+            }
         }
     }
 }
