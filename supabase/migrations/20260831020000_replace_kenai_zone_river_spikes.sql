@@ -1,0 +1,146 @@
+-- Replaces the `kenai` zone's Kenai River and Kasilof River out-and-back spikes (9 zero-area
+-- vertices apiece in the original seed migration, 20260819130000_seed_notification_zones_
+-- and_point_presets.sql) with real KPB Anadromous Streams centerline geometry -- the same
+-- density/precision upgrade already done for the west-shore river traces in
+-- 20260831000000_extend_west_shore_and_add_rivers.sql, applied here to the river arms that
+-- are actually part of a zone polygon (not just stored coastline_traces rows).
+--
+-- SOURCE: Kenai Peninsula Borough's KPB 21.18 Anadromous Streams FeatureServer
+-- (services.arcgis.com/ba4DH9pIcqkXJVfl/.../KPB_2118_view/FeatureServer/0), tied to Alaska
+-- Dept. of Fish & Game's official Anadromous Waters Catalog (AWC). Kenai River: AWC
+-- 244-30-10010, path index 2 of 11 (312 raw vertices). Kasilof River: AWC 244-30-10050,
+-- single path (990 raw vertices).
+--
+-- METHOD: both raw paths were simplified with Douglas-Peucker at a 150m tolerance
+-- (tools/geometry/dp_simplify.ps1), run in the same flat-meters projection
+-- is_point_within_coastline_channel/find_nearby_watched_zone's nearestSegment logic uses --
+-- not raw lat/lon, so the tolerance means what it says in real distance. Kenai simplified to
+-- 89 points (148.1m actual max deviation from the raw path, under the 150m tolerance).
+-- Kasilof simplified to 40 points (123.4m actual max deviation). Point order was verified
+-- against the raw path's own vertex order (verify_order.ps1) before use -- simplification
+-- can silently reorder or fold a path back on itself if done carelessly, and that was checked
+-- for, not assumed.
+--
+-- RING STRUCTURE: each spike is inserted as an out-and-back detour from the existing
+-- coastline ring, the same zero-width-inclusion convention as the original seed migration's
+-- 9-vertex spikes: ...coastline... -> old_mouth -> KPB_1 -> ... -> KPB_n -> ... -> KPB_1 ->
+-- old_mouth -> ...coastline..., mirrored out-and-back. Kenai spike: 179 vertices. Kasilof
+-- spike: 81 vertices. Total ring: 282 (11 unchanged head vertices + 179 Kenai spike + 5
+-- unchanged mid vertices + 81 Kasilof spike + 5 unchanged tail vertices + 1 closing point),
+-- versus 40 before this migration.
+--
+-- JUNCTION RATIONALE: the KPB path's own first vertex is not the same coordinate as the old
+-- OSM-derived river-mouth point already in the ring (Kenai: 69.99m apart; Kasilof: 122.66m
+-- apart -- both within the 58-161m/8-122m cross-validation range already disclosed in
+-- 6c4a65d, i.e. expected digitization noise between two independently-sourced datasets, not a
+-- data error). Rather than relocating the coastline ring to the KPB path's start, or snapping
+-- the KPB path's first vertex onto the old mouth, both points are kept exactly as they are
+-- and joined by one short out-and-back connector leg that encloses zero area. Every coastline
+-- vertex in this file is byte-identical to the pre-migration geometry; no KPB vertex was
+-- moved to make a join look cleaner.
+--
+-- VERIFIED BEFORE APPLYING: ST_Area (geography) of the new polygon is 650945324.5140 sq m,
+-- identical to the pre-migration polygon's area to four decimal places -- confirms the spikes
+-- replace zero-area detour with more zero-area detour (real river shape, not real enclosed
+-- area). The unchanged head/mid/tail coastline segments were confirmed byte-identical to the
+-- pre-migration ring via ST_Equals before this migration was written.
+--
+-- KNOWN SECONDARY SELF-TOUCH (Kenai spike only): POINT(-151.26236993 60.54817966), ~30m from
+-- the river mouth, where the spike's exit connector crosses the KPB path's own
+-- first-to-second-vertex edge. Traced to those two specific edges before this migration was
+-- written. Zero area impact; does not change the ring's ST_IsValid classification (see
+-- below). Documented here so nobody has to re-derive it from scratch later.
+--
+-- ST_IsValid WAS ALREADY FALSE before this migration -- the pre-migration ring reported
+-- "Self-intersection [-151.1252208 60.5459337]" (the old Kenai spike's own apex, an
+-- unavoidable consequence of the out-and-back convention: the forward and return legs of any
+-- such spike are coincident retraced edges, which PostGIS always flags as a
+-- self-intersection). After this migration ST_IsValid is still false, now reporting
+-- "Self-intersection[-150.6848485 60.5031867]" -- a different coincident-retrace point,
+-- because the old spike is gone and a new one is there instead. This migration does not
+-- introduce the invalidity and does not fix it; it was inherent to the ring's construction
+-- before this migration and remains inherent after.
+--
+-- DOWNSTREAM IMPACT: no behavior change for the three ST_Contains-based RPCs
+-- (match_notification_recipients, export_sightings, get_watched_zone_statuses) -- a
+-- zero-area spike never contained riverbank points whether it's drawn with 9 vertices or 282;
+-- ST_Contains only cares about the enclosed area, which is unchanged (see ST_Area above).
+-- This is a genuine precision improvement for find_nearby_watched_zone, which measures real
+-- distance-to-polygon -- a spike traced with 179/81 real points hugs the actual riverbank far
+-- more closely than the old 9-vertex straight-line spike did.
+
+update public.zones set
+  boundary = ST_GeomFromText('POLYGON((
+    -151.5676882 60.7366758, -151.346916 60.7368572, -151.3937317 60.7261008, -151.4101289 60.7191148,
+    -151.4014373 60.6935775, -151.3878076 60.6759362, -151.3632285 60.6544696, -151.3492429 60.6322871,
+    -151.3298644 60.5809819, -151.3050015 60.5630859, -151.2833585 60.5553444, -151.2621273 60.5486469,
+    -151.2628143 60.5481177, -151.2419519 60.5510267, -151.2258416 60.5459943, -151.2282353 60.5421754,
+    -151.2468233 60.5398358, -151.2525346 60.5371988, -151.2425341 60.5215422, -151.2379416 60.5211004,
+    -151.2224648 60.5263248, -151.2005954 60.5279486, -151.1935145 60.5381515, -151.1835035 60.5401742,
+    -151.1756063 60.5383723, -151.1806792 60.5308466, -151.1786541 60.5262745, -151.1700443 60.5196138,
+    -151.1633839 60.5183945, -151.155492 60.5206685, -151.1569863 60.5288189, -151.1504375 60.5319992,
+    -151.1458952 60.5390748, -151.1352862 60.5397573, -151.120192 60.5472054, -151.1136826 60.5467502,
+    -151.098321 60.5328554, -151.0957453 60.5231463, -151.0999577 60.5159314, -151.0898617 60.5103917,
+    -151.1023873 60.5086425, -151.1237396 60.5141038, -151.1313584 60.5118365, -151.1306341 60.5061884,
+    -151.1148321 60.5060685, -151.105581 60.4995259, -151.1057478 60.4943084, -151.1224899 60.4884339,
+    -151.1267128 60.4825844, -151.1141851 60.4751841, -151.0962453 60.4833532, -151.0774373 60.4761064,
+    -151.0575501 60.4832019, -151.0286971 60.479933, -151.0077429 60.4853366, -150.9934013 60.4812312,
+    -150.9866155 60.4741742, -150.9743473 60.4688324, -150.9463142 60.4592831, -150.9390302 60.4598518,
+    -150.9205984 60.4754412, -150.9013736 60.4756138, -150.8649955 60.4912005, -150.8481814 60.5112,
+    -150.8341204 60.512969, -150.8255087 60.5088637, -150.7897192 60.5122142, -150.7786283 60.5227236,
+    -150.7611699 60.5288147, -150.7575104 60.5355916, -150.7451606 60.5315174, -150.7431383 60.5194686,
+    -150.7395844 60.5179197, -150.7213262 60.5221626, -150.7139545 60.515779, -150.698724 60.5149407,
+    -150.6841983 60.5083809, -150.6848485 60.5031867, -150.6812097 60.5013414, -150.6674423 60.5003011,
+    -150.6524594 60.4958229, -150.653193 60.4916633, -150.6226394 60.4894875, -150.6204246 60.4873434,
+    -150.6272116 60.4865428, -150.6283369 60.4819781, -150.6222391 60.480152, -150.6091619 60.4813918,
+    -150.5921891 60.4761908, -150.5931869 60.4724856, -150.6028569 60.4688492, -150.6001969 60.4637093,
+    -150.5924983 60.4669104, -150.5824838 60.4656504, -150.5776997 60.4633659, -150.5798633 60.4587204,
+    -150.5725258 60.4575648, -150.5639422 60.4610027, -150.5326436 60.4615897, -150.5311251 60.4657762,
+    -150.512545 60.4689391, -150.5311251 60.4657762, -150.5326436 60.4615897, -150.5639422 60.4610027,
+    -150.5725258 60.4575648, -150.5798633 60.4587204, -150.5776997 60.4633659, -150.5824838 60.4656504,
+    -150.5924983 60.4669104, -150.6001969 60.4637093, -150.6028569 60.4688492, -150.5931869 60.4724856,
+    -150.5921891 60.4761908, -150.6091619 60.4813918, -150.6222391 60.480152, -150.6283369 60.4819781,
+    -150.6272116 60.4865428, -150.6204246 60.4873434, -150.6226394 60.4894875, -150.653193 60.4916633,
+    -150.6524594 60.4958229, -150.6674423 60.5003011, -150.6812097 60.5013414, -150.6848485 60.5031867,
+    -150.6841983 60.5083809, -150.698724 60.5149407, -150.7139545 60.515779, -150.7213262 60.5221626,
+    -150.7395844 60.5179197, -150.7431383 60.5194686, -150.7451606 60.5315174, -150.7575104 60.5355916,
+    -150.7611699 60.5288147, -150.7786283 60.5227236, -150.7897192 60.5122142, -150.8255087 60.5088637,
+    -150.8341204 60.512969, -150.8481814 60.5112, -150.8649955 60.4912005, -150.9013736 60.4756138,
+    -150.9205984 60.4754412, -150.9390302 60.4598518, -150.9463142 60.4592831, -150.9743473 60.4688324,
+    -150.9866155 60.4741742, -150.9934013 60.4812312, -151.0077429 60.4853366, -151.0286971 60.479933,
+    -151.0575501 60.4832019, -151.0774373 60.4761064, -151.0962453 60.4833532, -151.1141851 60.4751841,
+    -151.1267128 60.4825844, -151.1224899 60.4884339, -151.1057478 60.4943084, -151.105581 60.4995259,
+    -151.1148321 60.5060685, -151.1306341 60.5061884, -151.1313584 60.5118365, -151.1237396 60.5141038,
+    -151.1023873 60.5086425, -151.0898617 60.5103917, -151.0999577 60.5159314, -151.0957453 60.5231463,
+    -151.098321 60.5328554, -151.1136826 60.5467502, -151.120192 60.5472054, -151.1352862 60.5397573,
+    -151.1458952 60.5390748, -151.1504375 60.5319992, -151.1569863 60.5288189, -151.155492 60.5206685,
+    -151.1633839 60.5183945, -151.1700443 60.5196138, -151.1786541 60.5262745, -151.1806792 60.5308466,
+    -151.1756063 60.5383723, -151.1835035 60.5401742, -151.1935145 60.5381515, -151.2005954 60.5279486,
+    -151.2224648 60.5263248, -151.2379416 60.5211004, -151.2425341 60.5215422, -151.2525346 60.5371988,
+    -151.2468233 60.5398358, -151.2282353 60.5421754, -151.2258416 60.5459943, -151.2419519 60.5510267,
+    -151.2628143 60.5481177, -151.2621273 60.5486469, -151.2730405 60.5276312, -151.2803865 60.4860598,
+    -151.2826138 60.4673916, -151.2884557 60.4284368, -151.295078 60.3997196, -151.3021596 60.3860366,
+    -151.300104 60.3856162, -151.2913394 60.3851859, -151.2882356 60.3821861, -151.3033092 60.376571,
+    -151.3020216 60.3685425, -151.2963377 60.3673045, -151.2938583 60.3720499, -151.2873048 60.3715547,
+    -151.2909435 60.361773, -151.2818272 60.3581506, -151.2890662 60.3425153, -151.2833157 60.3348942,
+    -151.2883375 60.3324212, -151.2898686 60.3267265, -151.2725453 60.3211236, -151.2697734 60.3179949,
+    -151.2484025 60.3162251, -151.2523978 60.3134417, -151.2452379 60.3126847, -151.2479304 60.3094959,
+    -151.2443785 60.3029891, -151.2355091 60.3093899, -151.2323268 60.3080636, -151.2345829 60.3049277,
+    -151.2272857 60.3034006, -151.222802 60.3047964, -151.2228231 60.3085008, -151.2165346 60.3084746,
+    -151.2140217 60.2927757, -151.2240928 60.2864355, -151.2151363 60.2862187, -151.2082465 60.2827138,
+    -151.219312 60.2771431, -151.2016263 60.273668, -151.1914725 60.2661146, -151.1912722 60.2614142,
+    -151.1815377 60.2557543, -151.1716172 60.2558728, -151.176536 60.2464218, -151.1653133 60.2329842,
+    -151.176536 60.2464218, -151.1716172 60.2558728, -151.1815377 60.2557543, -151.1912722 60.2614142,
+    -151.1914725 60.2661146, -151.2016263 60.273668, -151.219312 60.2771431, -151.2082465 60.2827138,
+    -151.2151363 60.2862187, -151.2240928 60.2864355, -151.2140217 60.2927757, -151.2165346 60.3084746,
+    -151.2228231 60.3085008, -151.222802 60.3047964, -151.2272857 60.3034006, -151.2345829 60.3049277,
+    -151.2323268 60.3080636, -151.2355091 60.3093899, -151.2443785 60.3029891, -151.2479304 60.3094959,
+    -151.2452379 60.3126847, -151.2523978 60.3134417, -151.2484025 60.3162251, -151.2697734 60.3179949,
+    -151.2725453 60.3211236, -151.2898686 60.3267265, -151.2883375 60.3324212, -151.2833157 60.3348942,
+    -151.2890662 60.3425153, -151.2818272 60.3581506, -151.2909435 60.361773, -151.2873048 60.3715547,
+    -151.2938583 60.3720499, -151.2963377 60.3673045, -151.3020216 60.3685425, -151.3033092 60.376571,
+    -151.2882356 60.3821861, -151.2913394 60.3851859, -151.300104 60.3856162, -151.3021596 60.3860366,
+    -151.3218588 60.3828618, -151.3527568 60.3753466, -151.3819584 60.3429598, -151.3816645 60.3176174,
+    -151.5995967 60.3174391, -151.5676882 60.7366758
+  ))', 4326)
+where slug = 'kenai';
