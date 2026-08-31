@@ -164,16 +164,17 @@ fun ManualLoggingScreen(
         // 2b. LIVE COORDINATE READOUT -- surfaces the exact target coordinates a submit would
         // use (cameraState.position.target, same source as the SUBMIT button below), so a
         // geofence-rejected location can be read directly off the screen and reported precisely
-        // instead of from memory.
+        // instead of from memory. Top-end (below MENU), not top-center -- center is the AWAY
+        // direction arrow's own space, and this used to sit right in its notch.
         Text(
             text = "${formatCoord(cameraState.position.target.latitude)}, ${formatCoord(cameraState.position.target.longitude)}",
             color = Color.White,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier
-                .align(Alignment.TopCenter)
+                .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(top = 68.dp)
+                .padding(top = 68.dp, end = 16.dp)
                 .background(Color.Black.copy(alpha = 0.75f), shape = RoundedCornerShape(6.dp))
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         )
