@@ -144,7 +144,7 @@ fun LoggingScreen(
                         )
 
                         if (GeofenceUtils.isWithin3DFunnel(currentLat, currentLng, currentAlt, region)) {
-                            saveAndFinish(record)
+                            saveAndFinish(record.copy(isGeofenceVerified = true))
                         } else {
                             // Only reachable once the synchronous check has already rejected
                             // the point -- the online fallback never runs, and this loading
@@ -153,7 +153,7 @@ fun LoggingScreen(
                             val validByChannel = GeofenceUtils.isWithinCoastlineChannelFallback(currentLat, currentLng)
                             isCheckingCoastlineFallback = false
                             if (validByChannel) {
-                                saveAndFinish(record)
+                                saveAndFinish(record.copy(isGeofenceVerified = true))
                             } else {
                                 pendingRecord = record
                                 showGeofenceWarning = true

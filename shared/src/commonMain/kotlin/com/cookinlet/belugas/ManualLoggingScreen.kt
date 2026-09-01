@@ -219,7 +219,7 @@ fun ManualLoggingScreen(
                     )
 
                     if (GeofenceUtils.isWithin3DFunnel(targetCenter.latitude, targetCenter.longitude, sightingAlt, region)) {
-                        saveAndFinish(record)
+                        saveAndFinish(record.copy(isGeofenceVerified = true))
                     } else {
                         // Only reachable once the synchronous check has already rejected the
                         // point -- the online fallback never runs, and this loading state
@@ -231,7 +231,7 @@ fun ManualLoggingScreen(
                             )
                             isCheckingCoastlineFallback = false
                             if (validByChannel) {
-                                saveAndFinish(record)
+                                saveAndFinish(record.copy(isGeofenceVerified = true))
                             } else {
                                 pendingRecord = record
                                 showGeofenceWarning = true

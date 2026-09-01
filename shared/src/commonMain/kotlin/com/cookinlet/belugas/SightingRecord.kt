@@ -62,6 +62,16 @@ data class SightingRecord(
     @SerialName("observer_type")
     val observerType: String? = null,
 
+    // Whether GeofenceUtils' own check (isWithin3DFunnel or its isWithinCoastlineChannelFallback)
+    // actually passed for this sighting, as opposed to the user overriding a rejected location
+    // via the "SAVE ANYWAY" geofence warning dialog (LoggingScreen.kt/ManualLoggingScreen.kt).
+    // Defaults to false, matching the sightings table's own column default -- callers must
+    // explicitly opt a record into "verified" rather than that being assumed. This is the same
+    // "verified" the RED presence-banner tier and confidence_filter = 'verified_only'
+    // subscriptions key off (see get_watched_zone_statuses' comment).
+    @SerialName("is_geofence_verified")
+    val isGeofenceVerified: Boolean = false,
+
     @SerialName("photo_url")
     val photoUrl: String? = null
 )
