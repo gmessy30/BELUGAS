@@ -738,13 +738,72 @@ private val KASILOF_RIVER_CENTERLINE = listOf(
     60.2329842 to -151.1653133
 )
 
+// Upriver beluga limit -- geofence validation ONLY (see realLinesForZone below). The full
+// centerlines above run each river's entire KPB-mapped length and must stay that way for
+// riverCenterlinesForZoneSlug's map rendering: upstream river context is useful to show even
+// where a sighting wouldn't actually validate. This truncates a copy of each for the
+// isWithinWellSourcedWater buffer check, walking cumulative distance from the mouth (index 0)
+// in the same local flat-meters projection the rest of this file uses, and interpolating the
+// exact cut vertex rather than snapping to the nearest existing point.
+//
+// Kenai: 11.5 mi. Corroborated three ways -- field observation; the pre-KPB-swap geometry's own
+// "11 mile apex" (see KENAI.fullRing's spike comment above); and the KPB water-body layer
+// itself, which shows a single large island (~59-91 acres) at mile 9.3-10.7 and then the
+// channel braiding into a chain of separate smaller islands starting at mile 11.63 and
+// continuing at least to mile 17.4 -- real habitat complexity picks up right at this cutoff.
+//
+// Kasilof: 7.5 mi, just above the Sterling Highway bridge (KPB_Bridges_view's "KASILOF RIVER
+// BRIDGE", mile 7.39). Rests on field observation alone -- KPB's water-body layer shows zero
+// islands anywhere on the Kasilof (no interior rings across its full ~18.2mi mapped length),
+// and its 5ft-contour layer has no coverage past mile ~7, so unlike the Kenai this number has
+// no independent corroborating landmark. Treat it as the less-certain of the two.
+private const val KENAI_RIVER_BELUGA_LIMIT_MILES = 11.5
+private const val KASILOF_RIVER_BELUGA_LIMIT_MILES = 7.5
+private const val METERS_PER_MILE = 1609.344
+
+private fun truncateAtRiverMiles(
+    centerline: List<Pair<Double, Double>>,
+    miles: Double
+): List<Pair<Double, Double>> {
+    if (centerline.size < 2) return centerline
+    val targetMeters = miles * METERS_PER_MILE
+
+    val result = mutableListOf(centerline[0])
+    var cumMeters = 0.0
+    for (i in 0 until centerline.size - 1) {
+        val (lat1, lng1) = centerline[i]
+        val (lat2, lng2) = centerline[i + 1]
+        val mPerLng = metersPerDegreeLng((lat1 + lat2) / 2.0)
+        val dx = (lng2 - lng1) * mPerLng
+        val dy = (lat2 - lat1) * METERS_PER_DEGREE_LAT
+        val segMeters = sqrt(dx * dx + dy * dy)
+
+        if (cumMeters + segMeters >= targetMeters) {
+            val t = if (segMeters > 0.0) (targetMeters - cumMeters) / segMeters else 0.0
+            result.add((lat1 + t * (lat2 - lat1)) to (lng1 + t * (lng2 - lng1)))
+            return result
+        }
+
+        cumMeters += segMeters
+        result.add(centerline[i + 1])
+    }
+    return result // centerline is shorter than the requested cut -- return it whole
+}
+
+private val KENAI_RIVER_CENTERLINE_BELUGA_LIMIT =
+    truncateAtRiverMiles(KENAI_RIVER_CENTERLINE, KENAI_RIVER_BELUGA_LIMIT_MILES)
+private val KASILOF_RIVER_CENTERLINE_BELUGA_LIMIT =
+    truncateAtRiverMiles(KASILOF_RIVER_CENTERLINE, KASILOF_RIVER_BELUGA_LIMIT_MILES)
+
 // Every real linestring (coastline +, for kenai, its two river centerlines) a given
-// well-sourced zone can be measured against for the buffer-distance fallback below.
+// well-sourced zone can be measured against for the buffer-distance fallback below. Uses the
+// beluga-limit-truncated centerlines, not the full ones -- this feeds isWithinWellSourcedWater's
+// validation check, where upstream-of-the-limit points should NOT read as near-river.
 private fun realLinesForZone(zone: CoastlineZone): List<List<Pair<Double, Double>>> {
     val lines = mutableListOf(zone.coastlineOnly)
     if (zone.slug == "kenai") {
-        lines.add(KENAI_RIVER_CENTERLINE)
-        lines.add(KASILOF_RIVER_CENTERLINE)
+        lines.add(KENAI_RIVER_CENTERLINE_BELUGA_LIMIT)
+        lines.add(KASILOF_RIVER_CENTERLINE_BELUGA_LIMIT)
     }
     return lines
 }
