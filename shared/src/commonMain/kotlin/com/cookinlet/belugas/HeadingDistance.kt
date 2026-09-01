@@ -16,15 +16,7 @@ data class HeadingEstimate(
     val source: HeadingSource,
     // null for MANUAL; degrees of uncertainty reported by the platform sensor for SENSOR
     val accuracyDegrees: Double? = null
-) {
-    // Confidence -> sector half-width. Manual entries and noisy sensor readings get a wide
-    // cone; a clean compass reading narrows it.
-    val sectorHalfWidthDegrees: Double
-        get() = when (source) {
-            HeadingSource.MANUAL -> 45.0
-            HeadingSource.SENSOR -> (accuracyDegrees ?: 30.0).coerceIn(10.0, 45.0)
-        }
-}
+)
 
 enum class DistanceBucket(val label: String) {
     CLOSE("Close"),
@@ -110,25 +102,22 @@ fun sectorEndpointWithinGeofence(
 }
 
 /**
- * Builds a filled-wedge (annular sector) GeoJSON Polygon feature: from the origin out to an arc
- * at [radiusMeters], spanning [heading]'s confidence-driven half-width on either side of its
- * bearing.
+ * Builds a plain uncertainty-circle GeoJSON Polygon feature around [lat]/[lng] at
+ * [radiusMeters] -- the whale-position redesign's replacement for the old heading/distance
+ * sector wedge (buildSectorGeoJsonFeature, removed): a wedge's apex reveals where the observer
+ * stood, which this design specifically avoids storing at all, so the map can only ever draw a
+ * shape centered on the (already anonymous) estimated position.
  */
-fun buildSectorGeoJsonFeature(
-    originLat: Double,
-    originLng: Double,
-    heading: HeadingEstimate,
+fun buildCircleGeoJsonFeature(
+    lat: Double,
+    lng: Double,
     radiusMeters: Double,
     propertiesJson: String = "{}",
-    segments: Int = 16
+    segments: Int = 32
 ): String {
-    val halfWidth = heading.sectorHalfWidthDegrees
-    val startBearing = heading.degrees - halfWidth
-    val sweep = halfWidth * 2.0
-
-    val arcCoordinates = (0..segments).joinToString(", ") { i ->
-        val bearing = startBearing + (sweep * i / segments)
-        val (pointLat, pointLng) = destinationPoint(originLat, originLng, bearing, radiusMeters)
+    val ring = (0..segments).joinToString(", ") { i ->
+        val bearing = 360.0 * i / segments
+        val (pointLat, pointLng) = destinationPoint(lat, lng, bearing, radiusMeters)
         "[$pointLng, $pointLat]"
     }
 
@@ -137,7 +126,50 @@ fun buildSectorGeoJsonFeature(
       "type": "Feature",
       "geometry": {
         "type": "Polygon",
-        "coordinates": [[ [$originLng, $originLat], $arcCoordinates, [$originLng, $originLat] ]]
+        "coordinates": [[ $ring ]]
+      },
+      "properties": $propertiesJson
+    }
+    """.trimIndent()
+}
+
+// Compass isn't accurate enough to justify rendering a precise degree value -- the map arrow
+// always snaps to the nearest of 8 compass points, even though the stored travelBearingDegrees
+// keeps its full precision (this only affects display).
+fun snapToNearestCompass8Degrees(bearingDegrees: Double): Double {
+    val snapped = kotlin.math.round(bearingDegrees / 45.0) * 45.0
+    return ((snapped % 360.0) + 360.0) % 360.0
+}
+
+/**
+ * Builds a short arrow (shaft + two back-angled barbs, as one GeoJSON MultiLineString feature)
+ * pointing along [bearingDegrees] from [lat]/[lng] -- drawn only where a travel bearing exists
+ * on a sighting; a plain dot otherwise. [bearingDegrees] is expected to already be snapped via
+ * [snapToNearestCompass8Degrees].
+ */
+fun buildTravelArrowGeoJsonFeature(
+    lat: Double,
+    lng: Double,
+    bearingDegrees: Double,
+    propertiesJson: String = "{}",
+    shaftLengthMeters: Double = 40.0,
+    barbLengthMeters: Double = 15.0,
+    barbAngleDegrees: Double = 25.0
+): String {
+    val (tipLat, tipLng) = destinationPoint(lat, lng, bearingDegrees, shaftLengthMeters)
+    val (leftLat, leftLng) = destinationPoint(tipLat, tipLng, bearingDegrees + 180.0 - barbAngleDegrees, barbLengthMeters)
+    val (rightLat, rightLng) = destinationPoint(tipLat, tipLng, bearingDegrees + 180.0 + barbAngleDegrees, barbLengthMeters)
+
+    return """
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "MultiLineString",
+        "coordinates": [
+          [ [$lng, $lat], [$tipLng, $tipLat] ],
+          [ [$tipLng, $tipLat], [$leftLng, $leftLat] ],
+          [ [$tipLng, $tipLat], [$rightLng, $rightLat] ]
+        ]
       },
       "properties": $propertiesJson
     }

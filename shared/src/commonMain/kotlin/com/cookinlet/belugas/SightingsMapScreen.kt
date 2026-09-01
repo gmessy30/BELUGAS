@@ -69,26 +69,34 @@ fun SightingsMapScreen(
     // 1. Unified Sighting Source for playback logic
     val allSightings = remember(localSightings, remoteSightings) {
         val combined = mutableListOf<SightingDisplayModel>()
-        
+
+        // The SQLDelight local cache (SightingEntity) still only has the old observer-position
+        // columns -- its own write path is currently unused, so this never actually carries
+        // real data, but it's kept compiling correctly rather than assumed away. No uncertainty
+        // circle/travel arrow for these: the cache has neither field yet.
         localSightings.forEach { s ->
             combined.add(SightingDisplayModel(
                 lat = s.lat, lng = s.lng, timestamp = s.timestamp,
                 total = (s.countWhites + s.countGreys + s.countCalves + s.countUnknown).toInt(),
-                isLocal = true, heading = s.heading
+                isLocal = true, uncertaintyRadiusMeters = null, travelBearingDegrees = null
             ))
         }
-        
-        // A remote sighting with no coordinates (e.g. bad manual/test data) has nowhere to
-        // place a pin -- skip it here rather than crash; it still shows up in the sightings
+
+        // A remote sighting with no whale position -- either bad data, or a legacy row from
+        // before the whale-position redesign (position_source null, only the old observer-
+        // position lat/lng populated) -- has nowhere new-format to place a pin. Skip it here
+        // rather than render it under the wrong meaning; it still shows up in the sightings
         // list (which doesn't need a location) via remoteSightings directly.
         remoteSightings.forEach { s ->
-            val lat = s.lat
-            val lng = s.lng
+            val lat = s.whaleLat
+            val lng = s.whaleLng
             if (lat == null || lng == null) return@forEach
             combined.add(SightingDisplayModel(
                 lat = lat, lng = lng, timestamp = s.observedAtEpochMs ?: 0L,
                 total = s.countWhites + s.countGreys + s.countCalves + s.countUnknown,
-                isLocal = false, heading = s.heading ?: "NONE"
+                isLocal = false,
+                uncertaintyRadiusMeters = s.uncertaintyRadiusMeters,
+                travelBearingDegrees = s.travelBearingDegrees
             ))
         }
         combined.sortedBy { it.timestamp }
@@ -284,52 +292,59 @@ fun SightingsMapScreen(
                     }
                 }
 
-                // Heading/distance sectors — always shown in standard mode regardless of the
-                // playback fade timeline (a separate, independent estimate of "somewhere out
-                // there in this direction/range", not another point-in-time marker).
-                val sectorGeoJsonString = remember(remoteSightings, region) {
+                // Uncertainty circles — always shown in standard mode regardless of the
+                // playback fade timeline (a separate, independent estimate of "somewhere within
+                // this radius", not another point-in-time marker). Replaces the old heading/
+                // distance sector wedge: a wedge's apex reveals where the observer stood, which
+                // this design specifically avoids storing at all -- a plain circle centered on
+                // the (already anonymous) estimated whale position has no such tell.
+                val circleGeoJsonString = remember(remoteSightings, region) {
                     val features = remoteSightings.mapNotNull { s ->
-                        // No coordinates -- nowhere to draw a sector from, skip it (same as the
-                        // pin-placement skip above for allSightings).
-                        val lat = s.lat ?: return@mapNotNull null
-                        val lng = s.lng ?: return@mapNotNull null
-                        val radiusMeters = s.distanceRadiusMeters ?: return@mapNotNull null
+                        // No whale position -- either bad data or a legacy pre-redesign row
+                        // (position_source null) -- nowhere new-format to draw a circle around.
+                        val lat = s.whaleLat ?: return@mapNotNull null
+                        val lng = s.whaleLng ?: return@mapNotNull null
+                        val radiusMeters = s.uncertaintyRadiusMeters ?: return@mapNotNull null
                         if (!region.containsLocation(lat, lng)) return@mapNotNull null
-
-                        // An explicit heading is trusted as-is unless it points back at land
-                        // (checkable only where we have real coastline data -- see
-                        // CoastlineGeometry.headingPointsAtLand). Missing or land-pointing
-                        // headings default to offshore, algorithmically derived rather than
-                        // manually entered, so they get MANUAL's existing (widest) confidence
-                        // tier rather than a new source tier.
-                        val explicitDegrees = s.headingDegrees
-                        val heading = if (explicitDegrees != null && !headingPointsAtLand(lat, lng, explicitDegrees)) {
-                            val headingSource = HeadingSource.entries.firstOrNull { it.name == s.headingSource }
-                                ?: HeadingSource.MANUAL
-                            HeadingEstimate(explicitDegrees, headingSource, s.headingAccuracyDegrees)
-                        } else {
-                            val offshoreDegrees = computeDefaultOffshoreHeadingDegrees(lat, lng)
-                            HeadingEstimate(offshoreDegrees, HeadingSource.MANUAL)
-                        }
-
-                        buildSectorGeoJsonFeature(lat, lng, heading, radiusMeters)
+                        buildCircleGeoJsonFeature(lat, lng, radiusMeters)
                     }
                     """{ "type": "FeatureCollection", "features": [ ${features.joinToString(",")} ] }"""
                 }
-                val sectorSource = rememberGeoJsonSource(data = GeoJsonData.JsonString(sectorGeoJsonString))
+                val circleSource = rememberGeoJsonSource(data = GeoJsonData.JsonString(circleGeoJsonString))
 
-                // Fill + outline, drawn before the point markers below so sectors sit underneath them.
+                // Fill + outline, drawn before the point markers below so circles sit underneath them.
                 FillLayer(
-                    id = "sighting-sectors-fill",
-                    source = sectorSource,
+                    id = "sighting-uncertainty-fill",
+                    source = circleSource,
                     color = const(Color(0xFF00E5FF)),
-                    opacity = const(0.25f)
+                    opacity = const(0.18f)
                 )
                 LineLayer(
-                    id = "sighting-sectors-outline",
-                    source = sectorSource,
+                    id = "sighting-uncertainty-outline",
+                    source = circleSource,
                     color = const(Color(0xFF00E5FF)),
                     width = const(1.5.dp)
+                )
+
+                // Travel-direction arrows — drawn only where a sighting has a recorded
+                // travelBearingDegrees (optional; most won't). Snapped to the nearest of 8
+                // compass points for display, per that function's own comment.
+                val travelArrowGeoJsonString = remember(remoteSightings, region) {
+                    val features = remoteSightings.mapNotNull { s ->
+                        val lat = s.whaleLat ?: return@mapNotNull null
+                        val lng = s.whaleLng ?: return@mapNotNull null
+                        val bearing = s.travelBearingDegrees ?: return@mapNotNull null
+                        if (!region.containsLocation(lat, lng)) return@mapNotNull null
+                        buildTravelArrowGeoJsonFeature(lat, lng, snapToNearestCompass8Degrees(bearing))
+                    }
+                    """{ "type": "FeatureCollection", "features": [ ${features.joinToString(",")} ] }"""
+                }
+                val travelArrowSource = rememberGeoJsonSource(data = GeoJsonData.JsonString(travelArrowGeoJsonString))
+                LineLayer(
+                    id = "sighting-travel-arrows",
+                    source = travelArrowSource,
+                    color = const(Color.White),
+                    width = const(2.dp)
                 )
 
                 // Safe GeoJSON source initialization without LinkedHashMap serialization errors
@@ -795,7 +810,12 @@ private data class SightingDisplayModel(
     val timestamp: Long,
     val total: Int,
     val isLocal: Boolean,
-    val heading: String
+    // Uncertainty circle radius -- replaces the old heading/distance sector wedge. Null only
+    // for the (currently always-empty) local SightingEntity cache, which has no such field yet.
+    val uncertaintyRadiusMeters: Double?,
+    // The animal's own absolute travel direction, optional -- null renders as a plain dot with
+    // no arrow, same as no direction having been recorded at all.
+    val travelBearingDegrees: Double?
 )
 
 // Wraps a zone's already-GeoJSON boundary geometry (see ZoneBoundaryRecord's comment on how

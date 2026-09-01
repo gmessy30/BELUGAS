@@ -45,7 +45,11 @@ fun ManualLoggingScreen(
     var sightingAlt by remember { mutableStateOf(0.0) }
 
     // Pod Metadata State
-    var selectedDirection by remember { mutableStateOf(PodDirection.NONE) }
+    // Absolute compass direction the animal was heading -- not relative to the observer (there
+    // is no reliable observer vantage point in this flow to be relative to; see
+    // CompassBearingPicker's doc comment). Optional, null = not recorded, matching
+    // travelBearingDegrees being optional on SightingRecord.
+    var travelBearingDegrees by remember { mutableStateOf<Double?>(null) }
     var whiteCount by remember { mutableStateOf(0) }
     var greyCount by remember { mutableStateOf(0) }
     var calfCount by remember { mutableStateOf(0) }
@@ -63,13 +67,16 @@ fun ManualLoggingScreen(
     var isSaving by remember { mutableStateOf(false) }
     var isRecentering by remember { mutableStateOf(false) }
     // Only true while the online coastline-channel fallback (GeofenceUtils.
-    // isWithinCoastlineChannelFallback) is running, i.e. only after the synchronous
-    // isWithin3DFunnel check has already failed -- never shown on a normal submit.
+    // isWithinCoastlineChannelFallback) is running, i.e. only when the buffer-based whale-
+    // position check (GeofenceUtils.isWhalePositionVerified) found no well-sourced data near
+    // the point at all -- never shown on a normal (resolved) submit.
     var isCheckingCoastlineFallback by remember { mutableStateOf(false) }
 
-    var headingEstimate by remember { mutableStateOf<HeadingEstimate?>(null) }
-    var distanceBucket by remember { mutableStateOf<DistanceBucket?>(null) }
-    val isAerial = sightingAlt > 100.0
+    // Uncertainty radius for the dropped pin -- flow-agnostic (no isAerial distinction, unlike
+    // LoggingScreen's projected-distance bucket): an aerial pin-dropper can simply choose a
+    // larger radius themselves rather than the picker guessing from altitude. Always resolved
+    // via DistanceBucket.radiusMeters(isAerial = false) -- see UncertaintyButton below.
+    var uncertaintyBucket by remember { mutableStateOf<DistanceBucket?>(null) }
 
     val scope = rememberCoroutineScope()
 
@@ -105,11 +112,13 @@ fun ManualLoggingScreen(
     fun saveAndFinish(record: SightingRecord) {
         scope.launch {
             try {
-                // Ensure we use the latest map center for the record
+                // Ensure we use the latest pin position for the record -- the pin IS the whale
+                // position under the redesign (no projection), same "use the latest map center"
+                // safety net the old lat/lng re-stamp here used to provide.
                 val center = cameraState.position.target
                 val updatedRecord = record.copy(
-                    lat = center.latitude,
-                    lng = center.longitude
+                    whaleLat = center.latitude,
+                    whaleLng = center.longitude
                 )
                 OfflineSightingRepository.queueSighting(storage, updatedRecord)
                 // Wait for the sync attempt to actually finish before handing control back --
@@ -199,43 +208,52 @@ fun ManualLoggingScreen(
                     }
                     isSaving = true
 
-                    // Use target map coordinates for the record
-                    val targetCenter = cameraState.position.target
-                    val record = SightingRecord(
-                        lat = targetCenter.latitude,
-                        lng = targetCenter.longitude,
-                        heading = selectedDirection.name.takeIf { selectedDirection != PodDirection.NONE } ?: "NONE",
-                        countWhites = whiteCount,
-                        countGreys = greyCount,
-                        countCalves = calfCount,
-                        countUnknown = unknownCount,
-                        observedAtEpochMs = selectedTimestampMs,
-                        observerType = observerType.name,
-                        headingDegrees = headingEstimate?.degrees,
-                        headingSource = headingEstimate?.source?.name,
-                        headingAccuracyDegrees = headingEstimate?.accuracyDegrees,
-                        distanceBucket = distanceBucket?.name,
-                        distanceRadiusMeters = distanceBucket?.radiusMeters(isAerial)
-                    )
+                    scope.launch {
+                        // The pin IS the whale position -- no projection, no heading/distance
+                        // reading needed for placement.
+                        val targetCenter = cameraState.position.target
+                        val uncertaintyRadius = (uncertaintyBucket ?: DistanceBucket.MEDIUM).radiusMeters(isAerial = false)
 
-                    if (GeofenceUtils.isWithin3DFunnel(targetCenter.latitude, targetCenter.longitude, sightingAlt, region)) {
-                        saveAndFinish(record.copy(isGeofenceVerified = true))
-                    } else {
-                        // Only reachable once the synchronous check has already rejected the
-                        // point -- the online fallback never runs, and this loading state
-                        // never shows, on a normal (accepted) submit.
-                        scope.launch {
-                            isCheckingCoastlineFallback = true
-                            val validByChannel = GeofenceUtils.isWithinCoastlineChannelFallback(
-                                targetCenter.latitude, targetCenter.longitude
-                            )
-                            isCheckingCoastlineFallback = false
-                            if (validByChannel) {
-                                saveAndFinish(record.copy(isGeofenceVerified = true))
-                            } else {
+                        val record = SightingRecord(
+                            whaleLat = targetCenter.latitude,
+                            whaleLng = targetCenter.longitude,
+                            uncertaintyRadiusMeters = uncertaintyRadius,
+                            uncertaintyBucket = (uncertaintyBucket ?: DistanceBucket.MEDIUM).name,
+                            travelBearingDegrees = travelBearingDegrees,
+                            travelBearingSource = if (travelBearingDegrees != null) TravelBearingSource.MANUAL.name else null,
+                            positionSource = PositionSource.PIN.name,
+                            countWhites = whiteCount,
+                            countGreys = greyCount,
+                            countCalves = calfCount,
+                            countUnknown = unknownCount,
+                            observedAtEpochMs = selectedTimestampMs,
+                            observerType = observerType.name
+                        )
+
+                        when (GeofenceUtils.isWhalePositionVerified(targetCenter.latitude, targetCenter.longitude, uncertaintyRadius)) {
+                            true -> saveAndFinish(record.copy(isGeofenceVerified = true))
+                            false -> {
                                 pendingRecord = record
                                 showGeofenceWarning = true
                                 isSaving = false
+                            }
+                            null -> {
+                                // Only reachable once the buffer check found no well-sourced
+                                // data near this point at all -- the online fallback never
+                                // runs, and this loading state never shows, on a normal
+                                // (resolved) submit.
+                                isCheckingCoastlineFallback = true
+                                val validByChannel = GeofenceUtils.isWithinCoastlineChannelFallback(
+                                    targetCenter.latitude, targetCenter.longitude
+                                )
+                                isCheckingCoastlineFallback = false
+                                if (validByChannel) {
+                                    saveAndFinish(record.copy(isGeofenceVerified = true))
+                                } else {
+                                    pendingRecord = record
+                                    showGeofenceWarning = true
+                                    isSaving = false
+                                }
                             }
                         }
                     }
@@ -254,42 +272,6 @@ fun ManualLoggingScreen(
             ) {
                 Text("☰ MENU", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Black)
             }
-        }
-
-        // --- 3. DIRECTION ARROWS OVERLAID ON MAP ---
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 60.dp, bottom = 210.dp)
-        ) {
-            DirectionArrowButton(
-                direction = PodDirection.AWAY,
-                isSelected = selectedDirection == PodDirection.AWAY,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .size(width = 120.dp, height = 90.dp),
-                onClick = { selectedDirection = PodDirection.AWAY }
-            )
-
-            DirectionArrowButton(
-                direction = PodDirection.LEFT,
-                isSelected = selectedDirection == PodDirection.LEFT,
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 24.dp)
-                    .size(width = 110.dp, height = 110.dp),
-                onClick = { selectedDirection = PodDirection.LEFT }
-            )
-
-            DirectionArrowButton(
-                direction = PodDirection.RIGHT,
-                isSelected = selectedDirection == PodDirection.RIGHT,
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 24.dp)
-                    .size(width = 110.dp, height = 110.dp),
-                onClick = { selectedDirection = PodDirection.RIGHT }
-            )
         }
 
         // --- 3b. RECENTER ON GPS BUTTON ---
@@ -391,26 +373,25 @@ fun ManualLoggingScreen(
                 }
             }
 
-            // Row A2: Heading & Distance
+            // Row A2: Uncertainty ("how far away were they / how sure are you") and travel
+            // direction ("which way were they heading?"). The pin itself is the whale position
+            // now, so uncertainty is just how wide a circle to draw around it, and direction is
+            // a direct compass pick rather than anything relative to an observer -- this screen
+            // has no reliable vantage point to be relative to.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.Center
             ) {
-                val pinTarget = cameraState.position.target
-                HeadingDistanceButton(
-                    heading = headingEstimate,
-                    distance = distanceBucket,
-                    isAerial = isAerial,
-                    originLat = pinTarget.latitude,
-                    originLng = pinTarget.longitude,
-                    altitudeMeters = sightingAlt,
-                    region = region,
-                    onConfirm = { h, d ->
-                        headingEstimate = h
-                        distanceBucket = d
-                    }
+                UncertaintyButton(
+                    uncertainty = uncertaintyBucket,
+                    onConfirm = { bucket -> uncertaintyBucket = bucket }
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                CompassBearingButton(
+                    bearingDegrees = travelBearingDegrees,
+                    onConfirm = { degrees -> travelBearingDegrees = degrees }
                 )
             }
 
@@ -490,7 +471,7 @@ fun ManualLoggingScreen(
                 },
                 text = {
                     Text(
-                        text = "Your selected location (${record.lat}, ${record.lng}) falls outside the primary observation sightline for ${region.name}.\n\nDo you still want to log this sighting?"
+                        text = "Your selected location (${record.whaleLat}, ${record.whaleLng}) falls outside the primary observation sightline for ${region.name}.\n\nDo you still want to log this sighting?"
                     )
                 },
                 confirmButton = {
@@ -538,5 +519,152 @@ fun ManualLoggingScreen(
                 textContentColor = Color.LightGray
             )
         }
+    }
+}
+
+/**
+ * Flow-agnostic uncertainty-radius picker for ManualLoggingScreen's dropped pin -- "how far
+ * away were they / how sure are you", not a heading+distance projection like LoggingScreen's
+ * HeadingDistanceButton (the pin already IS the position; this only sizes the circle drawn
+ * around it). Reuses DistanceBucket's labels/radii at the flow-agnostic isAerial=false scale --
+ * an aerial pin-dropper just picks a larger bucket rather than the picker guessing from altitude.
+ */
+@Composable
+private fun UncertaintyButton(
+    uncertainty: DistanceBucket?,
+    modifier: Modifier = Modifier,
+    onConfirm: (DistanceBucket) -> Unit
+) {
+    var showDialog by remember { mutableStateOf(false) }
+
+    val summary = if (uncertainty != null) {
+        "🎯 ±${uncertainty.shortLabel(isAerial = false)}"
+    } else {
+        "🎯 SET UNCERTAINTY"
+    }
+
+    Button(
+        onClick = { showDialog = true },
+        modifier = modifier,
+        colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.75f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(summary, color = Color.Yellow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    }
+
+    if (showDialog) {
+        var selected by remember { mutableStateOf(uncertainty ?: DistanceBucket.MEDIUM) }
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("How sure are you?", fontWeight = FontWeight.Bold) },
+            text = {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    DistanceBucket.entries.forEach { bucket ->
+                        FilterChip(
+                            selected = selected == bucket,
+                            onClick = { selected = bucket },
+                            label = { Text(bucket.shortLabel(isAerial = false), fontSize = 10.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFF00E5FF),
+                                selectedLabelColor = Color.Black
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { onConfirm(selected); showDialog = false }) {
+                    Text("OK", color = Color.Yellow)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) { Text("CANCEL", color = Color.White) }
+            },
+            containerColor = Color(0xFF1E293B),
+            titleContentColor = Color.White,
+            textContentColor = Color.LightGray
+        )
+    }
+}
+
+/**
+ * Direct 8-point compass picker for the animal's absolute travel direction -- "which way were
+ * they heading?", not relative AWAY/LEFT/RIGHT arrows like LoggingScreen's. Deliberately not a
+ * reuse of that relative model: this screen has no reliable observer vantage point to be
+ * relative to (a dropped pin can be placed from memory, panned to a spot watched from
+ * elsewhere, or filed well after the fact), so a relative direction here would rest on an
+ * unverifiable assumption about where the user is standing and which way they're facing.
+ * Stores straight into SightingRecord.travelBearingDegrees at one of the 8 cardinal/intercardinal
+ * values, travelBearingSource = MANUAL -- exactly what the map's own display snapping
+ * (snapToNearestCompass8Degrees) reduces every bearing to anyway, so what's picked here is
+ * exactly what gets drawn, with no lost precision either way.
+ */
+@Composable
+private fun CompassBearingButton(
+    bearingDegrees: Double?,
+    modifier: Modifier = Modifier,
+    onConfirm: (Double?) -> Unit
+) {
+    var showDialog by remember { mutableStateOf(false) }
+
+    val summary = COMPASS_POINTS.firstOrNull { it.second == bearingDegrees }?.first
+        ?.let { "🧭 $it" }
+        ?: "🧭 SET DIRECTION"
+
+    Button(
+        onClick = { showDialog = true },
+        modifier = modifier,
+        colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.75f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(summary, color = Color.Yellow, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    }
+
+    if (showDialog) {
+        var selected by remember { mutableStateOf(bearingDegrees) }
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("Which way were they heading?", fontWeight = FontWeight.Bold) },
+            text = {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    COMPASS_POINTS.forEach { (label, deg) ->
+                        FilterChip(
+                            selected = selected == deg,
+                            onClick = { selected = deg },
+                            label = { Text(label, fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color.Yellow,
+                                selectedLabelColor = Color.Black
+                            )
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { onConfirm(selected); showDialog = false }) {
+                    Text("OK", color = Color.Yellow)
+                }
+            },
+            dismissButton = {
+                // Clears the selection (not just closes the dialog) -- travel direction is
+                // optional, and this is the only way to explicitly unset a previously-picked one.
+                TextButton(onClick = { onConfirm(null); showDialog = false }) {
+                    Text("NOT SURE", color = Color.White)
+                }
+            },
+            containerColor = Color(0xFF1E293B),
+            titleContentColor = Color.White,
+            textContentColor = Color.LightGray
+        )
     }
 }

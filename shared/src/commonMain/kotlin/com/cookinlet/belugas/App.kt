@@ -268,6 +268,20 @@ fun App() {
                         }
                         capturedPhotoPath = null
                         currentScreen = Screen.CAPTURE
+                    },
+                    // The camera flow couldn't place this sighting at all (no heading given,
+                    // and no water confirmed near the observer to guess from) -- same cleanup
+                    // as RETAKE, since there's no way to carry the captured photo into the
+                    // manual flow (ManualLoggingScreen takes no photo path), then hand off to
+                    // manual pin-drop logging instead of losing the report entirely.
+                    onNavigateToManualLogging = {
+                        capturedPhotoPath?.let { path ->
+                            scope.launch {
+                                storage.deleteFile(path)
+                            }
+                        }
+                        capturedPhotoPath = null
+                        currentScreen = Screen.MANUAL_LOGGING
                     }
                 )
             }
@@ -559,8 +573,8 @@ fun OfflineSightingsList(
                                 countGreys = sighting.countGreys,
                                 countCalves = sighting.countCalves,
                                 countUnknown = sighting.countUnknown,
-                                lat = sighting.lat,
-                                lng = sighting.lng,
+                                lat = sighting.whaleLat,
+                                lng = sighting.whaleLng,
                                 observedAtMs = sighting.observedAtEpochMs ?: 0L,
                                 photoUrl = sighting.photoUrl,
                                 isLocal = false

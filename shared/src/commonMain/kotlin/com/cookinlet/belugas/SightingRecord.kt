@@ -73,5 +73,71 @@ data class SightingRecord(
     val isGeofenceVerified: Boolean = false,
 
     @SerialName("photo_url")
-    val photoUrl: String? = null
+    val photoUrl: String? = null,
+
+    // --- Whale-position fields (observer-position -> whale-position redesign). lat/lng/
+    // heading_degrees above are frozen at their old "observer position" / "observer->animal
+    // bearing" meaning and are never written by new code -- these are the replacements. See
+    // supabase/migrations/20260901000000_add_whale_position_columns.sql for the full rationale.
+
+    // The estimated WHALE position -- never the observer's. Set directly from the dropped pin
+    // (ManualLoggingScreen, positionSource = PIN) or projected from the observer's GPS fix via
+    // a real heading+distance reading (LoggingScreen, PROJECTED) or CoastlineGeometry's
+    // offshore-perpendicular guess when no heading was given (LoggingScreen, FALLBACK).
+    @SerialName("whale_lat")
+    val whaleLat: Double? = null,
+
+    @SerialName("whale_lng")
+    val whaleLng: Double? = null,
+
+    // Resolved meters behind whaleLat/whaleLng's precision -- always present whenever
+    // whaleLat/whaleLng are, since every positionSource derives one. This is what the map
+    // draws as a plain circle (replacing the old heading/distance sector wedge) and what the
+    // geofence check treats as the point's buffer, capped -- see isGeofenceVerified computation
+    // at each capture site for why a user-claimed radius can't just be trusted uncapped.
+    @SerialName("uncertainty_radius_meters")
+    val uncertaintyRadiusMeters: Double? = null,
+
+    // The label behind uncertaintyRadiusMeters -- DistanceBucket's names for PROJECTED/
+    // FALLBACK rows, or the flow-agnostic manual picker's own label set for PIN rows.
+    @SerialName("uncertainty_bucket")
+    val uncertaintyBucket: String? = null,
+
+    // The animal's own absolute direction of travel (0..359.99 degrees, true/magnetic north) --
+    // NOT a locate vector like the old heading_degrees. Optional: null renders as a plain dot.
+    // Derived on-device from a base compass bearing at capture time (AWAY = that bearing
+    // unchanged, LEFT = -90, RIGHT = +90) and stored as the resolved absolute number -- the
+    // relative AWAY/LEFT/RIGHT choice itself is not persisted.
+    @SerialName("travel_bearing_degrees")
+    val travelBearingDegrees: Double? = null,
+
+    // Provenance of the base compass bearing travelBearingDegrees was derived from -- SENSOR
+    // (live device compass) or MANUAL (typed/dialed in). Null whenever travelBearingDegrees is
+    // null. Kept specifically so a researcher can weight the rendered arrow by whether the
+    // underlying reading was measured or guessed.
+    @SerialName("travel_bearing_source")
+    val travelBearingSource: String? = null,
+
+    // Discriminator for how whaleLat/whaleLng were derived, and the permanent, unambiguous
+    // marker for "is this row old-meaning or new-meaning" -- see the migration's own comment.
+    // Always set on a new-format row; always null on a legacy (pre-redesign) row. 'PIN' /
+    // 'PROJECTED' / 'FALLBACK' -- see PositionSource.
+    @SerialName("position_source")
+    val positionSource: String? = null
+)
+
+// See SightingRecord.positionSource's doc comment.
+enum class PositionSource { PIN, PROJECTED, FALLBACK }
+
+enum class TravelBearingSource { SENSOR, MANUAL }
+
+// Intermediate result while a logging screen resolves a whale position, before it's folded
+// into a SightingRecord alongside the counts/timestamp/travel-bearing fields the position
+// computation doesn't need to know about.
+data class WhalePositionEstimate(
+    val lat: Double,
+    val lng: Double,
+    val uncertaintyRadiusMeters: Double,
+    val uncertaintyBucket: String?,
+    val positionSource: PositionSource
 )

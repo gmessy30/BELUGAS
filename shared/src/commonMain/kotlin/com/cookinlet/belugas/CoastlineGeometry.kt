@@ -447,20 +447,6 @@ fun computeDefaultOffshoreHeadingDegrees(lat: Double, lng: Double): Double {
     return initialBearingDegrees(lat, lng, nearestWaterPoint.first, nearestWaterPoint.second)
 }
 
-/**
- * Whether an explicit heading from this observer position points at land instead of water.
- * Only judgeable when the observer is inside a well-sourced zone (same containment check as
- * [computeDefaultOffshoreHeadingDegrees]); if not, there's no reliable data to override the
- * given heading with, so this trusts it rather than guessing.
- */
-fun headingPointsAtLand(lat: Double, lng: Double, headingDegrees: Double): Boolean {
-    for (zone in WELL_SOURCED_ZONES) {
-        if (!pointInPolygon(lat, lng, zone.fullRing)) continue
-        val (testLat, testLng) = destinationPoint(lat, lng, headingDegrees, 200.0)
-        return !pointInPolygon(testLat, testLng, zone.fullRing)
-    }
-    return false
-}
 
 // KENAI.fullRing's river "spikes" (see that zone's header comment) trace up the Kenai/Kasilof
 // River centerlines and directly back down the same nodes -- a zero-width slit with no
@@ -872,4 +858,96 @@ fun isWithinWellSourcedWater(lat: Double, lng: Double, altitudeMeters: Double): 
     }
 
     return if (withinReachOfAnyZone) false else null
+}
+
+// ============================================================================================
+// Whale-position redesign additions (observer-position -> whale-position, see
+// supabase/migrations/20260901000000_add_whale_position_columns.sql). isWithinWellSourcedWater
+// above stays exactly as it was -- still used by GeofenceUtils.isWithin3DFunnel/
+// sectorEndpointWithinGeofence, which are still real, active checks (the CAMERA flow's
+// heading/distance dialog still previews whether a real projection lands on water). Everything
+// below is new, sibling logic for validating/deriving a WHALE position instead of an observer's.
+// ============================================================================================
+
+/**
+ * Same three-tier structure as [isWithinWellSourcedWater] (zone containment -> buffer-distance
+ * to real coastline/river data -> confident-false within reach / null out of reach), but
+ * buffer-driven rather than altitude-driven -- there's no observer altitude to reason about once
+ * the point being validated is the animal's own estimated position, not an observer's sightline.
+ * [bufferMeters] is the caller's responsibility to choose sensibly: see
+ * GeofenceUtils.isWhalePositionVerified, which caps it before calling here so a user-chosen
+ * uncertainty radius can't be inflated to make verification easier ("I'm very unsure" must not
+ * become "verified" just because the buffer got wider along with it).
+ */
+fun isWithinGeofenceBuffer(lat: Double, lng: Double, bufferMeters: Double): Boolean? {
+    val bufferKm = bufferMeters / 1000.0
+    var withinReachOfAnyZone = false
+
+    for (zone in WELL_SOURCED_ZONES) {
+        if (pointInPolygon(lat, lng, zone.fullRing)) return true
+
+        var nearestKm = Double.MAX_VALUE
+        for (line in realLinesForZone(zone)) {
+            val segment = nearestSegment(lat, lng, line) ?: continue
+            val distKm = segment.distanceMeters / 1000.0
+            if (distKm < nearestKm) nearestKm = distKm
+        }
+
+        if (nearestKm <= bufferKm) return true
+        if (nearestKm <= ZONE_AUTHORITATIVE_REACH_KM) withinReachOfAnyZone = true
+    }
+
+    return if (withinReachOfAnyZone) false else null
+}
+
+// Fallback search cap: 300m, not DistanceBucket.CLOSE's 150m -- the Kenai's tidal flats are
+// wide enough that the true waterline can sit further out than CLOSE assumes, and a fallback
+// guess is as likely to undershoot as overshoot (field observation, not a measurement).
+// FALLBACK_UNCERTAINTY_RADIUS_METERS is deliberately larger than this cap, not equal to it --
+// the cap only bounds how far the search looks for water; keeping the recorded uncertainty
+// wider than the search itself is what keeps this honest. The number should communicate "we
+// guessed", not "we're confident to within 300m".
+private const val FALLBACK_SEARCH_CAP_METERS = 300.0
+private const val FALLBACK_SEARCH_STEP_METERS = 25.0
+const val FALLBACK_UNCERTAINTY_RADIUS_METERS = 500.0
+
+/**
+ * Last-resort whale-position guess for LoggingScreen, used only when the observer gave no
+ * heading/distance reading at all (SightingRecord.positionSource = FALLBACK). Walks outward
+ * from the observer along [computeDefaultOffshoreHeadingDegrees]'s perpendicular-to-nearest-
+ * coastline bearing -- the same bearing the map's old sector fallback used, reused rather than
+ * writing new geometry -- in [FALLBACK_SEARCH_STEP_METERS] steps up to
+ * [FALLBACK_SEARCH_CAP_METERS], returning the furthest point still confirmed in real water. On
+ * a narrow river this stops at the far bank instead of overshooting into wetlands beyond; on
+ * wide tidal flats it stays close in rather than guessing far, since a beluga sighting is as
+ * likely to be near as far.
+ *
+ * Returns null in two cases a caller must treat identically -- route to the existing geofence-
+ * warning/SAVE-ANYWAY dialog rather than fabricate a position: no well-sourced zone is within
+ * reach of the observer at all ([isWithinWellSourcedWater] returns null there -- no real
+ * geometry to walk against), or the walk never confirmed a single step in water within the cap
+ * (plausible on tidal flats wide enough that the true waterline sits past 300m).
+ */
+fun projectOffshoreFallback(observerLat: Double, observerLng: Double): Pair<Double, Double>? {
+    // isWithinWellSourcedWater's own null case (out of reach of every well-sourced zone) is
+    // reused here as "is there real coastline geometry near the observer to walk against" --
+    // altitude is irrelevant to that reach question, so 0.0 is a no-op argument, not a claim.
+    if (isWithinWellSourcedWater(observerLat, observerLng, 0.0) == null) return null
+
+    val bearing = computeDefaultOffshoreHeadingDegrees(observerLat, observerLng)
+    var lastConfirmedWater: Pair<Double, Double>? = null
+    var dist = FALLBACK_SEARCH_STEP_METERS
+    while (dist <= FALLBACK_SEARCH_CAP_METERS) {
+        val candidate = destinationPoint(observerLat, observerLng, bearing, dist)
+        val inWater = isWithinWellSourcedWater(candidate.first, candidate.second, 0.0) == true
+        if (inWater) {
+            lastConfirmedWater = candidate
+        } else if (lastConfirmedWater != null) {
+            // Was in water, just stepped out of it (e.g. the far bank of a narrow river) --
+            // stop here instead of continuing past the water into wetlands beyond.
+            break
+        }
+        dist += FALLBACK_SEARCH_STEP_METERS
+    }
+    return lastConfirmedWater
 }

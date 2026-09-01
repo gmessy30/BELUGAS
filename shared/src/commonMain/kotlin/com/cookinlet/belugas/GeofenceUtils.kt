@@ -95,6 +95,31 @@ object GeofenceUtils {
         return result == true
     }
 
+    // Ceiling on the buffer used to verify a whale position, regardless of the row's own
+    // uncertainty_radius_meters. Without this, is_geofence_verified would have a perverse
+    // incentive built in: on a PIN row the radius is a value the *user* chose, so an uncapped
+    // buffer means claiming more uncertainty makes verification EASIER ("I'm very unsure"
+    // becomes "verified"). The stored uncertaintyRadiusMeters is untouched by this cap -- only
+    // the buffer used for this specific check is limited.
+    private const val WHALE_POSITION_VERIFY_BUFFER_CAP_METERS = 1000.0
+
+    /**
+     * Whether a whale position (see SightingRecord.whaleLat/whaleLng) is close enough to real
+     * water to count as geofence-verified, given its own [uncertaintyRadiusMeters] -- capped at
+     * [WHALE_POSITION_VERIFY_BUFFER_CAP_METERS] first (see that constant's comment). Unlike
+     * isWithin3DFunnel, there's no altitude term: the point being validated is the animal's own
+     * estimated position, not an observer's elevated sightline, so CoastlineGeometry.
+     * isWithinGeofenceBuffer's plain buffer-distance tiers apply directly.
+     *
+     * Returns null exactly when isWithinGeofenceBuffer does -- out of reach of every
+     * well-sourced zone -- so a caller should fall through to the same online coastline-channel
+     * RPC fallback used elsewhere, not treat null as a rejection.
+     */
+    fun isWhalePositionVerified(lat: Double, lng: Double, uncertaintyRadiusMeters: Double): Boolean? {
+        val cappedBufferMeters = minOf(uncertaintyRadiusMeters, WHALE_POSITION_VERIFY_BUFFER_CAP_METERS)
+        return isWithinGeofenceBuffer(lat, lng, cappedBufferMeters)
+    }
+
     // Haversine distance from point to nearest shoreline/river coordinate
     private fun getMinDistanceToWaterKm(
         lat: Double,

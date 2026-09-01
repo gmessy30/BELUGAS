@@ -34,10 +34,17 @@ private fun buildCsv(
     includePhotoColumn: Boolean,
     photoFilenames: Map<String, String>
 ): String {
+    // Old observer-position columns (lat/lng/heading/heading_degrees/...) are deliberately not
+    // included here -- an old CSV must not be silently reinterpretable, so a script keyed on
+    // those header names either doesn't find them at all (new export) or reads them under their
+    // original meaning (an export never regenerated since before this change), never a mix of
+    // old-looking headers with new-meaning data. Legacy rows (position_source null) simply
+    // export blank for every whale-position column below.
     val header = listOf(
-        "id", "observed_at", "lat", "lng", "heading", "heading_degrees", "heading_source",
-        "heading_accuracy_degrees", "distance_bucket", "distance_radius_meters",
-        "count_whites", "count_greys", "count_calves", "count_unknown", "observer_type"
+        "id", "observed_at", "whale_lat", "whale_lng", "uncertainty_bucket",
+        "uncertainty_radius_meters", "travel_bearing_degrees", "travel_bearing_source",
+        "position_source", "count_whites", "count_greys", "count_calves", "count_unknown",
+        "observer_type"
     ) + if (includePhotoColumn) listOf("photo_filename") else emptyList()
 
     val sb = StringBuilder()
@@ -47,14 +54,13 @@ private fun buildCsv(
         val row = mutableListOf(
             r.id,
             r.observedAtEpochMs?.let { formatDateTime(it) } ?: "",
-            r.lat?.toString() ?: "",
-            r.lng?.toString() ?: "",
-            r.heading ?: "",
-            r.headingDegrees?.toString() ?: "",
-            r.headingSource ?: "",
-            r.headingAccuracyDegrees?.toString() ?: "",
-            r.distanceBucket ?: "",
-            r.distanceRadiusMeters?.toString() ?: "",
+            r.whaleLat?.toString() ?: "",
+            r.whaleLng?.toString() ?: "",
+            r.uncertaintyBucket ?: "",
+            r.uncertaintyRadiusMeters?.toString() ?: "",
+            r.travelBearingDegrees?.toString() ?: "",
+            r.travelBearingSource ?: "",
+            r.positionSource ?: "",
             r.countWhites.toString(),
             r.countGreys.toString(),
             r.countCalves.toString(),

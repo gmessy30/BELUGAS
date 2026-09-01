@@ -68,6 +68,20 @@ object SyncEngine {
                     // A failure on one item (photo upload or record insert) leaves that item queued for
                     // retry but does not stop the rest of the queue from syncing.
                     for (item in queue) {
+                        // A record queued by an app build from before the whale-position
+                        // redesign has no positionSource at all (that field didn't exist yet)
+                        // and still carries the old observer-position lat/lng. Syncing it as-is
+                        // would write exactly the observer position this change exists to stop
+                        // storing, so it's discarded outright rather than uploaded under the
+                        // old meaning -- there's no legacy-sync path, matching the "no backfill"
+                        // decision for the rows that already exist server-side.
+                        if (item.record.positionSource == null) {
+                            println("SyncEngine: Discarding pre-redesign queued item ${item.localId} (no positionSource)")
+                            OfflineSightingRepository.markAsSynced(storage, item.localId)
+                            _events.emit(SyncEvent.ItemFailed(item.localId, "Discarded: logged by an older app version"))
+                            continue
+                        }
+
                         println("SyncEngine: Attempting to sync item ${item.localId}")
 
                         val recordToSync = if (item.localPhotoPath != null && item.record.photoUrl == null) {

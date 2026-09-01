@@ -32,7 +32,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val COMPASS_POINTS = listOf(
+// Also reused by ManualLoggingScreen's CompassBearingButton -- same 8 points, same degree
+// values, no reason for a second lookup table.
+val COMPASS_POINTS = listOf(
     "N" to 0.0, "NE" to 45.0, "E" to 90.0, "SE" to 135.0,
     "S" to 180.0, "SW" to 225.0, "W" to 270.0, "NW" to 315.0
 )
