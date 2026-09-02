@@ -523,11 +523,29 @@ fun ManualLoggingScreen(
 }
 
 /**
+ * Confidence-phrased label for the uncertainty picker, e.g. "Confident (<150m)". DistanceBucket's
+ * own shortLabel ("<150m", "~500m", ">1.2km") was written for the old "how far away" question and
+ * reads as meaningless under "How sure are you?" with no framing, so this pairs a plain confidence
+ * word with that same distance text. Only the displayed text differs -- underlying bucket/radius
+ * unchanged.
+ */
+private fun DistanceBucket.confidenceLabel(): String {
+    val word = when (this) {
+        DistanceBucket.CLOSE -> "Confident"
+        DistanceBucket.MEDIUM -> "Rough estimate"
+        DistanceBucket.FAR -> "Not sure"
+    }
+    return "$word (${shortLabel(isAerial = false)})"
+}
+
+/**
  * Flow-agnostic uncertainty-radius picker for ManualLoggingScreen's dropped pin -- "how far
  * away were they / how sure are you", not a heading+distance projection like LoggingScreen's
  * HeadingDistanceButton (the pin already IS the position; this only sizes the circle drawn
- * around it). Reuses DistanceBucket's labels/radii at the flow-agnostic isAerial=false scale --
- * an aerial pin-dropper just picks a larger bucket rather than the picker guessing from altitude.
+ * around it). Reuses DistanceBucket's radii at the flow-agnostic isAerial=false scale -- an
+ * aerial pin-dropper just picks a larger bucket rather than the picker guessing from altitude.
+ * Labels are this screen's own confidence phrasing (see confidenceLabel above), not
+ * DistanceBucket.shortLabel, which was written for a different question.
  */
 @Composable
 private fun UncertaintyButton(
@@ -540,7 +558,7 @@ private fun UncertaintyButton(
     val summary = if (uncertainty != null) {
         "🎯 ±${uncertainty.shortLabel(isAerial = false)}"
     } else {
-        "🎯 SET UNCERTAINTY"
+        "🎯 SET CONFIDENCE"
     }
 
     Button(
@@ -567,7 +585,7 @@ private fun UncertaintyButton(
                         FilterChip(
                             selected = selected == bucket,
                             onClick = { selected = bucket },
-                            label = { Text(bucket.shortLabel(isAerial = false), fontSize = 10.sp) },
+                            label = { Text(bucket.confidenceLabel(), fontSize = 10.sp) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = Color(0xFF00E5FF),
                                 selectedLabelColor = Color.Black
