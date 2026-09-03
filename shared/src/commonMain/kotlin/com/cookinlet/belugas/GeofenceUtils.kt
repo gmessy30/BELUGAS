@@ -13,6 +13,46 @@ object GeofenceUtils {
     // rather than leaving a submit button showing a spinner indefinitely.
     private const val COASTLINE_CHANNEL_FALLBACK_TIMEOUT_MS = 6000L
 
+    // Coarse OUTER geofence -- a separate, much blunter check than isWithin3DFunnel/
+    // isWhalePositionVerified below, meant to run BEFORE either of them as a hard, immediate
+    // reject with no SAVE-ANYWAY escape hatch. Those two answer "is this specific point
+    // plausibly on water"; this one only answers "is this even remotely Cook Inlet" -- for
+    // catching wildly wrong locations (GPS test fixtures, a device set to another region,
+    // someone opening the app hundreds of km away), not for precision.
+    //
+    // DERIVATION: min/max lat/lng across every coordinate in WELL_SOURCED_ZONES (all 6 zones'
+    // fullRing data, CoastlineGeometry.kt -- lat [59.4506606, 61.3198466], lng
+    // [-151.8433034, -149.0002884]) unioned with every row currently in the coastline_traces
+    // table (lat [59.5461827, 61.2612995], lng [-153.2564299, -150.9313959]) -- combined:
+    // lat [59.4506606, 61.3198466], lng [-153.2564299, -149.0002884]. The Kenai/Kasilof river
+    // centerline constants were checked too and sit entirely inside this box already.
+    //
+    // Then a generous ~50km margin on every side (0.45deg lat, 0.91deg lng at this latitude),
+    // rounded outward for extra headroom since precision isn't the point here:
+    // lat [59.0, 61.8], lng [-154.2, -148.0].
+    //
+    // SANITY-CHECKED, NOT ASSUMED: confirmed this doesn't reach Bristol Bay or cross the
+    // Alaska Peninsula -- Iliamna (59.7539, -154.9067, the gateway to the Bristol Bay
+    // drainage) and Port Alsworth (~60.2, -154.30) both fall outside this box's west edge with
+    // room to spare; King Salmon (58.6883, -156.6483, on Bristol Bay proper) is far outside on
+    // both axes. Known imprecision (not the sanity check's concern, just noted): a plain
+    // rectangle also covers Whittier/Passage Canal in the NE corner, which is Prince William
+    // Sound, not Cook Inlet.
+    private const val OUTER_GEOFENCE_MIN_LAT = 59.0
+    private const val OUTER_GEOFENCE_MAX_LAT = 61.8
+    private const val OUTER_GEOFENCE_MIN_LNG = -154.2
+    private const val OUTER_GEOFENCE_MAX_LNG = -148.0
+
+    /**
+     * True when [lat]/[lng] falls within the coarse outer Cook Inlet box (see
+     * OUTER_GEOFENCE_MIN_LAT's comment). Callers should treat false as an immediate hard
+     * reject -- no SAVE ANYWAY, no further geofence checks -- and true as "proceed to the
+     * existing isWithin3DFunnel/isWhalePositionVerified flow unchanged."
+     */
+    fun isWithinOuterGeofence(lat: Double, lng: Double): Boolean =
+        lat in OUTER_GEOFENCE_MIN_LAT..OUTER_GEOFENCE_MAX_LAT &&
+            lng in OUTER_GEOFENCE_MIN_LNG..OUTER_GEOFENCE_MAX_LNG
+
     // Ground-level water line & active tidal river channel points. Sparse (only 7 points
     // across a coastline that's actually ~300km long) -- kept only as the last-resort
     // fallback isWithin3DFunnel now uses when CoastlineGeometry's real polygon data doesn't

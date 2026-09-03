@@ -19,6 +19,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -250,6 +251,12 @@ private data class CoastlineChannelParams(
     @SerialName("p_lng") val lng: Double
 )
 
+@Serializable
+private data class RedeemTierCodeParams(
+    @SerialName("p_code") val code: String,
+    @SerialName("p_subscriber_id") val subscriberId: String
+)
+
 object SupabaseApi {
     /**
      * Attempts to post a single sighting record to Supabase.
@@ -402,6 +409,21 @@ object SupabaseApi {
     private val SUBSCRIPTION_LIST_COLUMNS = Columns.list(
         "id", "subscriber_id", "kind", "confidence_filter", "is_active",
         "label", "zone_id", "radius_meters", "expires_at", "created_at"
+    )
+
+    // Every anon-readable sightings column EXCEPT subscriber_id -- anon has no SELECT grant on
+    // that column at all (20260903010000_add_observer_tier_system.sql's column-level
+    // lockdown), so an unqualified select() would fail outright (Postgres requires privilege
+    // on every column a bare `select *`-equivalent expands to). observer_tier IS included --
+    // unlike subscriber_id, nothing about it is sensitive, and it's the whole point of the
+    // tier system to be usable client-side (e.g. the "verified sightings only" filter).
+    private val SIGHTING_LIST_COLUMNS = Columns.list(
+        "id", "lat", "lng", "heading", "heading_degrees", "heading_source",
+        "heading_accuracy_degrees", "distance_bucket", "distance_radius_meters",
+        "count_whites", "count_greys", "count_calves", "count_unknown",
+        "observed_at_epoch_ms", "observer_type", "is_geofence_verified", "photo_url",
+        "whale_lat", "whale_lng", "uncertainty_radius_meters", "uncertainty_bucket",
+        "travel_bearing_degrees", "travel_bearing_source", "position_source", "observer_tier"
     )
 
     /**
@@ -677,6 +699,34 @@ object SupabaseApi {
     }
 
     /**
+     * Attempts to claim [code] onto this device's [subscriberId] via TierClaimScreen (see
+     * that screen's own comment -- only reachable through AboutScreen's hidden gesture).
+     * Returns the assigned tier (1 or 2) on success, null on any failure -- a bad code, an
+     * already-used code, and a network/decode error all collapse to the same null so this
+     * can't be used to probe which codes exist, matching redeem_tier_code's own design
+     * (20260903010000_add_observer_tier_system.sql).
+     */
+    suspend fun redeemTierCode(code: String, subscriberId: String): Int? {
+        return try {
+            val params = jsonConfig.encodeToJsonElement(
+                RedeemTierCodeParams(code = code, subscriberId = subscriberId)
+            ).jsonObject
+            // Same raw-parse approach as isPointWithinCoastlineChannel above -- decodeAs<T>()
+            // requires non-null T, and a genuinely-null result (bad/used code) is an expected
+            // outcome here, not a decode failure.
+            val raw = supabase.postgrest.rpc("redeem_tier_code", params).data
+            when (val element = jsonConfig.parseToJsonElement(raw)) {
+                is JsonNull -> null
+                else -> element.jsonPrimitive.intOrNull
+            }
+        } catch (e: Exception) {
+            println("TIER_CODE_REDEEM_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
      * Fetches all sightings from the remote Supabase database with a 10s timeout.
      */
     suspend fun getSightings(): List<SightingRecord> = withContext(Dispatchers.Default) {
@@ -684,7 +734,8 @@ object SupabaseApi {
         return@withContext try {
             withTimeout(10000L) {
                 println("SUPABASE_FETCH: [2/3] Querying 'sightings' table...")
-                val response = supabase.postgrest["sightings"].select().decodeList<SightingRecord>()
+                val response = supabase.postgrest["sightings"].select(columns = SIGHTING_LIST_COLUMNS)
+                    .decodeList<SightingRecord>()
                 println("SUPABASE_FETCH: [3/3] SUCCESS! Decoded ${response.size} items from database.")
                 response.forEach {
                     println("  -> Sighting ID: ${it.id} | Lat: ${it.lat} | Lng: ${it.lng}")

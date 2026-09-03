@@ -53,7 +53,10 @@ enum class Screen {
     RESOURCES,
     ABOUT,
     EXPORT,
-    SUBSCRIPTIONS
+    SUBSCRIPTIONS,
+    // Reached only via AboutScreen's hidden 7-tap gesture -- never from MainMenuDrawer or any
+    // other visible navigation entry point. See TierClaimScreen.kt.
+    TIER_CLAIM
 }
 
 // How long the splash screen stays up before navigating to the launch-preference screen.
@@ -254,6 +257,7 @@ fun App() {
                     capturedPhotoPath = capturedPhotoPath,
                     storage = storage,
                     locationService = locationService,
+                    appPreferences = appPreferences,
                     region = activeRegion,
                     onDoneClick = {
                         capturedPhotoPath = null
@@ -289,6 +293,7 @@ fun App() {
                 ManualLoggingScreen(
                     storage = storage,
                     locationService = locationService,
+                    appPreferences = appPreferences,
                     region = activeRegion,
                     onDoneClick = {
                         currentScreen = Screen.CAPTURE
@@ -328,7 +333,16 @@ fun App() {
                 ResourcesScreen(onBack = { currentScreen = Screen.MENU })
             }
             Screen.ABOUT -> {
-                AboutScreen(onBack = { currentScreen = Screen.MENU })
+                AboutScreen(
+                    onBack = { currentScreen = Screen.MENU },
+                    onNavigateToTierClaim = { currentScreen = Screen.TIER_CLAIM }
+                )
+            }
+            Screen.TIER_CLAIM -> {
+                TierClaimScreen(
+                    appPreferences = appPreferences,
+                    onBack = { currentScreen = Screen.ABOUT }
+                )
             }
             Screen.EXPORT -> {
                 ExportScreen(onBack = { currentScreen = Screen.MENU })

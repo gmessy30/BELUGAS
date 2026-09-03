@@ -123,7 +123,23 @@ data class SightingRecord(
     // Always set on a new-format row; always null on a legacy (pre-redesign) row. 'PIN' /
     // 'PROJECTED' / 'FALLBACK' -- see PositionSource.
     @SerialName("position_source")
-    val positionSource: String? = null
+    val positionSource: String? = null,
+
+    // This device's own persistent identifier (AppPreferences.getOrCreateSubscriberId()),
+    // set at capture time so the server can compute observerTier below at insert. WRITE-ONLY
+    // from the app's own perspective: anon has no SELECT grant on this column at all (see
+    // 20260903010000_add_observer_tier_system.sql's column-level lockdown), so a fetched
+    // SightingRecord (getSightings/export_sightings) always decodes this as null regardless of
+    // what was originally stored -- it is never read back, only written once at insert.
+    @SerialName("subscriber_id")
+    val subscriberId: String? = null,
+
+    // Server-computed at insert time via a BEFORE INSERT trigger joining subscriberId above
+    // against public.tier_roster -- never client-set, always null/1/2. See that migration's
+    // header for why this is a stored column (a sighting keeps whatever tier applied when it
+    // was made, regardless of later roster changes) rather than always re-derived live.
+    @SerialName("observer_tier")
+    val observerTier: Int? = null
 )
 
 // See SightingRecord.positionSource's doc comment.

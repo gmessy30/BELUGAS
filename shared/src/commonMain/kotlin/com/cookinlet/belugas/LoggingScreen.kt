@@ -40,6 +40,7 @@ fun LoggingScreen(
     capturedPhotoPath: String?,
     storage: LocalFileStorage,
     locationService: LocationService,
+    appPreferences: AppPreferences,
     region: RegionConfig = Regions.COOK_INLET,
     onDoneClick: () -> Unit,
     onRetakeClick: () -> Unit,
@@ -61,6 +62,9 @@ fun LoggingScreen(
     // redesign exists to stop storing, mislabelled as the whale's. Losing the report is the
     // correct outcome here; ManualLoggingScreen's dropped pin is the way to place it by hand.
     var showCannotPlaceDialog by remember { mutableStateOf(false) }
+    // Coarse outer-geofence hard reject (GeofenceUtils.isWithinOuterGeofence), checked before
+    // isWhalePositionVerified -- see that dialog's own text for why there's no SAVE ANYWAY.
+    var showOutsideOuterGeofenceDialog by remember { mutableStateOf(false) }
     var pendingRecord by remember { mutableStateOf<SightingRecord?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     // Only true while the online coastline-channel fallback (GeofenceUtils.
@@ -178,6 +182,12 @@ fun LoggingScreen(
                             }
                         }
 
+                        // This device's own persistent id, sent so the server can compute
+                        // observerTier at insert -- never read back by the app (anon has no
+                        // SELECT grant on sightings.subscriber_id at all, see
+                        // 20260903010000_add_observer_tier_system.sql).
+                        val subscriberId = appPreferences.getOrCreateSubscriberId()
+
                         fun buildRecord(pos: WhalePositionEstimate, verified: Boolean) = SightingRecord(
                             whaleLat = pos.lat,
                             whaleLng = pos.lng,
@@ -192,7 +202,8 @@ fun LoggingScreen(
                             countUnknown = unknownCount,
                             observedAtEpochMs = currentTimeMillis(),
                             observerType = ObserverType.SELF.name,
-                            isGeofenceVerified = verified
+                            isGeofenceVerified = verified,
+                            subscriberId = subscriberId
                         )
 
                         suspend fun finishWith(pos: WhalePositionEstimate, passed: Boolean) {
@@ -220,6 +231,13 @@ fun LoggingScreen(
                             // redesign exists to prevent. Direct the user to the manual flow
                             // instead of silently mislabelling a position.
                             showCannotPlaceDialog = true
+                            isSaving = false
+                        } else if (!GeofenceUtils.isWithinOuterGeofence(position.lat, position.lng)) {
+                            // Coarse hard reject, ahead of the real geofence flow -- see
+                            // GeofenceUtils.isWithinOuterGeofence's own comment. No SAVE ANYWAY,
+                            // no pendingRecord, no soft warning: this location isn't remotely
+                            // Cook Inlet.
+                            showOutsideOuterGeofenceDialog = true
                             isSaving = false
                         } else {
                             when (GeofenceUtils.isWhalePositionVerified(position.lat, position.lng, position.uncertaintyRadiusMeters)) {
@@ -450,6 +468,33 @@ fun LoggingScreen(
                 dismissButton = {
                     TextButton(onClick = { showCannotPlaceDialog = false }) {
                         Text("CANCEL", color = Color.White)
+                    }
+                },
+                containerColor = Color(0xFF1E293B),
+                titleContentColor = Color.White,
+                textContentColor = Color.LightGray
+            )
+        }
+
+        // --- OUTSIDE COOK INLET (COARSE OUTER GEOFENCE) HARD REJECT DIALOG ---
+        // Plain messaging, single OK button -- no SAVE ANYWAY, unlike the real geofence warning
+        // above. See GeofenceUtils.isWithinOuterGeofence's comment for why this check exists
+        // and runs first.
+        if (showOutsideOuterGeofenceDialog) {
+            AlertDialog(
+                onDismissRequest = { showOutsideOuterGeofenceDialog = false },
+                title = {
+                    Text(text = "Not a Cook Inlet Location", fontWeight = FontWeight.Bold)
+                },
+                text = {
+                    Text(text = "This app is for Cook Inlet beluga sightings.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { showOutsideOuterGeofenceDialog = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                    ) {
+                        Text("OK", color = Color.Black, fontWeight = FontWeight.Black)
                     }
                 },
                 containerColor = Color(0xFF1E293B),
