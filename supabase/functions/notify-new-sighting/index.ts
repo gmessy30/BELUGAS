@@ -54,13 +54,23 @@ interface SightingRow {
   count_greys?: number;
   count_calves?: number;
   count_unknown?: number;
-  // May be null -- a stray row with missing coordinates (see SightingRecord.kt's comment on
-  // the same fields). match_notification_recipients handles that gracefully: nobody's
-  // zone/point/polygon can match a null location, so only broadcast-fallback devices get it.
-  lat?: number | null;
-  lng?: number | null;
+  // The estimated whale position (see supabase/migrations/20260901000000_add_whale_position_
+  // columns.sql) -- lat/lng on this row are the retired observer-position columns and are no
+  // longer read here. May be null -- a stray row with missing coordinates, or a legacy
+  // (position_source null) row from before the whale-position redesign, which is deliberately
+  // treated as having no known location rather than falling back to its old observer lat/lng.
+  // match_notification_recipients handles a null location gracefully: nobody's zone/point/
+  // polygon can match it, so only broadcast-fallback devices get it.
+  whale_lat?: number | null;
+  whale_lng?: number | null;
   observer_type?: string | null;
   is_geofence_verified?: boolean;
+  // Forwarded to match_notification_recipients as p_uncertainty_radius_meters -- the
+  // river-proximity fallback (supabase/migrations/20260902010000_add_river_proximity_
+  // fallback_to_zone_matching.sql) accepts a whale position that fails ST_Contains against a
+  // zone's polygon when it's within this many meters (capped at 1000) of that zone's
+  // river-spike trace, same cap GeofenceUtils.isWhalePositionVerified uses client-side.
+  uncertainty_radius_meters?: number | null;
 }
 
 interface WebhookPayload {
@@ -137,10 +147,11 @@ async function fetchMatchingDeviceTokens(sighting: SightingRow): Promise<string[
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      p_lat: sighting.lat ?? null,
-      p_lng: sighting.lng ?? null,
+      p_lat: sighting.whale_lat ?? null,
+      p_lng: sighting.whale_lng ?? null,
       p_observer_type: sighting.observer_type ?? null,
       p_is_geofence_verified: sighting.is_geofence_verified ?? false,
+      p_uncertainty_radius_meters: sighting.uncertainty_radius_meters ?? null,
     }),
   });
   if (!res.ok) {
