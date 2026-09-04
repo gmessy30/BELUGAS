@@ -131,8 +131,10 @@ fun App() {
     // per-screen) since both need to keep working regardless of which screen is showing, and
     // the map shading specifically needs to be visible unconditionally (not just wherever the
     // banner's own gates happen to be satisfied). Four independent pieces:
-    //   - watchedZoneBoundaries: real polygon geometry for every watched zone, for the map's
-    //     FillLayer. Fetched once -- zone polygons don't change at runtime.
+    //   - watchedZoneShadingAreas: each watched zone's shading geometry for the map's
+    //     FillLayer (the real banner watch area for Kenai, that zone's full boundary as a
+    //     fallback for any other watched zone -- decided server-side, see
+    //     WatchedZoneShadingRecord's comment). Fetched once -- doesn't change at runtime.
     //   - watchedZoneStatuses: raw sighting-recency facts for every watched zone, no location
     //     involved. Feeds the map (everyone sees it) and doubles as the banner's status lookup
     //     once a relevant zone id is known. Refreshed periodically alongside this device's own
@@ -142,14 +144,14 @@ fun App() {
     //   - presenceStatus: the banner's own decayed color, recomputed on a short local tick
     //     (see PresenceBanner.kt) so it keeps visibly aging between the infrequent network polls
     //     above instead of only updating on fetch.
-    var watchedZoneBoundaries by remember { mutableStateOf<List<ZoneBoundaryRecord>>(emptyList()) }
+    var watchedZoneShadingAreas by remember { mutableStateOf<List<WatchedZoneShadingRecord>>(emptyList()) }
     var watchedZoneStatuses by remember { mutableStateOf<List<WatchedZoneSightingStatus>>(emptyList()) }
     var subscribedWatchedZoneId by remember { mutableStateOf<String?>(null) }
     var nearbyWatchedZone by remember { mutableStateOf<NearbyWatchedZone?>(null) }
     var presenceStatus by remember { mutableStateOf(BelugaPresenceStatus.BLUE) }
 
     LaunchedEffect(Unit) {
-        watchedZoneBoundaries = SupabaseApi.getWatchedZoneBoundaries()
+        watchedZoneShadingAreas = SupabaseApi.getWatchedZoneShadingAreas()
     }
 
     LaunchedEffect(Unit) {
@@ -360,7 +362,7 @@ fun App() {
                     isLoading = isLoadingRemote,
                     region = activeRegion,
                     currentAltitude = currentAltitude,
-                    watchedZoneBoundaries = watchedZoneBoundaries,
+                    watchedZoneShadingAreas = watchedZoneShadingAreas,
                     watchedZoneStatuses = watchedZoneStatuses,
                     onCloseMap = { currentScreen = Screen.MENU },
                     onRefreshRemote = { refreshRemoteSightings() }

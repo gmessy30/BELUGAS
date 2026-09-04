@@ -53,7 +53,7 @@ fun SightingsMapScreen(
     // "Belugas present" river shading -- shown to everyone unconditionally (no subscription
     // or proximity gate, unlike the bottom banner in App.kt), same RED/YELLOW/BLUE model.
     // Defaulted empty so nothing renders until App.kt's hoisted fetches land.
-    watchedZoneBoundaries: List<ZoneBoundaryRecord> = emptyList(),
+    watchedZoneShadingAreas: List<WatchedZoneShadingRecord> = emptyList(),
     watchedZoneStatuses: List<WatchedZoneSightingStatus> = emptyList(),
     onCloseMap: () -> Unit,
     onRefreshRemote: () -> Unit = {}
@@ -227,50 +227,57 @@ fun SightingsMapScreen(
                     textAllowOverlap = const(true)
                 )
 
-                // "Belugas present" river shading -- one FillLayer+LineLayer pair per watched
-                // zone, colored by its own decayed status. Drawn before the sighting sectors/
-                // pins below so those stay on top of it. A plain const() color per zone (not a
+                // "Belugas present" shading -- one FillLayer+LineLayer pair per watched zone,
+                // colored by its own decayed status. Drawn before the sighting sectors/pins
+                // below so those stay on top of it. A plain const() color per zone (not a
                 // data-driven feature-property expression) is deliberate: there's exactly one
                 // watched zone (Kenai) as of this build, and Compose recomposition already
                 // handles re-coloring on status change without needing per-feature expressions.
                 //
-                // The zone's own boundary geometry (shared with GeofenceUtils/CoastlineGeometry's
-                // containment check, see that file's KENAI doc comment) traces each river as a
-                // zero-width slit -- up the centerline and back down the same nodes -- which is
-                // fine for point-in-polygon testing but MapLibre doesn't render a stroke for a
-                // line that immediately doubles back over itself, so the river itself shows as
-                // unstyled map (visually grey) while only the wider river-mouth/coastal body
-                // around it fills and outlines correctly. A separate LineLayer per real,
-                // single-direction river centerline (CoastlineGeometry.riverCenterlinesForZoneSlug,
-                // not the boundary's degenerate spike) is what actually colors the river.
-                watchedZoneBoundaries.forEach { zoneBoundary ->
-                    val zoneStatus = watchedZoneStatuses.find { it.zoneId == zoneBoundary.id }
+                // shadingArea is get_watched_zone_shading_areas' server-side answer to "what
+                // area does this zone's banner actually watch" -- for Kenai the real river
+                // buffer + mouth semicircle (20260903040000_add_watched_zone_shading_areas.sql),
+                // not the full zones.boundary (which also covers Kasilof and open inlet water,
+                // and stays exactly as-is for dispatch/subscriptions/export). No zone-slug
+                // branching here -- any other watched zone without its own narrower area comes
+                // back as its own unmodified boundary from that same RPC, so this code doesn't
+                // need to know or assume Kenai is the only one.
+                //
+                // The river buffer is a real, non-zero-width polygon (unlike zones.boundary's
+                // zero-width spike, which MapLibre can't render a stroke for), so it fills and
+                // outlines correctly on its own. The separate river-centerline LineLayer below
+                // (CoastlineGeometry.riverCenterlinesForZoneSlug) is left unconditional anyway --
+                // harmless visual reinforcement down the middle of the now-filled strip for
+                // Kenai, and still doing its original job (compensating for a zero-width spike)
+                // for any zone that falls back to its full boundary.
+                watchedZoneShadingAreas.forEach { zoneShading ->
+                    val zoneStatus = watchedZoneStatuses.find { it.zoneId == zoneShading.zoneId }
                     val zoneColor = colorForBelugaPresenceStatus(
                         computeBelugaPresenceStatus(zoneStatus, currentTimeMillis())
                     )
                     val zoneSource = rememberGeoJsonSource(
-                        data = GeoJsonData.JsonString(buildZoneBoundaryFeatureCollectionGeoJson(zoneBoundary.boundary))
+                        data = GeoJsonData.JsonString(buildZoneShadingFeatureCollectionGeoJson(zoneShading.shadingArea))
                     )
                     FillLayer(
-                        id = "watched-zone-${zoneBoundary.slug}-fill",
+                        id = "watched-zone-${zoneShading.zoneSlug}-fill",
                         source = zoneSource,
                         color = const(zoneColor),
                         opacity = const(0.35f)
                     )
                     LineLayer(
-                        id = "watched-zone-${zoneBoundary.slug}-outline",
+                        id = "watched-zone-${zoneShading.zoneSlug}-outline",
                         source = zoneSource,
                         color = const(zoneColor),
                         width = const(3.dp),
                         opacity = const(0.7f)
                     )
 
-                    riverCenterlinesForZoneSlug(zoneBoundary.slug).forEachIndexed { index, centerline ->
+                    riverCenterlinesForZoneSlug(zoneShading.zoneSlug).forEachIndexed { index, centerline ->
                         val riverSource = rememberGeoJsonSource(
                             data = GeoJsonData.JsonString(buildRiverCenterlineGeoJson(centerline))
                         )
                         LineLayer(
-                            id = "watched-zone-${zoneBoundary.slug}-river-$index",
+                            id = "watched-zone-${zoneShading.zoneSlug}-river-$index",
                             source = riverSource,
                             color = const(zoneColor),
                             width = const(10.dp),
@@ -818,16 +825,16 @@ private data class SightingDisplayModel(
     val travelBearingDegrees: Double?
 )
 
-// Wraps a zone's already-GeoJSON boundary geometry (see ZoneBoundaryRecord's comment on how
-// PostgREST serializes it) into a single-feature FeatureCollection MapLibre's GeoJsonData can
-// consume directly.
-private fun buildZoneBoundaryFeatureCollectionGeoJson(boundary: JsonElement): String {
+// Wraps a watched zone's already-GeoJSON shading geometry (see WatchedZoneShadingRecord's
+// comment on how PostgREST serializes it) into a single-feature FeatureCollection MapLibre's
+// GeoJsonData can consume directly.
+private fun buildZoneShadingFeatureCollectionGeoJson(shadingArea: JsonElement): String {
     return buildJsonObject {
         put("type", "FeatureCollection")
         putJsonArray("features") {
             addJsonObject {
                 put("type", "Feature")
-                put("geometry", boundary)
+                put("geometry", shadingArea)
                 put("properties", buildJsonObject {})
             }
         }
@@ -836,7 +843,7 @@ private fun buildZoneBoundaryFeatureCollectionGeoJson(boundary: JsonElement): St
 
 // A watched zone's real, single-direction river centerline (CoastlineGeometry.
 // riverCenterlinesForZoneSlug) as a LineString feature, for the river-specific LineLayer next to
-// the zone's own boundary FillLayer/LineLayer above.
+// the zone's own shading FillLayer/LineLayer above.
 private fun buildRiverCenterlineGeoJson(points: List<Pair<Double, Double>>): String {
     val coords = points.joinToString(",") { (lat, lng) -> "[$lng,$lat]" }
     return """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"LineString","coordinates":[$coords]},"properties":{}}]}"""

@@ -225,17 +225,26 @@ private data class NearbyWatchedZoneParams(
     @SerialName("p_proximity_meters") val proximityMeters: Double
 )
 
-// zones.boundary as PostgREST returns it for a plain select on this project: a nested GeoJSON
-// object (confirmed live against subscriptions.custom_polygon, the same geometry(...,4326)
-// column type -- see the Stage 2 commit fixing SubscriptionRecord's decode of it). Modeled as
-// JsonElement rather than a typed geometry class since nothing here needs to inspect it --
-// SightingsMapScreen just wraps it straight into a GeoJSON Feature for a FillLayer.
+// get_watched_zone_shading_areas' shading_area column as PostgREST returns it for an RPC with
+// a geometry-typed output column: a nested GeoJSON object, confirmed live (curled the RPC
+// directly) -- the same serialization zones.boundary already gets for a plain table select
+// (confirmed separately against subscriptions.custom_polygon, see the Stage 2 commit fixing
+// SubscriptionRecord's decode of it), so PostgREST applies it uniformly by Postgres type, not
+// by table-select-vs-function-call. Modeled as JsonElement rather than a typed geometry class
+// since nothing here needs to inspect it -- SightingsMapScreen just wraps it straight into a
+// GeoJSON Feature for a FillLayer.
+//
+// For Kenai this is the real banner watch area (river buffer + mouth semicircle,
+// 20260903040000_add_watched_zone_shading_areas.sql), NOT the full zones.boundary -- any other
+// is_banner_watched zone without its own narrower area falls back to its unmodified boundary,
+// decided entirely server-side in that RPC. This client code has no zone-slug branching and
+// doesn't need any: it always just draws whatever shadingArea comes back.
 @Serializable
-data class ZoneBoundaryRecord(
-    val id: String,
-    val slug: String,
-    val name: String,
-    val boundary: JsonElement
+data class WatchedZoneShadingRecord(
+    @SerialName("zone_id") val zoneId: String,
+    @SerialName("zone_slug") val zoneSlug: String,
+    @SerialName("zone_name") val zoneName: String,
+    @SerialName("shading_area") val shadingArea: JsonElement
 )
 
 @Serializable
@@ -644,18 +653,16 @@ object SupabaseApi {
     }
 
     /**
-     * Fetches every watched zone's real boundary polygon (as PostgREST's default GeoJSON
-     * serialization of a geometry column), for the map's river-shading FillLayer. Deliberately
-     * NOT part of getZones() -- that one is used far more often (every zone picker) and never
-     * needed the raw polygon; this is the one place that actually does.
+     * Fetches every watched zone's shading geometry for the map's "belugas present" FillLayer
+     * -- see WatchedZoneShadingRecord's own comment for what that actually is per zone.
+     * Deliberately NOT part of getZones() -- that one is used far more often (every zone
+     * picker) and never needed any polygon at all; this is the one place that actually does.
      */
-    suspend fun getWatchedZoneBoundaries(): List<ZoneBoundaryRecord> {
+    suspend fun getWatchedZoneShadingAreas(): List<WatchedZoneShadingRecord> {
         return try {
-            supabase.postgrest["zones"].select(columns = Columns.list("id", "slug", "name", "boundary")) {
-                filter { eq("is_banner_watched", true) }
-            }.decodeList<ZoneBoundaryRecord>()
+            supabase.postgrest.rpc("get_watched_zone_shading_areas").decodeList<WatchedZoneShadingRecord>()
         } catch (e: Exception) {
-            println("WATCHED_ZONE_BOUNDARIES_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
+            println("WATCHED_ZONE_SHADING_AREAS_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
             e.printStackTrace()
             emptyList()
         }
