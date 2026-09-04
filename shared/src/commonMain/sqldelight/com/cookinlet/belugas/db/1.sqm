@@ -1,0 +1,19 @@
+-- Migration from schema version 1 (the original single CREATE TABLE, no .sqm files at all) to
+-- version 2. First real migration in this database -- see SightingEntity.sq's own comment on why
+-- these six columns specifically (the remaining fields SightingRecord has that this entity
+-- didn't), and why they're appended at the end rather than grouped with their thematic
+-- relatives (ALTER TABLE ADD COLUMN always appends; a fresh install's CREATE TABLE has to match
+-- that same order for the two paths to produce identical schemas).
+--
+-- isGeofenceVerified gets NOT NULL DEFAULT 0 (SQLite requires a default for a NOT NULL column
+-- added via ALTER TABLE, since existing rows need a value) -- matches the remote sightings
+-- table's own column default, and this entity's existing isSynced/observerType columns' own
+-- precedent for a boolean-ish/defaulted column. The rest are nullable with no default: existing
+-- rows genuinely have no value for them (there's nothing truthful to backfill), same as
+-- whaleLat/whaleLng etc. were left nullable when they were added without a migration.
+ALTER TABLE sightingEntity ADD COLUMN headingDegrees REAL;
+ALTER TABLE sightingEntity ADD COLUMN headingSource TEXT;
+ALTER TABLE sightingEntity ADD COLUMN headingAccuracyDegrees REAL;
+ALTER TABLE sightingEntity ADD COLUMN distanceBucket TEXT;
+ALTER TABLE sightingEntity ADD COLUMN distanceRadiusMeters REAL;
+ALTER TABLE sightingEntity ADD COLUMN isGeofenceVerified INTEGER NOT NULL DEFAULT 0;

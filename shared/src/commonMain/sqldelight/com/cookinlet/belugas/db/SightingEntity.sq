@@ -4,6 +4,15 @@
 -- uncertaintyBucket/travelBearingDegrees/travelBearingSource/positionSource are the
 -- replacements. positionSource null <=> a legacy (pre-redesign) row, same discriminator
 -- convention as the Postgres table.
+--
+-- headingDegrees/headingSource/headingAccuracyDegrees/distanceBucket/distanceRadiusMeters/
+-- isGeofenceVerified (added in 1.sqm) are the remaining columns SightingRecord (the synced
+-- remote model) already has that this entity didn't -- added so the schema here is complete
+-- for whenever this table is actually wired up (see insertOrReplaceSighting's own comment:
+-- nothing calls it today). New columns are appended at the end, matching where ALTER TABLE ADD
+-- COLUMN necessarily puts them in 1.sqm -- SQLite has no "insert column at position N", so a
+-- fresh install (this CREATE TABLE) and a migrated one (1.sqm) must end up with the same
+-- column order, not the thematic grouping the fields would otherwise get.
 CREATE TABLE sightingEntity (
     id TEXT NOT NULL PRIMARY KEY,
     timestamp INTEGER NOT NULL,
@@ -24,21 +33,33 @@ CREATE TABLE sightingEntity (
     uncertaintyBucket TEXT,
     travelBearingDegrees REAL,
     travelBearingSource TEXT,
-    positionSource TEXT
+    positionSource TEXT,
+    headingDegrees REAL,
+    headingSource TEXT,
+    headingAccuracyDegrees REAL,
+    distanceBucket TEXT,
+    distanceRadiusMeters REAL,
+    isGeofenceVerified INTEGER NOT NULL DEFAULT 0
 );
 
 -- Queries for local offline viewing and syncing
 selectAllSightings:
 SELECT * FROM sightingEntity ORDER BY timestamp DESC;
 
+-- Nothing calls this today (the actual offline sync queue is OfflineSightingRepository's JSON
+-- file, not this table -- see the ADD COLUMN migration's own comment in 1.sqm). Kept complete
+-- and in sync with the full schema anyway, rather than a partial insert that would silently
+-- leave the new columns null forever even after this table is wired up.
 insertOrReplaceSighting:
 INSERT OR REPLACE INTO sightingEntity(
     id, timestamp, lat, lng, heading,
     countWhites, countGreys, countCalves, countUnknown, photoUrl, isSynced,
     observedAt, observerType,
     whaleLat, whaleLng, uncertaintyRadiusMeters, uncertaintyBucket,
-    travelBearingDegrees, travelBearingSource, positionSource
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    travelBearingDegrees, travelBearingSource, positionSource,
+    headingDegrees, headingSource, headingAccuracyDegrees,
+    distanceBucket, distanceRadiusMeters, isGeofenceVerified
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectUnsyncedSightings:
 SELECT * FROM sightingEntity WHERE isSynced = 0;
