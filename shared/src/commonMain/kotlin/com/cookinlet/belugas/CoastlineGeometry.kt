@@ -724,13 +724,11 @@ private val KASILOF_RIVER_CENTERLINE = listOf(
     60.2329842 to -151.1653133
 )
 
-// Upriver beluga limit -- geofence validation ONLY (see realLinesForZone below). The full
-// centerlines above run each river's entire KPB-mapped length and must stay that way for
-// riverCenterlinesForZoneSlug's map rendering: upstream river context is useful to show even
-// where a sighting wouldn't actually validate. This truncates a copy of each for the
-// isWithinWellSourcedWater buffer check, walking cumulative distance from the mouth (index 0)
-// in the same local flat-meters projection the rest of this file uses, and interpolating the
-// exact cut vertex rather than snapping to the nearest existing point.
+// Upriver beluga limit -- feeds both isWithinWellSourcedWater's buffer check (see
+// realLinesForZone below) and riverCenterlinesForZoneSlug's map rendering. Truncates a copy of
+// each full centerline above, walking cumulative distance from the mouth (index 0) in the same
+// local flat-meters projection the rest of this file uses, and interpolating the exact cut
+// vertex rather than snapping to the nearest existing point.
 //
 // Kenai: 11.5 mi. Corroborated three ways -- field observation; the pre-KPB-swap geometry's own
 // "11 mile apex" (see KENAI.fullRing's spike comment above); and the KPB water-body layer
@@ -800,9 +798,16 @@ private fun realLinesForZone(zone: CoastlineZone): List<List<Pair<Double, Double
  * river as a there-and-back spike (see KENAI's doc comment above) so its interior/outline can
  * never actually render as a colored river on a map -- these clean, single-direction centerlines
  * are what a river-specific LineLayer should draw instead. Empty for any zone without one.
+ *
+ * Beluga-limit-truncated, not the full KPB-mapped centerlines -- this LineLayer is drawn in the
+ * zone's live status color at full width/opacity (see SightingsMapScreen), so it reads as "belugas
+ * plausibly here," and must stop exactly where the shading fill it sits on top of stops. The full
+ * centerlines used to be returned here; that let the stroke run the river's entire mapped length
+ * (50mi/18mi) well past the buffer's 11.5mi/7.5mi cutoff, coloring the whole river regardless of
+ * the limit.
  */
 fun riverCenterlinesForZoneSlug(slug: String): List<List<Pair<Double, Double>>> = when (slug) {
-    "kenai" -> listOf(KENAI_RIVER_CENTERLINE, KASILOF_RIVER_CENTERLINE)
+    "kenai" -> listOf(KENAI_RIVER_CENTERLINE_BELUGA_LIMIT, KASILOF_RIVER_CENTERLINE_BELUGA_LIMIT)
     else -> emptyList()
 }
 
