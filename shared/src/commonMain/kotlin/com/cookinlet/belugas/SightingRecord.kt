@@ -142,6 +142,16 @@ data class SightingRecord(
     val observerTier: Int? = null
 )
 
+// The map/list "high confidence only" filter's predicate (SightingsMapScreen.kt, App.kt's
+// OfflineSightingsList) -- a photo is direct evidence regardless of who logged it; absent that,
+// tier 1/2 (credentialed observer) is the next-best evidence. Plain tier-3/no-photo manual
+// reports are hidden when the filter's on, not excluded from the data itself. Remote sightings
+// only, deliberately -- this device's own not-yet-synced local queue has no observerTier at all
+// (server-computed, never round-tripped back down) and should never be hidden from its owner
+// just because it hasn't been classified yet.
+val SightingRecord.isHighConfidence: Boolean
+    get() = photoUrl != null || observerTier == 1 || observerTier == 2
+
 // See SightingRecord.positionSource's doc comment.
 enum class PositionSource { PIN, PROJECTED, FALLBACK }
 

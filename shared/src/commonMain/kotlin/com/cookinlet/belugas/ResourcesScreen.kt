@@ -100,6 +100,32 @@ fun ResourcesScreen(onBack: () -> Unit) {
                     ResourceLinkRow("ADF&G: Beluga Whale Management & Research", ADFG_BELUGA_RESEARCH_URL, uriHandler)
                 }
 
+                ResourceSection(title = "HOW TO USE THIS APP") {
+                    // Longer, explanatory version of the same behavioral framing shown once as
+                    // a first-run gate (AcknowledgementGateScreen.kt) -- that one is deliberately
+                    // short since it's a one-time interstitial with a checkbox; this one has
+                    // room to actually explain why, for anyone who wants the reasoning later.
+                    Text(
+                        "Many good viewing spots along the Kenai and Kasilof are on or accessed " +
+                            "through private property. Always get permission before crossing a " +
+                            "fence line or cutting through someone's yard to reach the water -- " +
+                            "public road pullouts and posted public access points exist for a " +
+                            "reason.",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 13.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "When you log a sighting, this app asks for the whale's position, not " +
+                            "yours -- that's deliberate. A report is far more useful to other " +
+                            "observers and researchers when it marks where the animal actually " +
+                            "was, so take the extra moment to estimate that rather than just " +
+                            "dropping a pin on your own location.",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 13.sp
+                    )
+                }
+
                 ResourceSection(title = "BELUGA PHOTOGRAPHY TIPS") {
                     val tips = listOf(
                         "Use a zoom or telephoto lens rather than approaching closer -- belugas surface briefly and a long lens keeps you well within safe viewing distance.",

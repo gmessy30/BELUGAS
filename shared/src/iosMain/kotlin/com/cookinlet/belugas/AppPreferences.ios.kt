@@ -37,4 +37,17 @@ actual class AppPreferences actual constructor() {
     actual suspend fun setSubscriberId(id: String): Unit = withContext(Dispatchers.Default) {
         defaults.setObject(id, forKey = KEY_SUBSCRIBER_ID)
     }
+
+    // The first-run acknowledgement gate is Android-only, intentionally -- same "no Apple
+    // Developer account yet" reason getFcmToken/setFcmToken above is a no-op in practice. Rather
+    // than attempt an NSUserDefaults equivalent of Android's Auto-Backup-exclusion trick (there
+    // isn't a clean one: NSUserDefaults has no per-key or per-suite backup exclusion, so
+    // reproducing "must reappear after a reinstall" here would mean moving this one flag into a
+    // file with NSURLIsExcludedFromBackupKey set, a real behavior difference from every other
+    // preference in this class for a screen iOS never shows) -- this just always reports
+    // "already acknowledged" so the gate can never trigger here, and set is a no-op. Revisit for
+    // real if iOS ever gets its own build of this gate.
+    actual suspend fun getHasAcknowledgedFirstRunGate(): Boolean = true
+
+    actual suspend fun setHasAcknowledgedFirstRunGate(acknowledged: Boolean): Unit = Unit
 }

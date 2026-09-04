@@ -55,6 +55,12 @@ fun SightingsMapScreen(
     // Defaulted empty so nothing renders until App.kt's hoisted fetches land.
     watchedZoneShadingAreas: List<WatchedZoneShadingRecord> = emptyList(),
     watchedZoneStatuses: List<WatchedZoneSightingStatus> = emptyList(),
+    // Kenai's real tide-cycle-aware status (App.kt's kenaiBelugaStatus, derived from
+    // get_kenai_presence_state) -- used for the Kenai zone's shading color INSTEAD OF
+    // watchedZoneStatuses' flat-decay computation below, so the map and the bottom banner can
+    // never show Kenai in disagreeing colors. Every other watched zone still uses the flat-decay
+    // path unchanged -- this only overrides the one zone that has a real predictor.
+    kenaiBelugaStatus: BelugaPresenceStatus = BelugaPresenceStatus.BLUE,
     onCloseMap: () -> Unit,
     onRefreshRemote: () -> Unit = {}
 ) {
@@ -66,8 +72,20 @@ fun SightingsMapScreen(
         onRefreshRemote()
     }
 
+    // "High confidence only" -- photo_url is not null OR observer_tier in (1,2), hiding plain
+    // manual tier-3 reports. Applied once here, before any of the three places downstream that
+    // read remoteSightings (this combine step, circleGeoJsonString, travelArrowGeoJsonString),
+    // rather than three separate filters that could drift -- an uncertainty circle or travel
+    // arrow with no matching pin (or vice versa) would be a confusing half-filtered map.
+    // localSightings (this device's own not-yet-synced queue) is deliberately never filtered --
+    // see isHighConfidence's own comment on why.
+    var showHighConfidenceOnly by remember { mutableStateOf(false) }
+    val filteredRemoteSightings = remember(remoteSightings, showHighConfidenceOnly) {
+        if (showHighConfidenceOnly) remoteSightings.filter { it.isHighConfidence } else remoteSightings
+    }
+
     // 1. Unified Sighting Source for playback logic
-    val allSightings = remember(localSightings, remoteSightings) {
+    val allSightings = remember(localSightings, filteredRemoteSightings) {
         val combined = mutableListOf<SightingDisplayModel>()
 
         // The SQLDelight local cache (SightingEntity) still only has the old observer-position
@@ -87,7 +105,7 @@ fun SightingsMapScreen(
         // position lat/lng populated) -- has nowhere new-format to place a pin. Skip it here
         // rather than render it under the wrong meaning; it still shows up in the sightings
         // list (which doesn't need a location) via remoteSightings directly.
-        remoteSightings.forEach { s ->
+        filteredRemoteSightings.forEach { s ->
             val lat = s.whaleLat
             val lng = s.whaleLng
             if (lat == null || lng == null) return@forEach
@@ -251,10 +269,17 @@ fun SightingsMapScreen(
                 // Kenai, and still doing its original job (compensating for a zero-width spike)
                 // for any zone that falls back to its full boundary.
                 watchedZoneShadingAreas.forEach { zoneShading ->
-                    val zoneStatus = watchedZoneStatuses.find { it.zoneId == zoneShading.zoneId }
-                    val zoneColor = colorForBelugaPresenceStatus(
-                        computeBelugaPresenceStatus(zoneStatus, currentTimeMillis())
-                    )
+                    // Kenai reads the real predictor status (see this parameter's own comment);
+                    // every other zone keeps the original flat-decay computation.
+                    val zoneStatus = if (zoneShading.zoneSlug == "kenai") {
+                        kenaiBelugaStatus
+                    } else {
+                        computeBelugaPresenceStatus(
+                            watchedZoneStatuses.find { it.zoneId == zoneShading.zoneId },
+                            currentTimeMillis()
+                        )
+                    }
+                    val zoneColor = colorForBelugaPresenceStatus(zoneStatus)
                     val zoneSource = rememberGeoJsonSource(
                         data = GeoJsonData.JsonString(buildZoneShadingFeatureCollectionGeoJson(zoneShading.shadingArea))
                     )
@@ -305,8 +330,8 @@ fun SightingsMapScreen(
                 // distance sector wedge: a wedge's apex reveals where the observer stood, which
                 // this design specifically avoids storing at all -- a plain circle centered on
                 // the (already anonymous) estimated whale position has no such tell.
-                val circleGeoJsonString = remember(remoteSightings, region) {
-                    val features = remoteSightings.mapNotNull { s ->
+                val circleGeoJsonString = remember(filteredRemoteSightings, region) {
+                    val features = filteredRemoteSightings.mapNotNull { s ->
                         // No whale position -- either bad data or a legacy pre-redesign row
                         // (position_source null) -- nowhere new-format to draw a circle around.
                         val lat = s.whaleLat ?: return@mapNotNull null
@@ -336,8 +361,8 @@ fun SightingsMapScreen(
                 // Travel-direction arrows — drawn only where a sighting has a recorded
                 // travelBearingDegrees (optional; most won't). Snapped to the nearest of 8
                 // compass points for display, per that function's own comment.
-                val travelArrowGeoJsonString = remember(remoteSightings, region) {
-                    val features = remoteSightings.mapNotNull { s ->
+                val travelArrowGeoJsonString = remember(filteredRemoteSightings, region) {
+                    val features = filteredRemoteSightings.mapNotNull { s ->
                         val lat = s.whaleLat ?: return@mapNotNull null
                         val lng = s.whaleLng ?: return@mapNotNull null
                         val bearing = s.travelBearingDegrees ?: return@mapNotNull null
@@ -800,11 +825,31 @@ fun SightingsMapScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             ObserverElevationTip(currentAltitudeMeters = currentAltitude)
-            Button(
-                onClick = onCloseMap,
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.85f))
-            ) {
-                Text("✕ CLOSE MAP", color = Color.White)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // "High confidence only" -- see isHighConfidence's own comment for the
+                // photo_url/observer_tier rule. Hides plain manual tier-3 reports without
+                // removing them from the underlying data; this device's own queued/local
+                // sightings are never affected (see filteredRemoteSightings' own comment).
+                Button(
+                    onClick = { showHighConfidenceOnly = !showHighConfidenceOnly },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (showHighConfidenceOnly) Color(0xFF00E5FF) else Color.Black.copy(alpha = 0.85f)
+                    )
+                ) {
+                    Text(
+                        if (showHighConfidenceOnly) "✓ VERIFIED ONLY" else "VERIFIED ONLY",
+                        color = if (showHighConfidenceOnly) Color.Black else Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = onCloseMap,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.85f))
+                ) {
+                    Text("✕ CLOSE MAP", color = Color.White)
+                }
             }
         }
     }

@@ -43,6 +43,10 @@ import org.jetbrains.compose.resources.painterResource
 // Navigation States
 enum class Screen {
     SPLASH,
+    // Shown once on install and again after any reinstall -- see AppPreferences.
+    // getHasAcknowledgedFirstRunGate's own comment. Never reachable from normal navigation, same
+    // as TIER_CLAIM below -- only App()'s own startup routing puts the user here.
+    ACKNOWLEDGEMENT_GATE,
     CAPTURE,
     PHOTO_LOGGING,
     MANUAL_LOGGING,
@@ -102,18 +106,31 @@ fun App() {
     // from SharedPreferences/NSUserDefaults is far faster than SPLASH_DURATION_MS, so this
     // just makes sure a slow read can't extend the splash rather than trying to shave time
     // off it).
-    LaunchedEffect(Unit) {
+    // Shared by the initial routing effect below and the acknowledgement gate's own
+    // onAcknowledged callback -- one place that resolves "which real screen does the launch
+    // preference mean," so those two call sites can't drift. withSplashDelay is false from the
+    // gate (the gate itself already was the first thing the user saw and interacted with --
+    // stacking the fixed splash wait on top of that would just feel like a second cold-open).
+    suspend fun resolveAndSetLaunchScreen(withSplashDelay: Boolean) {
         val launchScreen = appPreferences.getLaunchScreen()
         if (launchScreen == LaunchScreen.CAMERA) {
             currentScreen = Screen.CAPTURE
         } else {
-            delay(SPLASH_DURATION_MS)
+            if (withSplashDelay) delay(SPLASH_DURATION_MS)
             currentScreen = when (launchScreen) {
                 LaunchScreen.MAP -> Screen.MAP
                 LaunchScreen.MENU -> Screen.MENU
                 LaunchScreen.CAMERA -> Screen.CAPTURE
             }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!appPreferences.getHasAcknowledgedFirstRunGate()) {
+            currentScreen = Screen.ACKNOWLEDGEMENT_GATE
+            return@LaunchedEffect
+        }
+        resolveAndSetLaunchScreen(withSplashDelay = true)
     }
 
     // Top-level region and altitude detection
@@ -141,14 +158,29 @@ fun App() {
     //     subscriptions, since the subscription check needs to know which zone ids are watched.
     //   - nearbyWatchedZone: the closer of the banner's two visibility gates -- real distance,
     //     not containment, per the spec (someone doesn't need to be in the river to see it).
-    //   - presenceStatus: the banner's own decayed color, recomputed on a short local tick
+    //   - presenceStatus: the banner's own color -- for Kenai, the server's phase verbatim
+    //     (kenaiBelugaStatus below, reactive off kenaiPresenceState, no local tick needed); for
+    //     any other watched zone, the original decayed color, recomputed on a short local tick
     //     (see PresenceBanner.kt) so it keeps visibly aging between the infrequent network polls
     //     above instead of only updating on fetch.
+    //   - kenaiPresenceState: get_kenai_presence_state()'s real tide-cycle-aware RED/YELLOW/BLUE
+    //     for Kenai specifically, replacing the flat-decay path for that one zone -- both the
+    //     banner AND the map's Kenai river-shading color (passed into SightingsMapScreen below)
+    //     read this, so the two surfaces can't disagree (see colorForBelugaPresenceStatus's own
+    //     comment on why that invariant matters). Polled unconditionally, same reasoning as
+    //     watchedZoneShadingAreas/watchedZoneStatuses above -- the map shading needs it
+    //     regardless of whether the banner itself is currently shown. A failed poll leaves the
+    //     last-known value in place (never cleared to null, never falls back to flat decay) --
+    //     lastSuccessfulKenaiFetchAtMs tracks staleness separately, for the banner's own
+    //     "(UPDATING…)" indicator once too much time has passed since the last real update.
     var watchedZoneShadingAreas by remember { mutableStateOf<List<WatchedZoneShadingRecord>>(emptyList()) }
     var watchedZoneStatuses by remember { mutableStateOf<List<WatchedZoneSightingStatus>>(emptyList()) }
     var subscribedWatchedZoneId by remember { mutableStateOf<String?>(null) }
     var nearbyWatchedZone by remember { mutableStateOf<NearbyWatchedZone?>(null) }
-    var presenceStatus by remember { mutableStateOf(BelugaPresenceStatus.BLUE) }
+    var nonKenaiPresenceStatus by remember { mutableStateOf(BelugaPresenceStatus.BLUE) }
+    var kenaiPresenceState by remember { mutableStateOf<KenaiPresenceState?>(null) }
+    var lastSuccessfulKenaiFetchAtMs by remember { mutableStateOf<Long?>(null) }
+    var isKenaiDataStale by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         watchedZoneShadingAreas = SupabaseApi.getWatchedZoneShadingAreas()
@@ -166,6 +198,36 @@ fun App() {
             delay(LOCATION_POLL_INTERVAL_MS)
         }
     }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            val fetched = SupabaseApi.getKenaiPresenceState()
+            if (fetched != null) {
+                kenaiPresenceState = fetched
+                lastSuccessfulKenaiFetchAtMs = currentTimeMillis()
+            }
+            delay(LOCATION_POLL_INTERVAL_MS)
+        }
+    }
+
+    // Staleness is genuinely time-based (unlike kenaiBelugaStatus below, which only ever
+    // changes when a new poll actually lands) -- this is the one place Kenai's presence state
+    // still needs a local tick, and it's deliberately narrow: it never touches phase/color, only
+    // whether to show the "(UPDATING…)" suffix on whatever phase was last fetched.
+    LaunchedEffect(lastSuccessfulKenaiFetchAtMs) {
+        while (true) {
+            val lastFetch = lastSuccessfulKenaiFetchAtMs
+            isKenaiDataStale = lastFetch != null &&
+                currentTimeMillis() - lastFetch > DEFAULT_KENAI_STALENESS_THRESHOLD_MS
+            delay(PRESENCE_DECAY_TICK_INTERVAL_MS)
+        }
+    }
+
+    // Reactive, not ticked -- get_kenai_presence_state's phase is rendered verbatim (see
+    // belugaPresenceStatusFromKenaiPhase's own comment), so this only ever changes when
+    // kenaiPresenceState itself changes on a real poll, never on a timer.
+    val kenaiBelugaStatus = kenaiPresenceState?.let { belugaPresenceStatusFromKenaiPhase(it.phase) }
+        ?: BelugaPresenceStatus.BLUE
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -188,14 +250,28 @@ fun App() {
     val relevantWatchedZoneId = nearbyWatchedZone?.zoneId ?: subscribedWatchedZoneId
     val relevantWatchedZoneName = nearbyWatchedZone?.zoneName
         ?: watchedZoneStatuses.find { it.zoneId == subscribedWatchedZoneId }?.zoneName
+    val relevantWatchedZoneSlug = nearbyWatchedZone?.zoneSlug
+        ?: watchedZoneStatuses.find { it.zoneId == subscribedWatchedZoneId }?.zoneSlug
+    val isRelevantZoneKenai = relevantWatchedZoneSlug == "kenai"
 
+    // Flat-decay path -- unchanged, and deliberately still the only thing this tick drives. Kept
+    // ticking even while Kenai is the relevant zone (harmless -- its result just isn't read in
+    // that case) rather than conditionally starting/stopping, so this doesn't need to know about
+    // Kenai at all.
     LaunchedEffect(relevantWatchedZoneId, watchedZoneStatuses) {
         while (true) {
             val relevantStatus = watchedZoneStatuses.find { it.zoneId == relevantWatchedZoneId }
-            presenceStatus = computeBelugaPresenceStatus(relevantStatus, currentTimeMillis())
+            nonKenaiPresenceStatus = computeBelugaPresenceStatus(relevantStatus, currentTimeMillis())
             delay(PRESENCE_DECAY_TICK_INTERVAL_MS)
         }
     }
+
+    // The banner's actual color: Kenai's real, reactive predictor status when Kenai is the
+    // relevant zone, the original ticked flat-decay status for anything else. See flag A in the
+    // scoping discussion this implements -- this is also, deliberately, the same value fed to
+    // SightingsMapScreen's kenaiBelugaStatus parameter below, so the bottom banner and the map's
+    // Kenai river shading can never disagree.
+    val presenceStatus = if (isRelevantZoneKenai) kenaiBelugaStatus else nonKenaiPresenceStatus
 
     // Reactive list of all sightings for List and Map views
     val sightings by database.sightingEntityQueries
@@ -224,6 +300,7 @@ fun App() {
     // disappears because neither gate applies, never because of its own color.
     val showPresenceBanner = currentScreen != Screen.CAPTURE &&
         currentScreen != Screen.MANUAL_LOGGING &&
+        currentScreen != Screen.ACKNOWLEDGEMENT_GATE &&
         relevantWatchedZoneId != null
 
     // The banner's actual rendered height (including its own navigationBarsPadding, which
@@ -242,6 +319,14 @@ fun App() {
         when (currentScreen) {
             Screen.SPLASH -> {
                 SplashScreen()
+            }
+            Screen.ACKNOWLEDGEMENT_GATE -> {
+                AcknowledgementGateScreen(
+                    appPreferences = appPreferences,
+                    onAcknowledged = {
+                        scope.launch { resolveAndSetLaunchScreen(withSplashDelay = false) }
+                    }
+                )
             }
             Screen.CAPTURE -> {
                 CaptureScreen(
@@ -364,6 +449,7 @@ fun App() {
                     currentAltitude = currentAltitude,
                     watchedZoneShadingAreas = watchedZoneShadingAreas,
                     watchedZoneStatuses = watchedZoneStatuses,
+                    kenaiBelugaStatus = kenaiBelugaStatus,
                     onCloseMap = { currentScreen = Screen.MENU },
                     onRefreshRemote = { refreshRemoteSightings() }
                 )
@@ -384,7 +470,9 @@ fun App() {
                 zoneName = relevantWatchedZoneName,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .onGloballyPositioned { presenceBannerHeightDp = with(density) { it.size.height.toDp() } }
+                    .onGloballyPositioned { presenceBannerHeightDp = with(density) { it.size.height.toDp() } },
+                kenaiDetail = if (isRelevantZoneKenai) kenaiPresenceState else null,
+                isKenaiDataStale = isRelevantZoneKenai && isKenaiDataStale
             )
         }
       }
@@ -530,6 +618,14 @@ fun OfflineSightingsList(
         .mapToList(Dispatchers.Default) // commonMain standard dispatcher
         .collectAsState(initial = emptyList())
 
+    // "High confidence only" -- same predicate/reasoning as SightingsMapScreen's own toggle (see
+    // isHighConfidence's comment). Applies only to REMOTE DATABASE below -- QUEUED FOR SYNC
+    // (this device's own not-yet-synced local queue) is never filtered.
+    var showHighConfidenceOnly by remember { mutableStateOf(false) }
+    val filteredRemoteSightings = remember(remoteSightings, showHighConfidenceOnly) {
+        if (showHighConfidenceOnly) remoteSightings.filter { it.isHighConfidence } else remoteSightings
+    }
+
     AppBackground {
     Scaffold(
         containerColor = Color.Transparent,
@@ -538,6 +634,16 @@ fun OfflineSightingsList(
                 title = { Text("Historical Sightings", color = Color.White) },
                 navigationIcon = {
                     Button(onClick = onBack) { Text("BACK") }
+                },
+                actions = {
+                    TextButton(onClick = { showHighConfidenceOnly = !showHighConfidenceOnly }) {
+                        Text(
+                            if (showHighConfidenceOnly) "✓ VERIFIED ONLY" else "VERIFIED ONLY",
+                            color = if (showHighConfidenceOnly) Color(0xFF00E5FF) else Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
@@ -577,12 +683,12 @@ fun OfflineSightingsList(
                     }
 
                     // Show Remote Sightings
-                    if (remoteSightings.isNotEmpty()) {
+                    if (filteredRemoteSightings.isNotEmpty()) {
                         item {
                             Spacer(modifier = Modifier.height(16.dp))
                             Text("REMOTE DATABASE", color = Color(0xFFA5D6A7), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
-                        items(remoteSightings) { sighting ->
+                        items(filteredRemoteSightings) { sighting ->
                             SightingListItem(
                                 heading = sighting.heading,
                                 countWhites = sighting.countWhites,

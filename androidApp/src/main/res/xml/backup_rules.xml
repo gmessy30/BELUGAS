@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Legacy (API 24-30) counterpart to data_extraction_rules.xml, same single exclusion, same
+     reasoning. This app's minSdk is 24, so both files are needed: dataExtractionRules is ignored
+     below API 31, and fullBackupContent is ignored at/above it, per Android's own docs. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="belugas_no_backup_prefs.xml" />
+</full-backup-content>

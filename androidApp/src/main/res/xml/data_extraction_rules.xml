@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 31+ backup/transfer rules. Excludes only belugas_no_backup_prefs (the first-run
+     acknowledgement gate's "already shown" flag, see AppPreferences.android.kt): that flag is
+     meant to reappear after a reinstall, unlike everything in the default belugas_prefs file
+     (notably subscriber_id), which should keep surviving Auto Backup so zone subscriptions
+     aren't silently lost on a reinstall. Everything not listed here still gets the default
+     (included) behavior. Paired with backup_rules.xml for API 24-30 (this app's minSdk is 24):
+     dataExtractionRules alone doesn't apply below API 31. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="belugas_no_backup_prefs.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="belugas_no_backup_prefs.xml" />
+    </device-transfer>
+</data-extraction-rules>

@@ -36,6 +36,19 @@ expect class AppPreferences() {
     // storage only -- getOrCreateSubscriberId() below is what generates one.
     suspend fun getSubscriberId(): String?
     suspend fun setSubscriberId(id: String)
+
+    // The first-run acknowledgement gate's "already shown" flag (respect private property, log
+    // where the whales were seen rather than where you stood -- see App.kt's routing and
+    // AcknowledgementGateScreen.kt). Deliberately NOT stored alongside launchScreen/fcmToken/
+    // subscriberId above: this one is meant to reappear after a reinstall, so on Android it's
+    // backed by a separate SharedPreferences file excluded from Auto Backup (see
+    // AppPreferences.android.kt + androidApp's data_extraction_rules.xml/backup_rules.xml),
+    // while subscriberId is meant to keep surviving Auto Backup so zone subscriptions aren't
+    // silently lost on a reinstall. Android-only feature, intentionally (see
+    // AppPreferences.ios.kt's own comment) -- iOS's actual always reports "already acknowledged"
+    // rather than attempting an equivalent NSUserDefaults-backup-exclusion trick.
+    suspend fun getHasAcknowledgedFirstRunGate(): Boolean
+    suspend fun setHasAcknowledgedFirstRunGate(acknowledged: Boolean)
 }
 
 @Composable
