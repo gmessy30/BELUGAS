@@ -247,6 +247,40 @@ data class WatchedZoneShadingRecord(
     @SerialName("shading_area") val shadingArea: JsonElement
 )
 
+// Matches get_kenai_presence_state's return row
+// (supabase/migrations/20260903030000_add_tide_cycle_predictor.sql) -- the real tide-cycle-aware
+// RED/YELLOW/BLUE for Kenai specifically, replacing the flat-decay computeBelugaPresenceStatus
+// path for this one zone (PresenceBanner.kt/App.kt branch on zone_slug == "kenai" to pick this
+// over getWatchedZoneStatuses' generic fallback). A single row always comes back (the RPC's own
+// `return query select` always executes), decoded via decodeList().firstOrNull() same as
+// findNearbyWatchedZone -- PostgREST wraps a `returns table` function's result in a JSON array
+// regardless of row count.
+@Serializable
+data class KenaiPresenceState(
+    // "RED" | "YELLOW" | "BLUE" -- the server's own phase-priority decision. Rendered verbatim,
+    // not re-derived client-side (see PresenceBanner.kt's belugaPresenceStatusFromKenaiPhase) --
+    // tide-cycle phase isn't a pure function of elapsed time the way the old flat decay was, so
+    // there's no safe local recompute between polls.
+    val phase: String,
+    @SerialName("in_season") val inSeason: Boolean,
+    @SerialName("current_cycle_low_epoch_ms") val currentCycleLowEpochMs: Long? = null,
+    @SerialName("next_cycle_low_epoch_ms") val nextCycleLowEpochMs: Long? = null,
+    @SerialName("red_qualifying_sighting_epoch_ms") val redQualifyingSightingEpochMs: Long? = null,
+    @SerialName("yellow_confirmed_sighting_epoch_ms") val yellowConfirmedSightingEpochMs: Long? = null,
+    @SerialName("predicted_delay_min") val predictedDelayMin: Int? = null,
+    @SerialName("predicted_window_lo_min") val predictedWindowLoMin: Int? = null,
+    @SerialName("predicted_window_hi_min") val predictedWindowHiMin: Int? = null,
+    @SerialName("predicted_arrival_at_epoch_ms") val predictedArrivalAtEpochMs: Long? = null,
+    // The TIDE's own phase classification (flood-ride/ebb-arrival/slack-arrival) for the
+    // upcoming low -- distinct from `phase` above (the banner's RED/YELLOW/BLUE), never to be
+    // confused with it, same warning the migration's own tide_cycles.current_phase column gives.
+    @SerialName("current_phase") val currentTidePhase: String? = null,
+    @SerialName("current_entrance_knots") val currentEntranceKnots: Double? = null,
+    @SerialName("cfs_used") val cfsUsed: Double? = null,
+    val warnings: List<String> = emptyList(),
+    @SerialName("prediction_available") val predictionAvailable: Boolean = false
+)
+
 @Serializable
 private data class WatchedZoneStatusParams(
     @SerialName("p_lat") val lat: Double,
@@ -665,6 +699,23 @@ object SupabaseApi {
             println("WATCHED_ZONE_SHADING_AREAS_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
             e.printStackTrace()
             emptyList()
+        }
+    }
+
+    /**
+     * Fetches Kenai's real tide-cycle-aware presence state -- see KenaiPresenceState's own
+     * comment. No params: p_now_epoch_ms defaults to the server's own now() server-side, same
+     * as getWatchedZoneShadingAreas' zero-arg call below. Null on any failure -- callers must
+     * keep showing their own last-known state rather than treat null as "no data" (see
+     * PresenceBanner.kt's staleness handling, App.kt's polling loop).
+     */
+    suspend fun getKenaiPresenceState(): KenaiPresenceState? {
+        return try {
+            supabase.postgrest.rpc("get_kenai_presence_state").decodeList<KenaiPresenceState>().firstOrNull()
+        } catch (e: Exception) {
+            println("KENAI_PRESENCE_STATE_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            null
         }
     }
 
