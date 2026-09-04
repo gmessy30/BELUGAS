@@ -55,12 +55,19 @@ fun SightingsMapScreen(
     // Defaulted empty so nothing renders until App.kt's hoisted fetches land.
     watchedZoneShadingAreas: List<WatchedZoneShadingRecord> = emptyList(),
     watchedZoneStatuses: List<WatchedZoneSightingStatus> = emptyList(),
+    // Whether get_watched_zone_statuses has EVER succeeded this app run -- distinct from
+    // watchedZoneStatuses being merely empty (which, once this is true, is a real "confirmed no
+    // data" answer, not "we haven't checked"). See the shading loop below: a zone whose status
+    // resolves to UNKNOWN (Kenai via kenaiBelugaStatus, or any other zone via this flag) isn't
+    // drawn in a placeholder color -- it isn't drawn at all.
+    hasEverFetchedWatchedZoneStatuses: Boolean = false,
     // Kenai's real tide-cycle-aware status (App.kt's kenaiBelugaStatus, derived from
     // get_kenai_presence_state) -- used for the Kenai zone's shading color INSTEAD OF
     // watchedZoneStatuses' flat-decay computation below, so the map and the bottom banner can
     // never show Kenai in disagreeing colors. Every other watched zone still uses the flat-decay
-    // path unchanged -- this only overrides the one zone that has a real predictor.
-    kenaiBelugaStatus: BelugaPresenceStatus = BelugaPresenceStatus.BLUE,
+    // path unchanged -- this only overrides the one zone that has a real predictor. UNKNOWN
+    // (App.kt's default before any successful Kenai poll) flows through the same way.
+    kenaiBelugaStatus: BelugaPresenceStatus = BelugaPresenceStatus.UNKNOWN,
     onCloseMap: () -> Unit,
     onRefreshRemote: () -> Unit = {}
 ) {
@@ -270,15 +277,24 @@ fun SightingsMapScreen(
                 // for any zone that falls back to its full boundary.
                 watchedZoneShadingAreas.forEach { zoneShading ->
                     // Kenai reads the real predictor status (see this parameter's own comment);
-                    // every other zone keeps the original flat-decay computation.
+                    // every other zone keeps the original flat-decay computation once a
+                    // successful fetch has ever landed for it, UNKNOWN before that.
                     val zoneStatus = if (zoneShading.zoneSlug == "kenai") {
                         kenaiBelugaStatus
+                    } else if (!hasEverFetchedWatchedZoneStatuses) {
+                        BelugaPresenceStatus.UNKNOWN
                     } else {
                         computeBelugaPresenceStatus(
                             watchedZoneStatuses.find { it.zoneId == zoneShading.zoneId },
                             currentTimeMillis()
                         )
                     }
+                    // UNKNOWN isn't drawn in a placeholder color -- it isn't drawn at all. A
+                    // zone with no confirmed status yet gets no shading claim on the map, same
+                    // as before watchedZoneShadingAreas itself has loaded (already a normal,
+                    // accepted transient state in this screen) -- not a gray blob that would
+                    // need its own explanation.
+                    if (zoneStatus == BelugaPresenceStatus.UNKNOWN) return@forEach
                     val zoneColor = colorForBelugaPresenceStatus(zoneStatus)
                     val zoneSource = rememberGeoJsonSource(
                         data = GeoJsonData.JsonString(buildZoneShadingFeatureCollectionGeoJson(zoneShading.shadingArea))

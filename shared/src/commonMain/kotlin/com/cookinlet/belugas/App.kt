@@ -147,37 +147,60 @@ fun App() {
     // "Belugas present" safety banner + map river-shading state -- hoisted here (rather than
     // per-screen) since both need to keep working regardless of which screen is showing, and
     // the map shading specifically needs to be visible unconditionally (not just wherever the
-    // banner's own gates happen to be satisfied). Four independent pieces:
+    // banner's own gates happen to be satisfied).
+    //
+    // Both the Kenai predictor path and the generic (any other watched zone) flat-decay path
+    // now follow the SAME three-state model, deliberately -- UNKNOWN is its own state, never
+    // folded into BLUE (see BelugaPresenceStatus's own comment for why: BLUE is a confirmed
+    // claim, UNKNOWN means no successful fetch has ever landed, and conflating them used to mean
+    // a device that had never reached the server rendered a confident false all-clear):
+    //   - Fresh: a real, recent value from the last successful poll.
+    //   - Stale: a real value, but the last successful poll is older than
+    //     DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS -- last-known status/color kept exactly as is,
+    //     with a "(UPDATING…)" suffix on the banner (see BelugaPresenceBanner's isDataStale).
+    //   - Unknown: no successful poll has EVER landed this app run. Renders as its own gray
+    //     "STATUS UNKNOWN" on the banner, and SightingsMapScreen skips drawing that zone's
+    //     shading entirely rather than drawing a placeholder color.
+    // A failed poll NEVER wipes previously-known data back to empty/null in either path -- that
+    // was the generic path's actual bug (getWatchedZoneStatuses() returning emptyList() on
+    // failure, assigned directly, indistinguishable from a real "nothing here" answer) alongside
+    // Kenai's narrower one (null collapsing to BLUE).
+    //
+    // Six independent pieces:
     //   - watchedZoneShadingAreas: each watched zone's shading geometry for the map's
     //     FillLayer (the real banner watch area for Kenai, that zone's full boundary as a
     //     fallback for any other watched zone -- decided server-side, see
     //     WatchedZoneShadingRecord's comment). Fetched once -- doesn't change at runtime.
     //   - watchedZoneStatuses: raw sighting-recency facts for every watched zone, no location
-    //     involved. Feeds the map (everyone sees it) and doubles as the banner's status lookup
-    //     once a relevant zone id is known. Refreshed periodically alongside this device's own
-    //     subscriptions, since the subscription check needs to know which zone ids are watched.
+    //     involved -- sticky, only ever updated on a SUCCESSFUL fetch (see hasEverFetched
+    //     WatchedZoneStatuses below for how "no successful fetch yet" is tracked separately).
+    //     Feeds the map (everyone sees it) and doubles as the banner's status lookup once a
+    //     relevant zone id is known.
     //   - nearbyWatchedZone: the closer of the banner's two visibility gates -- real distance,
     //     not containment, per the spec (someone doesn't need to be in the river to see it).
     //   - presenceStatus: the banner's own color -- for Kenai, the server's phase verbatim
     //     (kenaiBelugaStatus below, reactive off kenaiPresenceState, no local tick needed); for
-    //     any other watched zone, the original decayed color, recomputed on a short local tick
-    //     (see PresenceBanner.kt) so it keeps visibly aging between the infrequent network polls
-    //     above instead of only updating on fetch.
+    //     any other watched zone, the flat-decay color once hasEverFetchedWatchedZoneStatuses is
+    //     true, recomputed on a short local tick (see PresenceBanner.kt) so it keeps visibly
+    //     aging between the infrequent network polls above instead of only updating on fetch.
     //   - kenaiPresenceState: get_kenai_presence_state()'s real tide-cycle-aware RED/YELLOW/BLUE
     //     for Kenai specifically, replacing the flat-decay path for that one zone -- both the
     //     banner AND the map's Kenai river-shading color (passed into SightingsMapScreen below)
     //     read this, so the two surfaces can't disagree (see colorForBelugaPresenceStatus's own
     //     comment on why that invariant matters). Polled unconditionally, same reasoning as
     //     watchedZoneShadingAreas/watchedZoneStatuses above -- the map shading needs it
-    //     regardless of whether the banner itself is currently shown. A failed poll leaves the
-    //     last-known value in place (never cleared to null, never falls back to flat decay) --
-    //     lastSuccessfulKenaiFetchAtMs tracks staleness separately, for the banner's own
-    //     "(UPDATING…)" indicator once too much time has passed since the last real update.
+    //     regardless of whether the banner itself is currently shown.
+    //   - isDataStale (Kenai's and the generic path's own): genuinely time-based, unlike the
+    //     reactive status values above -- the one place each path still needs a local tick, and
+    //     deliberately narrow: it never touches phase/color, only whether to show "(UPDATING…)".
     var watchedZoneShadingAreas by remember { mutableStateOf<List<WatchedZoneShadingRecord>>(emptyList()) }
     var watchedZoneStatuses by remember { mutableStateOf<List<WatchedZoneSightingStatus>>(emptyList()) }
+    var hasEverFetchedWatchedZoneStatuses by remember { mutableStateOf(false) }
+    var lastSuccessfulWatchedZoneStatusesFetchAtMs by remember { mutableStateOf<Long?>(null) }
+    var isWatchedZoneStatusesStale by remember { mutableStateOf(false) }
     var subscribedWatchedZoneId by remember { mutableStateOf<String?>(null) }
     var nearbyWatchedZone by remember { mutableStateOf<NearbyWatchedZone?>(null) }
-    var nonKenaiPresenceStatus by remember { mutableStateOf(BelugaPresenceStatus.BLUE) }
+    var nonKenaiPresenceStatus by remember { mutableStateOf(BelugaPresenceStatus.UNKNOWN) }
     var kenaiPresenceState by remember { mutableStateOf<KenaiPresenceState?>(null) }
     var lastSuccessfulKenaiFetchAtMs by remember { mutableStateOf<Long?>(null) }
     var isKenaiDataStale by remember { mutableStateOf(false) }
@@ -189,13 +212,28 @@ fun App() {
     LaunchedEffect(Unit) {
         while (true) {
             val statuses = SupabaseApi.getWatchedZoneStatuses(DEFAULT_YELLOW_WINDOW_MS)
-            watchedZoneStatuses = statuses
-            val watchedZoneIds = statuses.map { it.zoneId }.toSet()
-            val subscriberId = appPreferences.getOrCreateSubscriberId()
-            subscribedWatchedZoneId = SupabaseApi.getSubscriptions(subscriberId)
-                .firstOrNull { it.isActive && it.kind == "zone" && it.zoneId in watchedZoneIds }
-                ?.zoneId
+            if (statuses != null) {
+                watchedZoneStatuses = statuses
+                hasEverFetchedWatchedZoneStatuses = true
+                lastSuccessfulWatchedZoneStatusesFetchAtMs = currentTimeMillis()
+                val watchedZoneIds = statuses.map { it.zoneId }.toSet()
+                val subscriberId = appPreferences.getOrCreateSubscriberId()
+                subscribedWatchedZoneId = SupabaseApi.getSubscriptions(subscriberId)
+                    .firstOrNull { it.isActive && it.kind == "zone" && it.zoneId in watchedZoneIds }
+                    ?.zoneId
+            }
+            // null (failure) intentionally leaves watchedZoneStatuses/subscribedWatchedZoneId
+            // exactly as they were -- see this block's own comment above.
             delay(LOCATION_POLL_INTERVAL_MS)
+        }
+    }
+
+    LaunchedEffect(lastSuccessfulWatchedZoneStatusesFetchAtMs) {
+        while (true) {
+            val lastFetch = lastSuccessfulWatchedZoneStatusesFetchAtMs
+            isWatchedZoneStatusesStale = lastFetch != null &&
+                currentTimeMillis() - lastFetch > DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS
+            delay(PRESENCE_DECAY_TICK_INTERVAL_MS)
         }
     }
 
@@ -218,16 +256,17 @@ fun App() {
         while (true) {
             val lastFetch = lastSuccessfulKenaiFetchAtMs
             isKenaiDataStale = lastFetch != null &&
-                currentTimeMillis() - lastFetch > DEFAULT_KENAI_STALENESS_THRESHOLD_MS
+                currentTimeMillis() - lastFetch > DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS
             delay(PRESENCE_DECAY_TICK_INTERVAL_MS)
         }
     }
 
     // Reactive, not ticked -- get_kenai_presence_state's phase is rendered verbatim (see
     // belugaPresenceStatusFromKenaiPhase's own comment), so this only ever changes when
-    // kenaiPresenceState itself changes on a real poll, never on a timer.
+    // kenaiPresenceState itself changes on a real poll, never on a timer. UNKNOWN (not BLUE)
+    // while kenaiPresenceState is null -- see this block's own header comment.
     val kenaiBelugaStatus = kenaiPresenceState?.let { belugaPresenceStatusFromKenaiPhase(it.phase) }
-        ?: BelugaPresenceStatus.BLUE
+        ?: BelugaPresenceStatus.UNKNOWN
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -254,14 +293,19 @@ fun App() {
         ?: watchedZoneStatuses.find { it.zoneId == subscribedWatchedZoneId }?.zoneSlug
     val isRelevantZoneKenai = relevantWatchedZoneSlug == "kenai"
 
-    // Flat-decay path -- unchanged, and deliberately still the only thing this tick drives. Kept
-    // ticking even while Kenai is the relevant zone (harmless -- its result just isn't read in
-    // that case) rather than conditionally starting/stopping, so this doesn't need to know about
-    // Kenai at all.
-    LaunchedEffect(relevantWatchedZoneId, watchedZoneStatuses) {
+    // Flat-decay path -- kept ticking even while Kenai is the relevant zone (harmless -- its
+    // result just isn't read in that case) rather than conditionally starting/stopping, so this
+    // doesn't need to know about Kenai at all. UNKNOWN, not a computed BLUE, until the very
+    // first successful watchedZoneStatuses fetch has landed -- see this state block's own header
+    // comment for why that distinction matters.
+    LaunchedEffect(relevantWatchedZoneId, watchedZoneStatuses, hasEverFetchedWatchedZoneStatuses) {
         while (true) {
-            val relevantStatus = watchedZoneStatuses.find { it.zoneId == relevantWatchedZoneId }
-            nonKenaiPresenceStatus = computeBelugaPresenceStatus(relevantStatus, currentTimeMillis())
+            nonKenaiPresenceStatus = if (!hasEverFetchedWatchedZoneStatuses) {
+                BelugaPresenceStatus.UNKNOWN
+            } else {
+                val relevantStatus = watchedZoneStatuses.find { it.zoneId == relevantWatchedZoneId }
+                computeBelugaPresenceStatus(relevantStatus, currentTimeMillis())
+            }
             delay(PRESENCE_DECAY_TICK_INTERVAL_MS)
         }
     }
@@ -449,6 +493,7 @@ fun App() {
                     currentAltitude = currentAltitude,
                     watchedZoneShadingAreas = watchedZoneShadingAreas,
                     watchedZoneStatuses = watchedZoneStatuses,
+                    hasEverFetchedWatchedZoneStatuses = hasEverFetchedWatchedZoneStatuses,
                     kenaiBelugaStatus = kenaiBelugaStatus,
                     onCloseMap = { currentScreen = Screen.MENU },
                     onRefreshRemote = { refreshRemoteSightings() }
@@ -472,7 +517,7 @@ fun App() {
                     .align(Alignment.BottomCenter)
                     .onGloballyPositioned { presenceBannerHeightDp = with(density) { it.size.height.toDp() } },
                 kenaiDetail = if (isRelevantZoneKenai) kenaiPresenceState else null,
-                isKenaiDataStale = isRelevantZoneKenai && isKenaiDataStale
+                isDataStale = if (isRelevantZoneKenai) isKenaiDataStale else isWatchedZoneStatusesStale
             )
         }
       }

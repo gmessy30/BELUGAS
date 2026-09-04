@@ -648,10 +648,16 @@ object SupabaseApi {
     /**
      * Fetches raw sighting-recency facts for every watched (is_banner_watched) zone --
      * unconditional, no location involved. Feeds the map's river shading (shown to everyone)
-     * and, via a zone id lookup, the bottom banner's status. Empty on failure or if nothing
-     * is watched yet.
+     * and, via a zone id lookup, the bottom banner's status.
+     *
+     * Null on failure -- NOT the same as an empty list, which is the real, successful "nothing
+     * is watched yet" answer. Collapsing those two used to both read as emptyList(), which made
+     * a failed fetch indistinguishable from a confirmed-empty one at every caller -- App.kt's
+     * polling loop now treats null as "leave the last-known list alone" (never wipes real data
+     * to nothing on a transient failure) and treats "never yet gotten a non-null result" as its
+     * own UNKNOWN presence state, same three-state model as getKenaiPresenceState.
      */
-    suspend fun getWatchedZoneStatuses(lookbackMs: Long): List<WatchedZoneSightingStatus> {
+    suspend fun getWatchedZoneStatuses(lookbackMs: Long): List<WatchedZoneSightingStatus>? {
         return try {
             val params = jsonConfig.encodeToJsonElement(
                 WatchedZoneStatusesParams(lookbackMs = lookbackMs)
@@ -661,7 +667,7 @@ object SupabaseApi {
         } catch (e: Exception) {
             println("WATCHED_ZONE_STATUSES_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
             e.printStackTrace()
-            emptyList()
+            null
         }
     }
 

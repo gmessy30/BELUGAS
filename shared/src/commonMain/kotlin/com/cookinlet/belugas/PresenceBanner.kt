@@ -38,22 +38,34 @@ const val PRESENCE_DECAY_TICK_INTERVAL_MS = 30L * 1000
 // see the retry LaunchedEffect in App.kt for the failure-vs-success branch this feeds.
 const val LOCATION_RETRY_INTERVAL_MS = 15L * 1000
 
-// How long since the last SUCCESSFUL get_kenai_presence_state() poll before the banner admits
-// its data might be stale, rather than silently keep showing a last-known RED/YELLOW/BLUE that
-// could be hours out of date. 3x the 5-minute poll cadence (LOCATION_POLL_INTERVAL_MS) --
-// long enough that one transient failed poll doesn't flap the indicator on and off, short
-// enough that a real sustained outage still surfaces within a quarter hour. Deliberately NOT a
-// fallback to flat-decay computeBelugaPresenceStatus -- that would reintroduce exactly the
-// two-sources-of-truth disagreement between the banner and the map's shading this design avoids
-// (see get_kenai_presence_state's own migration comment on why RED/YELLOW/BLUE for Kenai isn't a
-// pure function of elapsed time the way the old decay windows were).
-const val DEFAULT_KENAI_STALENESS_THRESHOLD_MS = 3L * LOCATION_POLL_INTERVAL_MS
+// How long since the last SUCCESSFUL presence-state poll (Kenai's get_kenai_presence_state, or
+// any other watched zone's get_watched_zone_statuses) before the banner/map admit their data
+// might be stale, rather than silently keep showing a last-known RED/YELLOW/BLUE that could be
+// hours out of date. 3x the 5-minute poll cadence (LOCATION_POLL_INTERVAL_MS) -- long enough
+// that one transient failed poll doesn't flap the indicator on and off, short enough that a
+// real sustained outage still surfaces within a quarter hour. Applies uniformly to every watched
+// zone, not just Kenai -- see the UNKNOWN case below for the OTHER half of this: staleness is
+// about a value that WAS real going out of date, not about never having had one at all.
+const val DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS = 3L * LOCATION_POLL_INTERVAL_MS
 
-enum class BelugaPresenceStatus { RED, YELLOW, BLUE }
+// UNKNOWN is deliberately its own state, not folded into BLUE -- BLUE is a real, confirmed claim
+// ("we checked, nothing recent"); UNKNOWN means the client has never once heard a real answer
+// (no successful fetch yet, for this zone, this app run). Collapsing the two used to mean a
+// device that had never reached the server rendered a confident "NO RECENT SIGHTINGS" banner and
+// blue river shading -- a false all-clear, the one thing get_kenai_presence_state's own
+// RED-persistence rule exists to avoid (an overlong RED beats a premature all-clear). A failed or
+// not-yet-completed fetch must never resolve to BLUE by default; see App.kt's polling loops
+// (both Kenai's and the generic watched-zone one) for how UNKNOWN vs. a real last-known value vs.
+// a STALE last-known value are now tracked separately, and SightingsMapScreen for how UNKNOWN
+// specifically means "don't draw this zone's shading at all" rather than drawing it in some
+// placeholder color.
+enum class BelugaPresenceStatus { RED, YELLOW, BLUE, UNKNOWN }
 
 // get_kenai_presence_state's `phase` column, rendered verbatim -- see KenaiPresenceState's own
 // comment for why this isn't a local recompute. Any value other than RED/YELLOW fails safe to
 // BLUE rather than crashing on an unrecognized string (e.g. if the RPC's phase enum ever grows).
+// Never returns UNKNOWN -- that's purely a client-side "no data yet" state, not something the
+// phase column itself ever expresses (a successful poll always yields a real phase).
 fun belugaPresenceStatusFromKenaiPhase(phase: String): BelugaPresenceStatus = when (phase) {
     "RED" -> BelugaPresenceStatus.RED
     "YELLOW" -> BelugaPresenceStatus.YELLOW
@@ -63,8 +75,13 @@ fun belugaPresenceStatusFromKenaiPhase(phase: String): BelugaPresenceStatus = wh
 /**
  * Pure decay computation: RED if a verified sighting landed within [redWindowMs], else YELLOW
  * if any sighting (verified or not) landed within [yellowWindowMs], else BLUE. [status] null
- * (no data yet for the zone in question) behaves identically to a watched zone with no recent
- * sightings -- both fold into BLUE.
+ * means "a successful get_watched_zone_statuses fetch happened, but had no row for this
+ * particular zone" (should not normally happen for a genuinely banner-watched relevant zone,
+ * but handled defensively) -- both fold into BLUE, a real "confirmed no recent sightings"
+ * answer. Callers must gate on "has a fetch ever actually succeeded" BEFORE calling this --
+ * see App.kt's own hasEverFetchedWatchedZoneStatuses -- a status that's null because there is
+ * NO data at all yet is UNKNOWN, not BLUE, and this function is never the place that decides
+ * that distinction.
  */
 fun computeBelugaPresenceStatus(
     status: WatchedZoneSightingStatus?,
@@ -82,11 +99,15 @@ fun computeBelugaPresenceStatus(
 }
 
 // Shared between the bottom banner and the map's river-shading FillLayer, so both surfaces
-// always agree on what RED/YELLOW/BLUE actually look like.
+// always agree on what RED/YELLOW/BLUE/UNKNOWN actually look like. UNKNOWN's gray is
+// deliberately unlike all three real colors -- SightingsMapScreen doesn't actually draw this
+// color today (it skips the zone's shading entirely instead, see that file's own comment), but
+// the banner does use it directly, and colorForBelugaPresenceStatus needs to stay total either way.
 fun colorForBelugaPresenceStatus(status: BelugaPresenceStatus): Color = when (status) {
     BelugaPresenceStatus.RED -> Color(0xFFC62828)
     BelugaPresenceStatus.YELLOW -> Color(0xFFF9A825)
     BelugaPresenceStatus.BLUE -> Color(0xFF0277BD)
+    BelugaPresenceStatus.UNKNOWN -> Color(0xFF616161)
 }
 
 // Kenai-specific label text, used only when kenaiDetail is non-null (see BelugaPresenceBanner
@@ -111,6 +132,10 @@ private fun kenaiBannerLabel(status: BelugaPresenceStatus, detail: KenaiPresence
             }
             else -> "NO RECENT SIGHTINGS$zoneSuffix"
         }
+        // Unreachable in practice -- BelugaPresenceBanner intercepts UNKNOWN before ever calling
+        // this function, since kenaiDetail is null whenever status is UNKNOWN by construction
+        // (both come from kenaiPresenceState being null). Kept for when-exhaustiveness.
+        BelugaPresenceStatus.UNKNOWN -> "STATUS UNKNOWN$zoneSuffix"
     }
 
 /**
@@ -120,11 +145,16 @@ private fun kenaiBannerLabel(status: BelugaPresenceStatus, detail: KenaiPresence
  * screen-based Placement rule. Once mounted, BLUE is a real, shown state, not a hidden one --
  * it never disappears due to its own color, only because neither gate applies anymore.
  *
+ * [status] == UNKNOWN renders as its own distinct gray "STATUS UNKNOWN" -- intercepted before
+ * either the Kenai or generic label logic below, since neither has anything meaningful to say
+ * about a zone with no data yet. [isDataStale] is unrelated to UNKNOWN (the two are mutually
+ * exclusive by construction: staleness is measured from the last SUCCESSFUL fetch, which by
+ * definition can't exist yet while status is UNKNOWN) -- it flags "the last successful poll is
+ * older than [DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS]" as a suffix on a real last-known
+ * [status]/[kenaiDetail], never a fallback to a different computation.
+ *
  * [kenaiDetail] is non-null only for the Kenai zone (App.kt passes the fetched
  * KenaiPresenceState through) -- every other watched zone renders the original plain label.
- * [isKenaiDataStale] separately flags "the last successful poll is older than
- * [DEFAULT_KENAI_STALENESS_THRESHOLD_MS]" -- shown as a suffix on whatever [status]/[kenaiDetail]
- * last resolved to, not a fallback to a different computation.
  */
 @Composable
 fun BelugaPresenceBanner(
@@ -132,20 +162,22 @@ fun BelugaPresenceBanner(
     zoneName: String?,
     modifier: Modifier = Modifier,
     kenaiDetail: KenaiPresenceState? = null,
-    isKenaiDataStale: Boolean = false
+    isDataStale: Boolean = false
 ) {
     val backgroundColor = colorForBelugaPresenceStatus(status)
     val zoneSuffix = zoneName?.let { " · ${it.uppercase()}" } ?: ""
-    val baseLabel = if (kenaiDetail != null) {
-        kenaiBannerLabel(status, kenaiDetail, zoneSuffix)
-    } else {
-        when (status) {
+    val baseLabel = when {
+        status == BelugaPresenceStatus.UNKNOWN -> "STATUS UNKNOWN$zoneSuffix"
+        kenaiDetail != null -> kenaiBannerLabel(status, kenaiDetail, zoneSuffix)
+        else -> when (status) {
             BelugaPresenceStatus.RED -> "BELUGAS PRESENT$zoneSuffix"
             BelugaPresenceStatus.YELLOW -> "POSSIBLE ACTIVITY$zoneSuffix"
             BelugaPresenceStatus.BLUE -> "NO RECENT SIGHTINGS$zoneSuffix"
+            // Unreachable (caught by the outer branch above); kept for when-exhaustiveness.
+            BelugaPresenceStatus.UNKNOWN -> "STATUS UNKNOWN$zoneSuffix"
         }
     }
-    val label = if (isKenaiDataStale) "$baseLabel (UPDATING…)" else baseLabel
+    val label = if (isDataStale) "$baseLabel (UPDATING…)" else baseLabel
 
     Row(
         modifier = modifier
