@@ -124,6 +124,18 @@ fun ResourcesScreen(onBack: () -> Unit) {
                         color = Color.White.copy(alpha = 0.85f),
                         fontSize = 13.sp
                     )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "The predicted arrival windows on the Kenai map are estimates from a " +
+                            "model that's still being built, not a finished forecast. They're " +
+                            "most reliable when the low tide is below 0.0m and the current has " +
+                            "had time to build behind it -- above that, the current isn't well " +
+                            "understood yet, so treat those windows as a rougher guess. We're " +
+                            "testing this in the open this season instead of holding it back " +
+                            "until it's finished, so expect it to keep improving as we go.",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 13.sp
+                    )
                 }
 
                 ResourceSection(title = "BELUGA PHOTOGRAPHY TIPS") {
