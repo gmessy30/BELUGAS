@@ -955,9 +955,7 @@ fun MainMenuDrawer(
                 "RESOURCES",
                 "ABOUT",
                 "EXPORT DATA",
-                "ALERTS",
-                "SCREEN NAME",
-                "(DE)REGISTER"
+                "ALERTS"
             )
 
             menuItems.forEach { title ->
