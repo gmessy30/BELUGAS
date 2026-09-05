@@ -217,7 +217,18 @@ abstract class VerifySightingEntityMigrationTask : DefaultTask() {
         val migratedStatements = mutableListOf<String>()
         migratedStatements += schemaStatementsFromPlainSqlFile(baselineFile.get().asFile.readText())
         migrationFiles.files
-            .sortedBy { it.nameWithoutExtension.toIntOrNull() ?: Int.MAX_VALUE }
+            .sortedBy { file ->
+                // Migration order matters (1.sqm must apply before 2.sqm) and a FileCollection's
+                // natural iteration order isn't guaranteed to be numeric -- fail loudly on an
+                // unparseable name instead of a silent fallback that would sort it last (wrong
+                // order = a schema mismatch, not an obvious "ordering broke" error, and nobody
+                // will remember this comment by the time a stray file trips it).
+                file.nameWithoutExtension.toIntOrNull()
+                    ?: error(
+                        "Migration file ${file.name} doesn't have a numeric name (expected N.sqm) " +
+                            "-- can't determine its place in the migration order"
+                    )
+            }
             .forEach { file -> migratedStatements += schemaStatementsFromPlainSqlFile(file.readText()) }
 
         val freshStatements = schemaStatementsFromSqFile(sqFile.get().asFile.readText())
