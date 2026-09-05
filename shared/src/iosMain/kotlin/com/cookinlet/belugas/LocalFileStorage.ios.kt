@@ -117,3 +117,16 @@ actual fun formatIso8601Utc(epochMs: Long): String {
     }
     return formatter.stringFromDate(date)
 }
+
+actual fun anchorageMonth(epochMs: Long): Int {
+    val date = NSDate.dateWithTimeIntervalSince1970(epochMs / 1000.0)
+    val formatter = NSDateFormatter().apply {
+        dateFormat = "M"
+        timeZone = NSTimeZone.timeZoneWithName("America/Anchorage")!!
+        // Without this, the formatter falls back to the device locale -- under a locale with
+        // non-Western digits, stringFromDate returns non-ASCII numerals and .toInt() throws.
+        // en_US_POSIX guarantees plain ASCII "1".."12", matching Android's Locale.US.
+        locale = NSLocale(localeIdentifier = "en_US_POSIX")
+    }
+    return formatter.stringFromDate(date).toInt()
+}

@@ -178,21 +178,25 @@ fun App() {
     //     relevant zone id is known.
     //   - nearbyWatchedZone: the closer of the banner's two visibility gates -- real distance,
     //     not containment, per the spec (someone doesn't need to be in the river to see it).
-    //   - presenceStatus: the banner's own color -- for Kenai, the server's phase verbatim
-    //     (kenaiBelugaStatus below, reactive off kenaiPresenceState, no local tick needed); for
+    //   - presenceStatus: the banner's own color -- for Kenai, kenaiBelugaStatus below, the
+    //     server's phase possibly ESCALATED toward UNKNOWN by effectiveKenaiPresenceStatus once
+    //     it's been too long (or too many tide cycles) since the last successful poll for that
+    //     phase to still be trustworthy (see PresenceBanner.kt's own comment on the escalation
+    //     constants) -- ticked, not purely reactive, since elapsed time alone can trigger it; for
     //     any other watched zone, the flat-decay color once hasEverFetchedWatchedZoneStatuses is
     //     true, recomputed on a short local tick (see PresenceBanner.kt) so it keeps visibly
     //     aging between the infrequent network polls above instead of only updating on fetch.
-    //   - kenaiPresenceState: get_kenai_presence_state()'s real tide-cycle-aware RED/YELLOW/BLUE
-    //     for Kenai specifically, replacing the flat-decay path for that one zone -- both the
+    //   - kenaiPresenceSnapshot: get_kenai_presence_state()'s real tide-cycle-aware RED/YELLOW/
+    //     BLUE for Kenai specifically, replacing the flat-decay path for that one zone -- both the
     //     banner AND the map's Kenai river-shading color (passed into SightingsMapScreen below)
-    //     read this, so the two surfaces can't disagree (see colorForBelugaPresenceStatus's own
-    //     comment on why that invariant matters). Polled unconditionally, same reasoning as
-    //     watchedZoneShadingAreas/watchedZoneStatuses above -- the map shading needs it
-    //     regardless of whether the banner itself is currently shown.
-    //   - isDataStale (Kenai's and the generic path's own): genuinely time-based, unlike the
-    //     reactive status values above -- the one place each path still needs a local tick, and
-    //     deliberately narrow: it never touches phase/color, only whether to show "(UPDATING…)".
+    //     read kenaiBelugaStatus (the escalated value, not this raw fetch), so the two surfaces
+    //     can't disagree (see colorForBelugaPresenceStatus's own comment on why that invariant
+    //     matters). Polled unconditionally, same reasoning as watchedZoneShadingAreas/
+    //     watchedZoneStatuses above -- the map shading needs it regardless of whether the banner
+    //     itself is currently shown.
+    //   - isDataStale (Kenai's and the generic path's own): the "(UPDATING…)" suffix -- narrower
+    //     than escalation above, and independent of it (a phase can be both escalated AND
+    //     stale-suffixed at once).
     var watchedZoneShadingAreas by remember { mutableStateOf<List<WatchedZoneShadingRecord>>(emptyList()) }
     var watchedZoneStatuses by remember { mutableStateOf<List<WatchedZoneSightingStatus>>(emptyList()) }
     var hasEverFetchedWatchedZoneStatuses by remember { mutableStateOf(false) }
@@ -201,8 +205,10 @@ fun App() {
     var subscribedWatchedZoneId by remember { mutableStateOf<String?>(null) }
     var nearbyWatchedZone by remember { mutableStateOf<NearbyWatchedZone?>(null) }
     var nonKenaiPresenceStatus by remember { mutableStateOf(BelugaPresenceStatus.UNKNOWN) }
-    var kenaiPresenceState by remember { mutableStateOf<KenaiPresenceState?>(null) }
-    var lastSuccessfulKenaiFetchAtMs by remember { mutableStateOf<Long?>(null) }
+    // KenaiPresenceState and its fetch time are always set together -- KenaiPresenceSnapshot
+    // (see PresenceBanner.kt) keeps them that way instead of two separate nullable vars that
+    // could drift apart.
+    var kenaiPresenceSnapshot by remember { mutableStateOf<KenaiPresenceSnapshot?>(null) }
     var isKenaiDataStale by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -241,32 +247,30 @@ fun App() {
         while (true) {
             val fetched = SupabaseApi.getKenaiPresenceState()
             if (fetched != null) {
-                kenaiPresenceState = fetched
-                lastSuccessfulKenaiFetchAtMs = currentTimeMillis()
+                kenaiPresenceSnapshot = KenaiPresenceSnapshot(fetched, currentTimeMillis())
             }
             delay(LOCATION_POLL_INTERVAL_MS)
         }
     }
 
-    // Staleness is genuinely time-based (unlike kenaiBelugaStatus below, which only ever
-    // changes when a new poll actually lands) -- this is the one place Kenai's presence state
-    // still needs a local tick, and it's deliberately narrow: it never touches phase/color, only
-    // whether to show the "(UPDATING…)" suffix on whatever phase was last fetched.
-    LaunchedEffect(lastSuccessfulKenaiFetchAtMs) {
+    // Staleness ("(UPDATING…)" suffix) AND escalation (phase drifting toward UNKNOWN once
+    // it's no longer trustworthy, see effectiveKenaiPresenceStatus) are both genuinely
+    // time-based -- unlike a plain reactive derivation, they need to keep recomputing between
+    // polls, not just when a new one lands, so this is the one place Kenai's presence state
+    // still needs a local tick. UNKNOWN (not BLUE) while kenaiPresenceSnapshot is null -- see
+    // this block's own header comment.
+    var kenaiBelugaStatus by remember { mutableStateOf(BelugaPresenceStatus.UNKNOWN) }
+    LaunchedEffect(kenaiPresenceSnapshot) {
         while (true) {
-            val lastFetch = lastSuccessfulKenaiFetchAtMs
-            isKenaiDataStale = lastFetch != null &&
-                currentTimeMillis() - lastFetch > DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS
+            val snapshot = kenaiPresenceSnapshot
+            val nowMs = currentTimeMillis()
+            isKenaiDataStale = snapshot != null &&
+                nowMs - snapshot.fetchedAtMs > DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS
+            kenaiBelugaStatus = snapshot?.let { effectiveKenaiPresenceStatus(it, nowMs) }
+                ?: BelugaPresenceStatus.UNKNOWN
             delay(PRESENCE_DECAY_TICK_INTERVAL_MS)
         }
     }
-
-    // Reactive, not ticked -- get_kenai_presence_state's phase is rendered verbatim (see
-    // belugaPresenceStatusFromKenaiPhase's own comment), so this only ever changes when
-    // kenaiPresenceState itself changes on a real poll, never on a timer. UNKNOWN (not BLUE)
-    // while kenaiPresenceState is null -- see this block's own header comment.
-    val kenaiBelugaStatus = kenaiPresenceState?.let { belugaPresenceStatusFromKenaiPhase(it.phase) }
-        ?: BelugaPresenceStatus.UNKNOWN
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -516,7 +520,7 @@ fun App() {
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .onGloballyPositioned { presenceBannerHeightDp = with(density) { it.size.height.toDp() } },
-                kenaiDetail = if (isRelevantZoneKenai) kenaiPresenceState else null,
+                kenaiDetail = if (isRelevantZoneKenai) kenaiPresenceSnapshot?.detail else null,
                 isDataStale = if (isRelevantZoneKenai) isKenaiDataStale else isWatchedZoneStatusesStale
             )
         }

@@ -72,6 +72,148 @@ fun belugaPresenceStatusFromKenaiPhase(phase: String): BelugaPresenceStatus = wh
     else -> BelugaPresenceStatus.BLUE
 }
 
+// -------------------------------------------------------------------------------------------
+// Staleness ESCALATION: a device that's been offline long enough can't just keep showing a
+// last-known RED/YELLOW/exempted-BLUE forever with an "(UPDATING...)" suffix (see
+// DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS above) -- at some point the claim itself is no
+// longer trustworthy and the banner needs to admit it doesn't know, same motivation as UNKNOWN
+// existing at all. This only ever moves a status TOWARD UNKNOWN, never invents a fresher one --
+// the real value still only ever changes on an actual successful poll.
+//
+// Cycle boundaries are measured off get_kenai_presence_state's own nextCycleLowEpochMs -- an
+// astronomical tide prediction, so it stays valid for the whole outage even though the
+// SIGHTING data (what actually makes RED/YELLOW true) can't be refreshed. Only the sighting
+// side goes stale; the boundary times don't.
+//
+// Flat second-boundary offset past the first cycle boundary, rather than predicting the next
+// low from the observed current-to-next interval: low-to-low intervals alternate long/short
+// (diurnal inequality), so using the preceding interval to predict the next is
+// anti-correlated -- it overshoots after a long cycle and undershoots after a short one. A
+// flat offset sidesteps that. 12h is the observed MINIMUM low-to-low interval at station 3503
+// (real sample: 13:24, 12:08, 13:29, 12:14, 12:45, 12:13, 12:43) -- deliberately the minimum,
+// not the average, because the two error directions aren't symmetric: escalating a cycle early
+// just shows "STATUS UNKNOWN" slightly sooner, while escalating late means showing YELLOW for
+// a stretch nobody actually has sighting data for. Do not "improve" this into an average of
+// observed intervals -- that trades the safe direction away.
+const val KENAI_SECOND_BOUNDARY_OFFSET_MS = 12L * 60 * 60 * 1000
+
+// When nextCycleLowEpochMs itself is null (the tide predictor hasn't computed that far ahead),
+// there's no real boundary timestamp to escalate against -- fall back to a flat ceiling
+// measured from the last successful fetch instead. 15h comfortably exceeds every observed
+// low-to-low interval at station 3503 (12:08-13:29), so by 15h a real cycle boundary is
+// guaranteed to have passed even without knowing exactly when.
+const val KENAI_NULL_BOUNDARY_CEILING_MS = 15L * 60 * 60 * 1000
+
+// Ceiling for the two BLUE sub-states get_kenai_presence_state's predicate exempts from
+// ordinary cycle-boundary escalation ("NOT EXPECTED THIS TIME OF YEAR" and "PREDICTION
+// UNAVAILABLE") -- both non-cycle-scoped claims, so they share one constant rather than each
+// getting its own. Strictly, an exempted BLUE is blind to a qualifying sighting landing during
+// the outage (RED only ever persists one cycle, so correctness alone would argue for the same
+// cycle-scoped rule as everything else) -- but out of season a sighting is rare, and
+// escalating every ~12h would leave the banner gray most of the winter for anyone not
+// constantly online, training people to ignore it. Alert fatigue is the bigger risk for this
+// app, so 24h is the deliberate middle: short enough that no device carries a confident
+// all-clear across a meaningful stretch of season, long enough the banner stays meaningful
+// rather than perpetually "STATUS UNKNOWN" all winter. Same constant PREDICTION_UNAVAILABLE
+// already implied -- not a second number to keep in sync.
+const val KENAI_EXEMPT_BLUE_CEILING_MS = 24L * 60 * 60 * 1000
+
+// Pure local recompute of get_kenai_presence_state's own SEASON GATE (Mar-May,
+// America/Anchorage -- see that function's header comment), used only to catch a device that's
+// been offline across the season boundary itself and is holding a now-wrong "NOT EXPECTED THIS
+// TIME OF YEAR" claim. This is a DIFFERENT failure than plain elapsed-time staleness --
+// crossing a calendar boundary isn't something KENAI_EXEMPT_BLUE_CEILING_MS's ceiling alone
+// catches (a device could still be well inside the 24h window and yet already be in a new
+// season) -- so both run, not either.
+fun isKenaiInSeasonLocally(nowMs: Long): Boolean = anchorageMonth(nowMs) in 3..5
+
+// Pairs a fetched KenaiPresenceState with the wall-clock time it was fetched at -- the two are
+// always set together (see App.kt's polling loop) and effectiveKenaiPresenceStatus needs both,
+// so this makes them impossible to split. They used to be two separate nullable vars in
+// App.kt; a caller could (and did, briefly) hand the state to the tick loop with no fetch
+// time, and the `?:` fallback that covered that gap defaulted to "elapsed time is zero" --
+// i.e. never escalate, the unsafe direction for a feature whose whole point is escalating.
+data class KenaiPresenceSnapshot(val detail: KenaiPresenceState, val fetchedAtMs: Long)
+
+/**
+ * The banner/map's actually-displayed Kenai status: [snapshot]'s server phase, escalated
+ * toward UNKNOWN if [nowMs] has drifted too far past [snapshot]'s fetch time (or past a known
+ * cycle boundary) for that phase to still be trustworthy. See the constants above for each
+ * ceiling's reasoning.
+ *
+ * Escalation only ever engages once the snapshot itself is stale
+ * (DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS since [snapshot]'s fetch time -- the same threshold
+ * that drives the banner's "(UPDATING…)" suffix). Below that, the server phase is returned
+ * verbatim regardless of where "now" sits relative to a cycle boundary -- boundaries land twice
+ * a day for EVERY device, healthy or not, so escalating on elapsed time alone would gray out
+ * the banner for the few minutes between a boundary passing and the next poll landing, on every
+ * healthy device, right at the tide turn -- precisely when someone's likely on the bank
+ * watching. A genuinely offline device clears DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS long
+ * before any of these boundaries or ceilings matter, so gating here doesn't blunt what this
+ * function exists to catch.
+ *
+ * - RED persists until the first cycle boundary (matches the server's own persistence rule),
+ *   then reads as YELLOW until the second boundary, then UNKNOWN.
+ * - A genuine server-returned YELLOW escalates straight to UNKNOWN at the FIRST boundary, not
+ *   the second -- unlike RED-just-expired YELLOW, it never had a red-qualifying sighting in the
+ *   now-closed cycle to carry forward, so there's nothing for it to persist on.
+ * - A real, non-exempt BLUE ("NEXT WINDOW ..." / the "NO RECENT SIGHTINGS" fallback) is
+ *   cycle-scoped exactly like a genuine YELLOW, for the same reason -- no just-expired leg to
+ *   carry it further, so ONE boundary, straight to UNKNOWN. This is the case the whole feature
+ *   exists to close: a stale "no recent sightings" during viewing season is the exact false
+ *   all-clear get_kenai_presence_state's own RED-persistence rule was designed to avoid.
+ * - The two EXEMPTED BLUE sub-states (out-of-season, prediction-unavailable) are the only ones
+ *   that don't use the cycle boundary at all -- they escalate to UNKNOWN past
+ *   KENAI_EXEMPT_BLUE_CEILING_MS instead, or immediately if the local season recompute now
+ *   disagrees with a stored "not expected" claim (still gated on staleness first, same rule).
+ */
+fun effectiveKenaiPresenceStatus(
+    snapshot: KenaiPresenceSnapshot,
+    nowMs: Long
+): BelugaPresenceStatus {
+    val detail = snapshot.detail
+    val lastFetchAtMs = snapshot.fetchedAtMs
+    val serverStatus = belugaPresenceStatusFromKenaiPhase(detail.phase)
+
+    if (nowMs - lastFetchAtMs <= DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS) {
+        return serverStatus
+    }
+
+    val firstBoundaryMs = detail.nextCycleLowEpochMs ?: (lastFetchAtMs + KENAI_NULL_BOUNDARY_CEILING_MS)
+
+    if (serverStatus == BelugaPresenceStatus.BLUE) {
+        val isExemptOutOfSeason = !detail.inSeason
+        val isExemptNoPrediction = detail.inSeason && !detail.predictionAvailable
+        if (!isExemptOutOfSeason && !isExemptNoPrediction) {
+            return if (nowMs < firstBoundaryMs) BelugaPresenceStatus.BLUE else BelugaPresenceStatus.UNKNOWN
+        }
+        if (isExemptOutOfSeason && isKenaiInSeasonLocally(nowMs)) {
+            return BelugaPresenceStatus.UNKNOWN
+        }
+        return if (nowMs - lastFetchAtMs > KENAI_EXEMPT_BLUE_CEILING_MS) {
+            BelugaPresenceStatus.UNKNOWN
+        } else {
+            BelugaPresenceStatus.BLUE
+        }
+    }
+
+    return when (serverStatus) {
+        BelugaPresenceStatus.RED -> {
+            val secondBoundaryMs = firstBoundaryMs + KENAI_SECOND_BOUNDARY_OFFSET_MS
+            when {
+                nowMs < firstBoundaryMs -> BelugaPresenceStatus.RED
+                nowMs < secondBoundaryMs -> BelugaPresenceStatus.YELLOW
+                else -> BelugaPresenceStatus.UNKNOWN
+            }
+        }
+        BelugaPresenceStatus.YELLOW ->
+            if (nowMs < firstBoundaryMs) BelugaPresenceStatus.YELLOW else BelugaPresenceStatus.UNKNOWN
+        // Unreachable -- belugaPresenceStatusFromKenaiPhase never returns BLUE/UNKNOWN here
+        // (BLUE handled above, UNKNOWN never produced by it at all). Kept for exhaustiveness.
+        else -> serverStatus
+    }
+}
+
 /**
  * Pure decay computation: RED if a verified sighting landed within [redWindowMs], else YELLOW
  * if any sighting (verified or not) landed within [yellowWindowMs], else BLUE. [status] null

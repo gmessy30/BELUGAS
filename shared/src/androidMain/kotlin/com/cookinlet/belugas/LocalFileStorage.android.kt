@@ -74,3 +74,10 @@ actual fun formatIso8601Utc(epochMs: Long): String {
     sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
     return sdf.format(date)
 }
+
+actual fun anchorageMonth(epochMs: Long): Int {
+    val date = java.util.Date(epochMs)
+    val sdf = java.text.SimpleDateFormat("M", java.util.Locale.US)
+    sdf.timeZone = java.util.TimeZone.getTimeZone("America/Anchorage")
+    return sdf.format(date).toInt()
+}
