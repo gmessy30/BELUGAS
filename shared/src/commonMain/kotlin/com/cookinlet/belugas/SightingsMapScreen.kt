@@ -660,13 +660,30 @@ fun SightingsMapScreen(
                         }
 
                         if (rangeEnd > rangeStart) {
+                            // Slider's value/valueRange are Float -- offset to rangeStart before
+                            // converting rather than feeding it absolute epoch-millis directly.
+                            // Float32 has 24 bits of mantissa; current epoch-millis (~1.7e12)
+                            // needs ~41 bits just for its integer part, leaving a precision floor
+                            // of 2^(41-24) = 131,072ms (~2.2 min) AT THAT MAGNITUDE, regardless of
+                            // how narrow [rangeStart, rangeEnd] actually is. A multi-month range
+                            // dilutes that floor into thousands of positions (indistinguishable
+                            // from continuous to a finger) -- but a device with only a handful of
+                            // sightings from one tight observation session (minutes apart) could
+                            // have rangeEnd - rangeStart small enough that the floor collapses the
+                            // whole drag to a literal handful of reachable positions. Subtracting
+                            // rangeStart first keeps the Float's magnitude equal to the SPAN being
+                            // scrubbed (minutes to months), not the giant absolute Unix timestamp,
+                            // which keeps that same 24-bit mantissa far more precise than any drag
+                            // gesture needs. This looks like pointless indirection -- it isn't;
+                            // removing the offset silently reintroduces a bug that only shows up
+                            // on sparse/clustered data, not in a full-dataset smoke test.
                             Slider(
-                                value = playbackTimeMs.coerceIn(rangeStart, rangeEnd).toFloat(),
+                                value = (playbackTimeMs.coerceIn(rangeStart, rangeEnd) - rangeStart).toFloat(),
                                 onValueChange = {
-                                    playbackTimeMs = it.toLong()
+                                    playbackTimeMs = rangeStart + it.toLong()
                                     isPlaying = false
                                 },
-                                valueRange = rangeStart.toFloat()..rangeEnd.toFloat(),
+                                valueRange = 0f..(rangeEnd - rangeStart).toFloat(),
                                 modifier = Modifier.weight(1f),
                                 colors = SliderDefaults.colors(
                                     thumbColor = Color.Yellow,
