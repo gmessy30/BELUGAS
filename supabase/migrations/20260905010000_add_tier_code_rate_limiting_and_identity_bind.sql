@@ -147,6 +147,13 @@ begin
 end;
 $$;
 
+-- Only ever called internally, from get_or_create_subscriber_identity -- a SECURITY DEFINER
+-- function's nested calls run under its OWNER's privileges, not the original caller's, so anon
+-- never needs its own grant here for that path to keep working. Revoked anyway (not granted to
+-- anyone) so this migration doesn't leave one function on Postgres's default PUBLIC EXECUTE
+-- while being explicit about every other grant in it.
+revoke all on function public.generate_crockford_short_code(int) from public;
+
 
 -- =========================================================================================
 -- get_or_create_subscriber_identity: idempotent -- returns the existing short_code if this
