@@ -46,15 +46,30 @@ actual class AppPreferences actual constructor() {
         prefs.getString(KEY_SUBSCRIBER_ID, null)
     }
 
+    // commit(), not apply() -- this id is what a tier claim and every zone subscription bind
+    // to server-side (see getOrCreateSubscriberId's own comment). apply() returns as soon as
+    // the write is queued, not once it's durable -- a process death between generating a new
+    // id and its write actually landing would silently start the device over as a different
+    // (unrecognized) subscriber next launch, orphaning any claimed tier and subscriptions from
+    // before. Fires once (whenever getOrCreateSubscriberId first generates an id) and once more
+    // per explicit change (there is none today), off the main thread already -- commit()'s
+    // synchronous cost here is negligible.
     actual suspend fun setSubscriberId(id: String): Unit = withContext(Dispatchers.IO) {
-        prefs.edit().putString(KEY_SUBSCRIBER_ID, id).apply()
+        prefs.edit().putString(KEY_SUBSCRIBER_ID, id).commit()
     }
 
     actual suspend fun getHasAcknowledgedFirstRunGate(): Boolean = withContext(Dispatchers.IO) {
         noBackupPrefs.getBoolean(KEY_HAS_ACKNOWLEDGED_FIRST_RUN_GATE, false)
     }
 
+    // commit(), not apply() -- same reasoning as setSubscriberId above. onClick in
+    // AcknowledgementGateScreen calls this then immediately navigates away in the same
+    // coroutine; apply()'s write is only queued at that point, not durable, and nothing in
+    // that path (no Activity pause/stop) triggers Android's own flush-pending-apply-writes
+    // safety net. A process death in that window loses the write and the gate reappears next
+    // launch even though the user genuinely acknowledged it. Fires once per install, already
+    // off the main thread.
     actual suspend fun setHasAcknowledgedFirstRunGate(acknowledged: Boolean): Unit = withContext(Dispatchers.IO) {
-        noBackupPrefs.edit().putBoolean(KEY_HAS_ACKNOWLEDGED_FIRST_RUN_GATE, acknowledged).apply()
+        noBackupPrefs.edit().putBoolean(KEY_HAS_ACKNOWLEDGED_FIRST_RUN_GATE, acknowledged).commit()
     }
 }
