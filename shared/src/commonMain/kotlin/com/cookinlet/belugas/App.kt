@@ -359,10 +359,16 @@ fun App() {
     var presenceBannerHeightDp by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current
 
+    // The one inset value everything bottom-anchored (AppBackground's content padding below,
+    // the snackbar, the Map screen's own FAB/playback panel) reads to clear the banner --
+    // computed once here so all of them agree, instead of each re-deriving showPresenceBanner
+    // vs. presenceBannerHeightDp on its own.
+    val bottomContentInset = if (showPresenceBanner) presenceBannerHeightDp else 0.dp
+
     MaterialTheme {
       Box(modifier = Modifier.fillMaxSize()) {
         CompositionLocalProvider(
-            LocalBottomContentInset provides if (showPresenceBanner) presenceBannerHeightDp else 0.dp
+            LocalBottomContentInset provides bottomContentInset
         ) {
         when (currentScreen) {
             Screen.SPLASH -> {
@@ -510,7 +516,7 @@ fun App() {
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = if (showPresenceBanner) 40.dp else 0.dp)
+                .padding(bottom = bottomContentInset)
         )
 
         if (showPresenceBanner) {

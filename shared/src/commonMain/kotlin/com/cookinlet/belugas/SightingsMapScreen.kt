@@ -554,7 +554,11 @@ fun SightingsMapScreen(
 
         // --- 2. FLOATING HUD OVERLAYS ---
 
-        // Playback Mode Toggle FAB (Shown when playback is hidden)
+        // Playback Mode Toggle FAB (Shown when playback is hidden). This screen renders its own
+        // full-bleed map rather than going through AppBackground (whose Box applies
+        // LocalBottomContentInset as padding automatically), so it has to clear the "Belugas
+        // present" banner itself -- otherwise the banner (a sibling drawn on top of this whole
+        // screen in App.kt) sits over this FAB whenever it's showing.
         if (!isPlaybackVisible) {
             FloatingActionButton(
                 onClick = {
@@ -563,6 +567,7 @@ fun SightingsMapScreen(
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
+                    .padding(bottom = LocalBottomContentInset.current)
                     .padding(16.dp),
                 containerColor = Color(0xFF1E1E1E),
                 contentColor = Color.Yellow,
@@ -577,7 +582,11 @@ fun SightingsMapScreen(
             }
         }
         
-        // Collapsible Advanced Time Playback HUD
+        // Collapsible Advanced Time Playback HUD. Same reasoning as the FAB above -- clear the
+        // banner via the real measured inset, not a guess. The panel's own expanded/minimized
+        // height doesn't factor in here: it's anchored from the bottom via padding, so
+        // BottomCenter alignment re-measures around whatever height the panel content currently
+        // is regardless of how tall the banner's own inset is.
         AnimatedVisibility(
             visible = isPlaybackVisible,
             enter = slideInVertically(initialOffsetY = { it }),
@@ -585,6 +594,7 @@ fun SightingsMapScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .padding(bottom = LocalBottomContentInset.current)
                 .padding(12.dp)
         ) {
             Surface(
