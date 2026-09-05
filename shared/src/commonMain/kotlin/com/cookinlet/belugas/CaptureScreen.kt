@@ -18,7 +18,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import belugas.shared.generated.resources.Res
-import belugas.shared.generated.resources.beluga_capture_sketch
+import belugas.shared.generated.resources.beluga_capture_button
 import org.jetbrains.compose.resources.painterResource
 
 @Composable
@@ -95,12 +95,12 @@ fun CaptureScreen(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .padding(end = 16.dp)
-                .width(85.dp)
+                .width(99.dp)
                 .height(200.dp)
         ) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Image(
-                    painter = painterResource(Res.drawable.beluga_capture_sketch),
+                    painter = painterResource(Res.drawable.beluga_capture_button),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
