@@ -1,6 +1,7 @@
 package com.cookinlet.belugas
 
 import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
@@ -19,6 +20,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
@@ -299,6 +301,25 @@ private data class RedeemTierCodeParams(
     @SerialName("p_code") val code: String,
     @SerialName("p_subscriber_id") val subscriberId: String
 )
+
+@Serializable
+private data class SubscriberIdentityParams(
+    @SerialName("p_subscriber_id") val subscriberId: String
+)
+
+/**
+ * Outcome of [SupabaseApi.redeemTierCode]. [RateLimited] is deliberately its own case, distinct
+ * from [Invalid] -- see redeem_tier_code's own comment
+ * (20260905010000_add_tier_code_rate_limiting_and_identity_bind.sql) on why: it says nothing
+ * about whether any code tried was valid, only that this device is going too fast, so surfacing
+ * it separately doesn't reopen the "can this be used to probe which codes exist" concern that
+ * collapsing every OTHER failure into one null result already closes.
+ */
+sealed class TierRedeemResult {
+    data class Success(val tier: Int) : TierRedeemResult()
+    object Invalid : TierRedeemResult()
+    object RateLimited : TierRedeemResult()
+}
 
 object SupabaseApi {
     /**
@@ -765,12 +786,15 @@ object SupabaseApi {
     /**
      * Attempts to claim [code] onto this device's [subscriberId] via TierClaimScreen (see
      * that screen's own comment -- only reachable through AboutScreen's hidden gesture).
-     * Returns the assigned tier (1 or 2) on success, null on any failure -- a bad code, an
-     * already-used code, and a network/decode error all collapse to the same null so this
-     * can't be used to probe which codes exist, matching redeem_tier_code's own design
-     * (20260903010000_add_observer_tier_system.sql).
+     * [TierRedeemResult.Invalid] covers every ordinary failure (bad code, already-used code, a
+     * network/decode error) -- all collapse to the same outcome so this can't be used to probe
+     * which codes exist, matching redeem_tier_code's own design
+     * (20260903010000_add_observer_tier_system.sql). [TierRedeemResult.RateLimited] is the one
+     * outcome kept separate -- see redeem_tier_code's rate-limit comment
+     * (20260905010000_add_tier_code_rate_limiting_and_identity_bind.sql) for why that doesn't
+     * weaken the "reveals nothing about validity" guarantee.
      */
-    suspend fun redeemTierCode(code: String, subscriberId: String): Int? {
+    suspend fun redeemTierCode(code: String, subscriberId: String): TierRedeemResult {
         return try {
             val params = jsonConfig.encodeToJsonElement(
                 RedeemTierCodeParams(code = code, subscriberId = subscriberId)
@@ -780,11 +804,49 @@ object SupabaseApi {
             // outcome here, not a decode failure.
             val raw = supabase.postgrest.rpc("redeem_tier_code", params).data
             when (val element = jsonConfig.parseToJsonElement(raw)) {
-                is JsonNull -> null
-                else -> element.jsonPrimitive.intOrNull
+                is JsonNull -> TierRedeemResult.Invalid
+                else -> element.jsonPrimitive.intOrNull?.let { TierRedeemResult.Success(it) }
+                    ?: TierRedeemResult.Invalid
+            }
+        } catch (e: RestException) {
+            // redeem_tier_code raises this exact message (not a SQLSTATE-specific subclass --
+            // see that function's own comment) when this subscriber_id has made too many
+            // attempts in the last hour. Anything else (bad code, network error, a genuinely
+            // unexpected server error) falls through to the same Invalid as before.
+            if (e.error == "rate_limited") {
+                TierRedeemResult.RateLimited
+            } else {
+                println("TIER_CODE_REDEEM_ERROR: [${e::class.simpleName}] ${e.message}")
+                TierRedeemResult.Invalid
             }
         } catch (e: Exception) {
             println("TIER_CODE_REDEEM_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            TierRedeemResult.Invalid
+        }
+    }
+
+    /**
+     * Fetches this device's short, read-aloud-safe id (minting one server-side on first call --
+     * see get_or_create_subscriber_identity's own comment), for the manual tier-claim fallback:
+     * someone who can't manage the code-entry UI reads this aloud over the phone instead, and an
+     * admin binds it by hand via admin_bind_tier_code. Called lazily -- only when
+     * TierClaimScreen's hidden-gesture fallback panel is actually shown, not on every launch.
+     * Null on any failure (network, decode) -- the caller just doesn't show the fallback id that
+     * time rather than surfacing an error for what's already a rarely-used escape hatch.
+     */
+    suspend fun getOrCreateSubscriberIdentity(subscriberId: String): String? {
+        return try {
+            val params = jsonConfig.encodeToJsonElement(
+                SubscriberIdentityParams(subscriberId = subscriberId)
+            ).jsonObject
+            val raw = supabase.postgrest.rpc("get_or_create_subscriber_identity", params).data
+            when (val element = jsonConfig.parseToJsonElement(raw)) {
+                is JsonNull -> null
+                else -> element.jsonPrimitive.contentOrNull
+            }
+        } catch (e: Exception) {
+            println("SUBSCRIBER_IDENTITY_ERROR: [${e::class.simpleName}] ${e.message}")
             e.printStackTrace()
             null
         }
