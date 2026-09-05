@@ -27,6 +27,7 @@ androidx-exifinterface = "1.3.7"
 google-services = "4.5.0"
 firebase-bom = "34.18.0"
 coil = "3.5.0"
+sqliteJdbc = "3.41.2.2"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -84,6 +85,10 @@ firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 # Coil (KMP image loading) -- thumbnails for already-uploaded sighting photos
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
+
+# Build-time only (task classpath, not shipped) -- verifySightingEntityMigration in
+# shared/build.gradle.kts, a real JDBC driver for its own SQLite schema diff.
+sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqliteJdbc" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
