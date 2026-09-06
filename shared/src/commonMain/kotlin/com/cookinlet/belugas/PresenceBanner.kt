@@ -118,14 +118,38 @@ const val KENAI_NULL_BOUNDARY_CEILING_MS = 15L * 60 * 60 * 1000
 // already implied -- not a second number to keep in sync.
 const val KENAI_EXEMPT_BLUE_CEILING_MS = 24L * 60 * 60 * 1000
 
-// Pure local recompute of get_kenai_presence_state's own SEASON GATE (Mar-May,
+// Pure local recompute of get_kenai_presence_state's own SEASON GATE (two disjoint windows,
 // America/Anchorage -- see that function's header comment), used only to catch a device that's
-// been offline across the season boundary itself and is holding a now-wrong "NOT EXPECTED THIS
+// been offline across a season boundary itself and is holding a now-wrong "NOT EXPECTED THIS
 // TIME OF YEAR" claim. This is a DIFFERENT failure than plain elapsed-time staleness --
 // crossing a calendar boundary isn't something KENAI_EXEMPT_BLUE_CEILING_MS's ceiling alone
 // catches (a device could still be well inside the 24h window and yet already be in a new
 // season) -- so both run, not either.
-fun isKenaiInSeasonLocally(nowMs: Long): Boolean = anchorageMonth(nowMs) in 3..5
+//
+// FALL_SEASON_START/END and SPRING_SEASON_START/END keep the SAME LITERAL "MM-DD" STRINGS as
+// get_kenai_presence_state's own v_in_season -- a reviewer diffing this file against that
+// migration should be able to confirm the two match by eye, not just trust the range logic is
+// equivalent. Neither window wraps the Dec 31/Jan 1 year turn, so plain string comparison
+// within a single calendar year is safe -- see PresenceBannerSeasonGateTest for the exact
+// boundary dates this is expected to hold for.
+//
+// BOUNDARIES: five years of personal sighting records put the earliest fall arrival at Aug 21
+// and the latest spring departure at May 7 (each observed 2021-2025). The windows below pad
+// roughly a week past both observed extremes in the direction that matters -- so a slightly
+// early or slightly late animal still gets a real BLUE/prediction claim instead of "NOT EXPECTED
+// THIS TIME OF YEAR" -- not a claim that these are the true biological limits. Aug 15/Dec 31 and
+// Mar 15/May 14 are a judgment call, not derived data; revisit them if more seasons of records
+// push either observed extreme wider than the current padding.
+private const val FALL_SEASON_START = "08-15" // padding; earliest observed fall arrival is Aug 21
+private const val FALL_SEASON_END = "12-31"
+private const val SPRING_SEASON_START = "03-15"
+private const val SPRING_SEASON_END = "05-14" // padding; latest observed spring departure is May 7
+
+fun isKenaiInSeasonLocally(nowMs: Long): Boolean {
+    val monthDay = anchorageMonthDay(nowMs)
+    return monthDay in FALL_SEASON_START..FALL_SEASON_END ||
+        monthDay in SPRING_SEASON_START..SPRING_SEASON_END
+}
 
 // Pairs a fetched KenaiPresenceState with the wall-clock time it was fetched at -- the two are
 // always set together (see App.kt's polling loop) and effectiveKenaiPresenceStatus needs both,
@@ -154,14 +178,17 @@ data class KenaiPresenceSnapshot(val detail: KenaiPresenceState, val fetchedAtMs
  *
  * - RED persists until the first cycle boundary (matches the server's own persistence rule),
  *   then reads as YELLOW until the second boundary, then UNKNOWN.
- * - A genuine server-returned YELLOW escalates straight to UNKNOWN at the FIRST boundary, not
- *   the second -- unlike RED-just-expired YELLOW, it never had a red-qualifying sighting in the
- *   now-closed cycle to carry forward, so there's nothing for it to persist on.
- * - A real, non-exempt BLUE ("NEXT WINDOW ..." / the "NO RECENT SIGHTINGS" fallback) is
- *   cycle-scoped exactly like a genuine YELLOW, for the same reason -- no just-expired leg to
- *   carry it further, so ONE boundary, straight to UNKNOWN. This is the case the whole feature
- *   exists to close: a stale "no recent sightings" during viewing season is the exact false
- *   all-clear get_kenai_presence_state's own RED-persistence rule was designed to avoid.
+ * - A server-returned YELLOW gets the SAME first+second boundary treatment as RED, not a single
+ *   boundary -- get_kenai_presence_state's YELLOW is a pure recency claim spanning the 3
+ *   completed cycles before whichever cycle is current (see that function's own comment), so a
+ *   YELLOW fetched at any point in that span is just as likely to still be a real YELLOW two
+ *   boundaries later as a RED is. There's no "genuine vs. just-expired" distinction left to draw
+ *   server-side -- every YELLOW now has the same multi-cycle persistence shape.
+ * - A real, non-exempt BLUE ("NEXT WINDOW ..." / the "NO RECENT SIGHTINGS" fallback) is the one
+ *   status with no persistence mechanism behind it at all -- a plain "nothing recent" claim, so
+ *   it stays cycle-scoped to ONE boundary, straight to UNKNOWN. This is the case the whole
+ *   feature exists to close: a stale "no recent sightings" during viewing season is the exact
+ *   false all-clear get_kenai_presence_state's own RED-persistence rule was designed to avoid.
  * - The two EXEMPTED BLUE sub-states (out-of-season, prediction-unavailable) are the only ones
  *   that don't use the cycle boundary at all -- they escalate to UNKNOWN past
  *   KENAI_EXEMPT_BLUE_CEILING_MS instead, or immediately if the local season recompute now
@@ -206,8 +233,10 @@ fun effectiveKenaiPresenceStatus(
                 else -> BelugaPresenceStatus.UNKNOWN
             }
         }
-        BelugaPresenceStatus.YELLOW ->
-            if (nowMs < firstBoundaryMs) BelugaPresenceStatus.YELLOW else BelugaPresenceStatus.UNKNOWN
+        BelugaPresenceStatus.YELLOW -> {
+            val secondBoundaryMs = firstBoundaryMs + KENAI_SECOND_BOUNDARY_OFFSET_MS
+            if (nowMs < secondBoundaryMs) BelugaPresenceStatus.YELLOW else BelugaPresenceStatus.UNKNOWN
+        }
         // Unreachable -- belugaPresenceStatusFromKenaiPhase never returns BLUE/UNKNOWN here
         // (BLUE handled above, UNKNOWN never produced by it at all). Kept for exhaustiveness.
         else -> serverStatus

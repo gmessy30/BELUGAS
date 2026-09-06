@@ -112,12 +112,14 @@ expect fun formatDateTime(epochMs: Long): String
 expect fun formatDateLabel(epochMs: Long): String
 expect fun formatCoord(value: Double): String
 
-// Calendar month (1-12) of [epochMs] in the America/Anchorage zone -- platform-specific
-// because this codebase has no kotlinx-datetime dependency. Used only by
+// Zero-padded "MM-dd" (month-day, no year) of [epochMs] in the America/Anchorage zone --
+// platform-specific because this codebase has no kotlinx-datetime dependency. Used only by
 // PresenceBanner.kt's isKenaiInSeasonLocally to mirror get_kenai_presence_state's own SEASON
-// GATE (extract(month from ... at time zone 'America/Anchorage')) so the client can recompute
-// the same in_season claim the server would make, without a network round trip.
-expect fun anchorageMonth(epochMs: Long): Int
+// GATE (to_char(... at time zone 'America/Anchorage', 'MM-DD')) so the client can recompute the
+// same in_season claim the server would make, without a network round trip. MM-DD text is
+// deliberate, not a day-of-year int: zero-padded month-day strings sort lexicographically in
+// calendar order without needing leap-year-aware day-of-year arithmetic on either side.
+expect fun anchorageMonthDay(epochMs: Long): String
 
 // ISO-8601 UTC, for values sent to a Postgres timestamptz column (e.g. subscriptions.expires_at)
 // -- distinct from the locale-formatted display strings above, which aren't valid DB input.
