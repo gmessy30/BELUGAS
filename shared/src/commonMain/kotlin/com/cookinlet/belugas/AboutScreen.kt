@@ -29,6 +29,7 @@ import belugas.shared.generated.resources.Res
 import belugas.shared.generated.resources.beluga_about_sketches
 
 private const val LUNA_ARTWORK_INQUIRY_EMAIL = "REDACTED"
+private const val DEVELOPER_CONTACT_EMAIL = "keeneyeapps@gmail.com"
 
 // Hidden gesture into the observer-tier claim screen (see TierClaimScreen.kt) -- 7 taps on the
 // nose of the whale labeled "B" in Luna's own reference sketch (see AboutHiddenGesture.kt for
@@ -137,6 +138,14 @@ fun AboutScreen(onBack: () -> Unit, onNavigateToTierClaim: () -> Unit) {
                             "BELUGAS is developed by Ryan Messimer.",
                             color = Color.White.copy(alpha = 0.85f),
                             fontSize = 13.sp
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "Contact: $DEVELOPER_CONTACT_EMAIL",
+                            color = Color(0xFF00E5FF),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clickable { uriHandler.openUri("mailto:$DEVELOPER_CONTACT_EMAIL") }
                         )
                     }
 

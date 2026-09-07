@@ -109,16 +109,31 @@ fun CaptureScreen(
                 )
                 // Letters stacked vertically (each upright, one per line) rather than the
                 // whole word rotated sideways as a single string -- reads top to bottom.
+                // Positioned in the artwork's own negative-space corridor (left edge, below the
+                // head/dorsal line) rather than dead center over the whale's body -- a plain dp
+                // offset is safe here specifically because this button is a fixed 99dp x 200dp
+                // box on every device (not screen-relative like AppBackground's full-bleed
+                // artwork), so there's no scaling for the offset to drift against.
+                //
+                // Aligned TopStart with an explicit top padding, not CenterStart -- centering
+                // vertically across the FULL button height put the first couple characters back
+                // over the head/dorsal line, since that negative-space corridor only occupies
+                // the lower portion of the button, not its full height. Font size/line height
+                // shrunk too so the whole word compresses into that corridor's actual height
+                // instead of spilling above it regardless of where the block starts.
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(start = 6.dp, top = 70.dp)
                 ) {
                     val label = if (triggerSnapshot) "SAVING..." else "CAPTURE"
                     label.forEach { char ->
                         Text(
                             text = char.toString(),
                             color = Color.Black,
-                            fontSize = 18.sp,
+                            fontSize = 12.sp,
+                            lineHeight = 12.sp,
                             fontWeight = FontWeight.Black,
                             textAlign = TextAlign.Center
                         )

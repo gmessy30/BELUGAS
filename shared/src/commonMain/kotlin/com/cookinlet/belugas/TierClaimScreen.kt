@@ -2,10 +2,12 @@ package com.cookinlet.belugas
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -21,6 +23,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -32,6 +36,19 @@ import kotlinx.coroutines.launch
 // non-alphanumeric characters before matching regardless of whether it's typed with or without it.
 private fun groupedShortCode(code: String): String =
     code.chunked(4).joinToString("-")
+
+// Loading is deliberately not distinguished from "nothing yet" in the UI below (no spinner/
+// placeholder while it's in flight -- the fetch is normally near-instant) -- but Failed IS
+// rendered, with a real fallback, unlike the plain-nullable version this replaced. That one
+// collapsed "still loading," "fetch failed," and "never attempted" into the same invisible
+// null, which meant the one person this whole section exists for -- someone who can't manage
+// the code-entry UI -- had zero indication anything was even supposed to be here if the
+// network call failed.
+private sealed class ShortCodeState {
+    object Loading : ShortCodeState()
+    data class Loaded(val code: String) : ShortCodeState()
+    object Failed : ShortCodeState()
+}
 
 // Reached only via AboutScreen's hidden 7-tap gesture -- see that screen's own comment. A code
 // field, plus (below it) this device's own short id for the manual fallback: someone who can't
@@ -52,11 +69,18 @@ fun TierClaimScreen(appPreferences: AppPreferences, onBack: () -> Unit) {
     // is cheap/local; getOrCreateSubscriberIdentity is the one network round trip, and mints
     // this device's short code server-side on its first-ever call (see that RPC's own comment).
     var subscriberId by remember { mutableStateOf<String?>(null) }
-    var shortCode by remember { mutableStateOf<String?>(null) }
+    var shortCodeState by remember { mutableStateOf<ShortCodeState>(ShortCodeState.Loading) }
+
+    suspend fun fetchShortCode(id: String) {
+        shortCodeState = ShortCodeState.Loading
+        val fetched = SupabaseApi.getOrCreateSubscriberIdentity(id)
+        shortCodeState = if (fetched != null) ShortCodeState.Loaded(fetched) else ShortCodeState.Failed
+    }
+
     LaunchedEffect(Unit) {
         val id = appPreferences.getOrCreateSubscriberId()
         subscriberId = id
-        shortCode = SupabaseApi.getOrCreateSubscriberIdentity(id)
+        fetchShortCode(id)
     }
 
     val clipboardManager = LocalClipboardManager.current
@@ -97,6 +121,35 @@ fun TierClaimScreen(appPreferences: AppPreferences, onBack: () -> Unit) {
                 label = { Text("Code") },
                 singleLine = true,
                 enabled = !isSubmitting,
+                // Ascii (not the default Text) skips keyboards that assume prose -- no
+                // predictive text bar guessing at a word, no auto-period-on-double-space.
+                // Characters forces caps as typed, matching what the server now normalizes to
+                // anyway (see normalize_tier_code, 20260905020000) -- so what's on screen is
+                // what actually gets compared, not a lowercase-looking string that's silently
+                // uppercased server-side. autoCorrectEnabled off for the same reason autocorrect
+                // is wrong for any code: it "fixes" a token that was never a word to begin with.
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Ascii,
+                    capitalization = KeyboardCapitalization.Characters,
+                    autoCorrectEnabled = false
+                ),
+                // Explicit, not the Material3 default -- App.kt's MaterialTheme is never given
+                // a colorScheme, so it defaults to lightColorScheme(), whose text/border colors
+                // assume a light surface. This screen paints its own black background instead
+                // of using the theme's surface color, so the default (near-black) text and
+                // border were rendering essentially invisibly against it. Set to the same
+                // white/cyan the rest of this screen already uses (see the header row's Text
+                // and the short-code section's COPY buttons), not inherited from the theme.
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    disabledTextColor = Color.White.copy(alpha = 0.5f),
+                    cursorColor = Color(0xFF00E5FF),
+                    focusedBorderColor = Color(0xFF00E5FF),
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.5f),
+                    focusedLabelColor = Color(0xFF00E5FF),
+                    unfocusedLabelColor = Color.White.copy(alpha = 0.6f)
+                ),
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -142,44 +195,108 @@ fun TierClaimScreen(appPreferences: AppPreferences, onBack: () -> Unit) {
             }
 
             // Manual fallback: this device's own short id, for someone who can't manage the
-            // code entry above to read aloud over the phone instead. Only shown once fetched --
-            // no placeholder/loading text, since a failed fetch here shouldn't read as an error
-            // on top of whatever the code-entry flow is doing.
-            shortCode?.let { rawCode ->
-                Spacer(Modifier.height(40.dp))
-                Text(
-                    "CAN'T ENTER A CODE?",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Read this to an admin over the phone -- they can bind your code to it directly.",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 12.sp
-                )
-                Spacer(Modifier.height(12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            // code entry above to read aloud over the phone instead. Nothing shown during
+            // Loading (normally near-instant, not worth a placeholder) -- but Failed IS shown,
+            // deliberately, with a real fallback rather than silence. See ShortCodeState's own
+            // comment for why that distinction matters here specifically.
+            when (val state = shortCodeState) {
+                is ShortCodeState.Loading -> Unit
+                is ShortCodeState.Loaded -> {
+                    Spacer(Modifier.height(40.dp))
                     Text(
-                        groupedShortCode(rawCode),
-                        color = Color.White,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 2.sp
+                        "CAN'T ENTER A CODE?",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
                     )
-                    Spacer(Modifier.width(16.dp))
-                    TextButton(onClick = {
-                        clipboardManager.setText(AnnotatedString(rawCode))
-                        justCopied = true
-                    }) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Read this to an admin over the phone -- they can bind your code to it directly.",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            if (justCopied) "COPIED" else "COPY",
-                            color = Color(0xFF00E5FF),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
+                            groupedShortCode(state.code),
+                            color = Color.White,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 2.sp
                         )
+                        Spacer(Modifier.width(16.dp))
+                        TextButton(onClick = {
+                            clipboardManager.setText(AnnotatedString(state.code))
+                            justCopied = true
+                        }) {
+                            Text(
+                                if (justCopied) "COPIED" else "COPY",
+                                color = Color(0xFF00E5FF),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+                is ShortCodeState.Failed -> {
+                    Spacer(Modifier.height(40.dp))
+                    Text(
+                        "CAN'T ENTER A CODE?",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Couldn't load your short device ID -- check your connection.",
+                        color = Color(0xFFFF5252),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(
+                        onClick = { subscriberId?.let { id -> scope.launch { fetchShortCode(id) } } },
+                        modifier = Modifier.padding(0.dp)
+                    ) {
+                        Text("RETRY", color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                    // Falls back to the raw subscriber_id -- awkward to read aloud (36 characters,
+                    // hyphenated), but an admin can look it up directly, and it beats the person
+                    // calling in having nothing at all to give them, which is exactly the
+                    // situation this whole section exists to prevent.
+                    subscriberId?.let { id ->
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "LONG FORM (read carefully, or send this device closer to a signal):",
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                id,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(onClick = {
+                                clipboardManager.setText(AnnotatedString(id))
+                                justCopied = true
+                            }) {
+                                Text(
+                                    if (justCopied) "COPIED" else "COPY",
+                                    color = Color(0xFF00E5FF),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
                     }
                 }
             }
