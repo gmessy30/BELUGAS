@@ -341,12 +341,15 @@ fun App() {
         }
     }
 
-    // Bottom banner: hidden on the two active-data-entry screens (Placement rule), AND
-    // only shown elsewhere when this device is subscribed to a watched zone or physically
-    // near one -- unlike the map's shading above, which every screen renders unconditionally
-    // once it's on the map. Within that gate, BLUE is still a real, shown state -- it only
-    // disappears because neither gate applies, never because of its own color.
+    // Bottom banner: hidden on every screen that hosts WhaleCountRow (CAPTURE has no counts
+    // itself, but PHOTO_LOGGING and MANUAL_LOGGING both do -- nobody entering a report should
+    // have the banner sitting over their count controls), AND only shown elsewhere when this
+    // device is subscribed to a watched zone or physically near one -- unlike the map's shading
+    // above, which every screen renders unconditionally once it's on the map. Within that gate,
+    // BLUE is still a real, shown state -- it only disappears because neither gate applies,
+    // never because of its own color.
     val showPresenceBanner = currentScreen != Screen.CAPTURE &&
+        currentScreen != Screen.PHOTO_LOGGING &&
         currentScreen != Screen.MANUAL_LOGGING &&
         currentScreen != Screen.ACKNOWLEDGEMENT_GATE &&
         relevantWatchedZoneId != null
@@ -364,6 +367,18 @@ fun App() {
     // computed once here so all of them agree, instead of each re-deriving showPresenceBanner
     // vs. presenceBannerHeightDp on its own.
     val bottomContentInset = if (showPresenceBanner) presenceBannerHeightDp else 0.dp
+
+    // Landscape while actively capturing or entering a report -- the same three screens
+    // WhaleCountRow lives on. Computed once here (rather than one lock per screen) so moving
+    // directly between two of them doesn't release-then-reacquire the lock and flicker back
+    // toward portrait for a frame. Android-only in effect: iOS's Info.plist has been
+    // landscape-only, app-wide, since before this feature existed (no portrait orientations
+    // declared at all) -- that looks like a leftover default rather than a deliberate choice,
+    // but it's left as-is here; see LockLandscapeOrientation's iOS actual.
+    val wantsLandscape = currentScreen == Screen.CAPTURE ||
+        currentScreen == Screen.PHOTO_LOGGING ||
+        currentScreen == Screen.MANUAL_LOGGING
+    LockLandscapeOrientation(wantsLandscape)
 
     MaterialTheme {
       Box(modifier = Modifier.fillMaxSize()) {

@@ -1,9 +1,14 @@
 package com.cookinlet.belugas
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
@@ -27,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import belugas.shared.generated.resources.Res
 import belugas.shared.generated.resources.beluga_about_sketches
+import belugas.shared.generated.resources.breaching_belugas_sketches
 
 private const val LUNA_ARTWORK_INQUIRY_EMAIL = "REDACTED"
 private const val DEVELOPER_CONTACT_EMAIL = "keeneyeapps@gmail.com"
@@ -54,6 +60,13 @@ fun AboutScreen(onBack: () -> Unit, onNavigateToTierClaim: () -> Unit) {
     val uriHandler = LocalUriHandler.current
     var showText by remember { mutableStateOf(true) }
 
+    // Swipeable background -- page 0 is Luna's original reference sheet (also the sheet the
+    // hidden whale-nose gesture below is calibrated against), page 1 is the newer breaching
+    // sketches. This IS the screen's backdrop (see AboutBackgroundSwitcher's own comment), not a
+    // separate on-page image.
+    val backgroundPagerState = rememberPagerState(pageCount = { ABOUT_BACKGROUND_IMAGES.size })
+    val backgroundImage = ABOUT_BACKGROUND_IMAGES[backgroundPagerState.currentPage]
+
     // Hidden gesture state -- see HIDDEN_GESTURE_TAP_COUNT's own comment above.
     var hiddenGestureTapCount by remember { mutableStateOf(0) }
     var hiddenGestureLastTapAt by remember { mutableStateOf(0L) }
@@ -70,7 +83,7 @@ fun AboutScreen(onBack: () -> Unit, onNavigateToTierClaim: () -> Unit) {
     }
 
     AppBackground(
-        backgroundImage = Res.drawable.beluga_about_sketches,
+        backgroundImage = backgroundImage,
         backgroundColorFilter = SketchBackgroundTint
     ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -86,6 +99,14 @@ fun AboutScreen(onBack: () -> Unit, onNavigateToTierClaim: () -> Unit) {
                 .onSizeChanged { artworkContainerSizePx = it }
                 .pointerInput(Unit) {
                     detectTapGestures { offset ->
+                        // Gated on showText alone -- deliberately NOT on which background is
+                        // showing. This is the only route to TierClaimScreen, so it must never
+                        // depend on state the user could get stuck in (e.g. a swipe that stops
+                        // responding). isWithinWhaleBNose's zone is calibrated against Luna's
+                        // original sheet; on the alternate background the tap zone just lands
+                        // wherever it lands on that image instead -- an acceptable trade for an
+                        // undocumented, developer-only gesture, against the alternative of an
+                        // unreachable tier-claim path.
                         if (showText) return@detectTapGestures
                         val size = artworkContainerSizePx
                         if (size.width <= 0 || size.height <= 0) return@detectTapGestures
@@ -165,11 +186,59 @@ fun AboutScreen(onBack: () -> Unit, onNavigateToTierClaim: () -> Unit) {
                         )
                     }
 
+                    AboutBackgroundSwitcher(pagerState = backgroundPagerState)
+
                     Spacer(Modifier.height(24.dp))
                 }
             }
         }
     }
+    }
+}
+
+// The two backgrounds AboutScreen swipes between -- see AboutScreen's backgroundPagerState.
+private val ABOUT_BACKGROUND_IMAGES = listOf(Res.drawable.beluga_about_sketches, Res.drawable.breaching_belugas_sketches)
+
+// Just a swipe target, not a visible element -- doesn't need real image display room, only enough
+// height to be a comfortable, findable drag target above the dots.
+private val ABOUT_BACKGROUND_SWITCHER_HEIGHT = 120.dp
+
+/**
+ * Swipe target for AppBackground's own backdrop -- the sketches are the page BACKGROUND, not
+ * artwork drawn on top of it, so this pager renders no page content of its own; swiping here
+ * only moves backgroundPagerState, which AboutScreen reads to choose AppBackground's
+ * backgroundImage. A plain child of the ARTWORK section's scrollable column, composed only while
+ * showText is true -- exactly when AboutScreen's whale-nose tap detector is already inert (it
+ * returns early whenever showText is true -- see onWhaleNoseTap's own comment), so this can never
+ * fight it for taps regardless of where it lands on screen.
+ */
+@Composable
+private fun AboutBackgroundSwitcher(pagerState: PagerState) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(ABOUT_BACKGROUND_SWITCHER_HEIGHT)
+        ) { /* No content -- this page IS the screen's background, swapped via AppBackground's
+               backgroundImage in AboutScreen. This pager exists purely to host the swipe
+               gesture and page index. */ }
+
+        Spacer(Modifier.height(10.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            repeat(ABOUT_BACKGROUND_IMAGES.size) { index ->
+                val isCurrent = pagerState.currentPage == index
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .background(
+                            color = if (isCurrent) Color.White else Color.White.copy(alpha = 0.35f),
+                            shape = CircleShape
+                        )
+                )
+            }
+        }
     }
 }
 

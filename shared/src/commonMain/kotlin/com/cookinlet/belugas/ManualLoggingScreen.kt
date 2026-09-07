@@ -332,6 +332,10 @@ fun ManualLoggingScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                // This screen doesn't go through AppBackground, so it has to clear the system
+                // gesture/nav bar itself -- without this, WhaleCountRow's "-" row (below the
+                // rest of this stack) ends up under the gesture bar on gesture-nav devices.
+                .navigationBarsPadding()
                 .padding(bottom = 8.dp)
         ) {
             // Row A: Attribution Toggle + Date Picker
@@ -416,19 +420,22 @@ fun ManualLoggingScreen(
                 )
             }
 
-            // Row B: Stacked Counters (Floating Pills)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                WhaleCounterTile("UNKNOWN", unknownCount, { unknownCount++ }, { if (unknownCount > 0) unknownCount-- })
-                WhaleCounterTile("GREYS", greyCount, { greyCount++ }, { if (greyCount > 0) greyCount-- })
-                WhaleCounterTile("CALVES", calfCount, { calfCount++ }, { if (calfCount > 0) calfCount-- })
-                WhaleCounterTile("WHITES", whiteCount, { whiteCount++ }, { if (whiteCount > 0) whiteCount-- })
-            }
+            // Row B: Whale count buttons
+            WhaleCountRow(
+                whiteCount = whiteCount,
+                onWhiteIncrement = { whiteCount++ },
+                onWhiteDecrement = { if (whiteCount > 0) whiteCount-- },
+                greyCount = greyCount,
+                onGreyIncrement = { greyCount++ },
+                onGreyDecrement = { if (greyCount > 0) greyCount-- },
+                unknownCount = unknownCount,
+                onUnknownIncrement = { unknownCount++ },
+                onUnknownDecrement = { if (unknownCount > 0) unknownCount-- },
+                calfCount = calfCount,
+                onCalfIncrement = { calfCount++ },
+                onCalfDecrement = { if (calfCount > 0) calfCount-- },
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
         }
 
         // --- 5. DATE PICKER DIALOG ---

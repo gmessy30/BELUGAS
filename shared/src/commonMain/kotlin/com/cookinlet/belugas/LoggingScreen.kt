@@ -311,6 +311,10 @@ fun LoggingScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                // This screen doesn't go through AppBackground, so -- like ManualLoggingScreen --
+                // it has to clear the system gesture/nav bar itself; App.kt's showPresenceBanner
+                // excludes PHOTO_LOGGING outright, so there's no banner inset to add here.
+                .navigationBarsPadding()
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -331,45 +335,21 @@ fun LoggingScreen(
                 )
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-            // 1. Far Left (Furthest from thumb)
-            WhaleCounterTile(
-                label = "UNKNOWN",
-                count = unknownCount,
-                onIncrement = { unknownCount++ },
-                onDecrement = { if (unknownCount > 0) unknownCount-- }
+            WhaleCountRow(
+                whiteCount = whiteCount,
+                onWhiteIncrement = { whiteCount++ },
+                onWhiteDecrement = { if (whiteCount > 0) whiteCount-- },
+                greyCount = greyCount,
+                onGreyIncrement = { greyCount++ },
+                onGreyDecrement = { if (greyCount > 0) greyCount-- },
+                unknownCount = unknownCount,
+                onUnknownIncrement = { unknownCount++ },
+                onUnknownDecrement = { if (unknownCount > 0) unknownCount-- },
+                calfCount = calfCount,
+                onCalfIncrement = { calfCount++ },
+                onCalfDecrement = { if (calfCount > 0) calfCount-- },
+                modifier = Modifier.padding(top = 8.dp)
             )
-
-            // 2. Middle Left
-            WhaleCounterTile(
-                label = "GREYS",
-                count = greyCount,
-                onIncrement = { greyCount++ },
-                onDecrement = { if (greyCount > 0) greyCount-- }
-            )
-
-            // 3. Middle Right (Adjacent to Whites)
-            WhaleCounterTile(
-                label = "CALVES",
-                count = calfCount,
-                onIncrement = { calfCount++ },
-                onDecrement = { if (calfCount > 0) calfCount-- }
-            )
-
-            // 4. Far Right (Closest to Right Thumb)
-            WhaleCounterTile(
-                label = "WHITES",
-                count = whiteCount,
-                onIncrement = { whiteCount++ },
-                onDecrement = { if (whiteCount > 0) whiteCount-- }
-            )
-            }
         }
 
         // --- ONLINE COASTLINE-CHANNEL FALLBACK CHECKING STATE ---
@@ -588,70 +568,6 @@ internal fun DirectionArrowButton(
         } else {
             // OUTLINED ONLY until pressed
             drawPath(path = path, color = Color.Yellow, style = Stroke(width = 5.dp.toPx()))
-        }
-    }
-}
-
-/**
- * Individual Counter Block along the bottom row with slots for custom artwork.
- */
-@Composable
-internal fun WhaleCounterTile(
-    label: String,
-    count: Int,
-    onIncrement: () -> Unit,
-    onDecrement: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = modifier
-            .border(1.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-            .background(Color.Black.copy(alpha = 0.65f), shape = RoundedCornerShape(10.dp))
-            .padding(vertical = 6.dp, horizontal = 8.dp)
-    ) {
-        // --- 1. PLUS (+) BUTTON ON TOP ---
-        Box(
-            modifier = Modifier
-                .size(width = 46.dp, height = 30.dp)
-                .background(Color(0xFFFF9800), shape = RoundedCornerShape(4.dp))
-                .clickable { onIncrement() },
-            contentAlignment = Alignment.Center
-        ) {
-            Text("+", color = Color.Black, fontSize = 20.sp, fontWeight = FontWeight.Black)
-        }
-
-        Spacer(modifier = Modifier.height(2.dp))
-
-        // --- 2. LABEL PRINT (UNKNOWN / CALVES / GREYS / WHITES) ---
-        Text(
-            text = label,
-            color = Color.White,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp
-        )
-
-        // --- 3. COUNT NUMBER (0, 1, 2, 3...) ---
-        Text(
-            text = "$count",
-            color = Color.Yellow,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Black
-        )
-
-        Spacer(modifier = Modifier.height(2.dp))
-
-        // --- 4. MINUS (-) BUTTON ON BOTTOM ---
-        Box(
-            modifier = Modifier
-                .size(width = 46.dp, height = 30.dp)
-                .background(Color.DarkGray, shape = RoundedCornerShape(4.dp))
-                .clickable { onDecrement() },
-            contentAlignment = Alignment.Center
-        ) {
-            Text("-", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
         }
     }
 }
