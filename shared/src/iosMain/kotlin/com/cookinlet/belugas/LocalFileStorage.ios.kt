@@ -88,6 +88,24 @@ actual fun formatTime(epochMs: Long): String {
     return formatter.stringFromDate(date)
 }
 
+actual fun formatTime12Hour(epochMs: Long): String {
+    val date = NSDate.dateWithTimeIntervalSince1970(epochMs / 1000.0)
+    val formatter = NSDateFormatter().apply {
+        dateFormat = "h:mm a"
+        // Kenai gate times are meaningless in the device's own zone -- someone outside Alaska
+        // checking the banner needs the entrance-gate time AT the river, not translated to
+        // wherever they're standing. Explicit, not inherited, same reasoning as
+        // anchorageMonthDay's own zone.
+        timeZone = NSTimeZone.timeZoneWithName("America/Anchorage")!!
+        // Without this, the formatter falls back to the device locale -- under a locale with a
+        // non-Latin script or non-Western digits, stringFromDate could return "AM"/"PM" in that
+        // script or non-ASCII numerals instead of the plain "3:42 PM" the banner copy expects.
+        // en_US_POSIX guarantees plain ASCII, matching Android's Locale.US.
+        locale = NSLocale(localeIdentifier = "en_US_POSIX")
+    }
+    return formatter.stringFromDate(date)
+}
+
 actual fun formatDateTime(epochMs: Long): String {
     val date = NSDate.dateWithTimeIntervalSince1970(epochMs / 1000.0)
     val formatter = NSDateFormatter().apply {

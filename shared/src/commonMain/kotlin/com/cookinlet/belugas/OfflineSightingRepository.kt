@@ -112,6 +112,12 @@ expect fun formatDateTime(epochMs: Long): String
 expect fun formatDateLabel(epochMs: Long): String
 expect fun formatCoord(value: Double): String
 
+// 12-hour clock with AM/PM (e.g. "3:42 PM"), distinct from formatTime's 24-hour "HH:mm" --
+// PresenceBanner.kt's Kenai gate-time banner copy is written against 12-hour wall-clock times
+// specifically, and changing formatTime itself would also touch the "NEXT WINDOW" formatting it
+// used to share with the now-retired predicted-window display.
+expect fun formatTime12Hour(epochMs: Long): String
+
 // Zero-padded "MM-dd" (month-day, no year) of [epochMs] in the America/Anchorage zone --
 // platform-specific because this codebase has no kotlinx-datetime dependency. Used only by
 // PresenceBanner.kt's isKenaiInSeasonLocally to mirror get_kenai_presence_state's own SEASON

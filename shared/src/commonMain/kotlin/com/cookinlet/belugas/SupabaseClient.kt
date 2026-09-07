@@ -273,6 +273,13 @@ data class KenaiPresenceState(
     @SerialName("predicted_window_lo_min") val predictedWindowLoMin: Int? = null,
     @SerialName("predicted_window_hi_min") val predictedWindowHiMin: Int? = null,
     @SerialName("predicted_arrival_at_epoch_ms") val predictedArrivalAtEpochMs: Long? = null,
+    // Entrance-gate floor (kenai_gate_time, supabase/migrations/20260907000000), computed fresh
+    // against the upcoming cycle's low/high on every call -- RAW, no margin. Possible (0.3m) is
+    // what the banner renders (see PresenceBanner.kt's KENAI_GATE_TIME_EARLY_BIAS_MS for the
+    // client-applied offset); Likely (0.8m) is carried in the model but not yet surfaced in any
+    // UI (20260909000000_return_gate_times_from_get_kenai_presence_state.sql).
+    @SerialName("gate_time_possible_epoch_ms") val gateTimePossibleEpochMs: Long? = null,
+    @SerialName("gate_time_likely_epoch_ms") val gateTimeLikelyEpochMs: Long? = null,
     // The TIDE's own phase classification (flood-ride/ebb-arrival/slack-arrival) for the
     // upcoming low -- distinct from `phase` above (the banner's RED/YELLOW/BLUE), never to be
     // confused with it, same warning the migration's own tide_cycles.current_phase column gives.

@@ -52,6 +52,16 @@ actual fun formatTime(epochMs: Long): String {
     return sdf.format(date)
 }
 
+actual fun formatTime12Hour(epochMs: Long): String {
+    val date = java.util.Date(epochMs)
+    val sdf = java.text.SimpleDateFormat("h:mm a", java.util.Locale.US)
+    // Kenai gate times are meaningless in the device's own zone -- someone outside Alaska
+    // checking the banner needs the entrance-gate time AT the river, not translated to wherever
+    // they're standing. Explicit, not inherited, same reasoning as anchorageMonthDay's own zone.
+    sdf.timeZone = java.util.TimeZone.getTimeZone("America/Anchorage")
+    return sdf.format(date)
+}
+
 actual fun formatDateTime(epochMs: Long): String {
     val date = java.util.Date(epochMs)
     val sdf = java.text.SimpleDateFormat("EEE, MMM d, yyyy · h:mm a", java.util.Locale.US)

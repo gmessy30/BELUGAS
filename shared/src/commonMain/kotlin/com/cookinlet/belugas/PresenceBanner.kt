@@ -118,6 +118,18 @@ const val KENAI_NULL_BOUNDARY_CEILING_MS = 15L * 60 * 60 * 1000
 // already implied -- not a second number to keep in sync.
 const val KENAI_EXEMPT_BLUE_CEILING_MS = 24L * 60 * 60 * 1000
 
+// Applied to gate_time_possible_epoch_ms once, at render, in kenaiBannerLabel below --
+// kenai_gate_time itself returns the raw geometric formula result with zero margin by design
+// (see that function's own header comment: the offset is deliberately the CALLER's job, not
+// folded into the formula). The bias runs EARLY, not late: someone who checks the banner and
+// waits three extra minutes for nothing has lost three minutes; someone told "not before X" who
+// treats that as a green light and misses the entrance because the tide was already at gate
+// depth by X has missed the whole point of the banner. Not rounded to 5 or 10 minutes --
+// kenai_gate_time is exact to the minute (worst disagreement verified against 18 hand-tabulated
+// logbook cycles was 1.4 minutes), and rounding to a coarser grain would throw away precision
+// the formula actually has for no benefit.
+const val KENAI_GATE_TIME_EARLY_BIAS_MS = 3L * 60 * 1000
+
 // Pure local recompute of get_kenai_presence_state's own SEASON GATE (two disjoint windows,
 // America/Anchorage -- see that function's header comment), used only to catch a device that's
 // been offline across a season boundary itself and is holding a now-wrong "NOT EXPECTED THIS
@@ -285,23 +297,26 @@ fun colorForBelugaPresenceStatus(status: BelugaPresenceStatus): Color = when (st
 // below). RED/YELLOW stay identical to the generic labels -- the tide-cycle machinery changes
 // WHEN these fire, not what they say once they have. BLUE is the one that actually differs: it's
 // not a single state here but three (see get_kenai_presence_state's own header comment) --
-// out-of-season, in-season-but-not-yet-computed, and the real "here's the predicted window"
+// out-of-season, in-season-but-no-usable-gate-time, and the real "here's when to expect them"
 // case, each needing different text rather than one generic "no recent sightings."
+//
+// The third case renders gate_time_possible_epoch_ms (0.3m) only -- gate_time_likely_epoch_ms
+// (0.8m) stays in the model, unused here, pending a future surface for it. Branches on the
+// gate-time field itself (not detail.predictionAvailable) so Kotlin can smart-cast it non-null
+// in the branch body below -- the two are equivalent by the server's own definition
+// (20260909000000_return_gate_times_from_get_kenai_presence_state.sql), so this is purely to
+// avoid a !! rather than a different claim.
 private fun kenaiBannerLabel(status: BelugaPresenceStatus, detail: KenaiPresenceState, zoneSuffix: String): String =
     when (status) {
         BelugaPresenceStatus.RED -> "BELUGAS PRESENT$zoneSuffix"
         BelugaPresenceStatus.YELLOW -> "POSSIBLE ACTIVITY$zoneSuffix"
         BelugaPresenceStatus.BLUE -> when {
             !detail.inSeason -> "NOT EXPECTED THIS TIME OF YEAR$zoneSuffix"
-            !detail.predictionAvailable -> "PREDICTION UNAVAILABLE$zoneSuffix"
-            detail.nextCycleLowEpochMs != null &&
-                detail.predictedWindowLoMin != null &&
-                detail.predictedWindowHiMin != null -> {
-                val windowStart = formatTime(detail.nextCycleLowEpochMs + detail.predictedWindowLoMin * 60_000L)
-                val windowEnd = formatTime(detail.nextCycleLowEpochMs + detail.predictedWindowHiMin * 60_000L)
-                "NEXT WINDOW $windowStart–$windowEnd$zoneSuffix"
+            detail.gateTimePossibleEpochMs == null -> "TIDE DATA UNAVAILABLE$zoneSuffix"
+            else -> {
+                val biasedGateTimeMs = detail.gateTimePossibleEpochMs - KENAI_GATE_TIME_EARLY_BIAS_MS
+                "NOT EXPECTED IN THE RIVER BEFORE ${formatTime12Hour(biasedGateTimeMs)}$zoneSuffix"
             }
-            else -> "NO RECENT SIGHTINGS$zoneSuffix"
         }
         // Unreachable in practice -- BelugaPresenceBanner intercepts UNKNOWN before ever calling
         // this function, since kenaiDetail is null whenever status is UNKNOWN by construction
