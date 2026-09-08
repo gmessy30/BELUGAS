@@ -101,6 +101,10 @@ fun SubscriptionsScreen(onBack: () -> Unit, appPreferences: AppPreferences) {
         val id = subscriberId ?: return
         if (isSubscribing) return
 
+        // Unified on SubscriptionCreateResult (not just Boolean) so the zone branch can report
+        // ALREADY_EXISTS distinctly -- see that enum's own comment. Point/polygon have no such
+        // outcome (no unique constraint backs them, see the migration adding the zone one for
+        // why); their plain Boolean just maps straight onto SUCCESS/ERROR here.
         val performCreate = when (selectedKind) {
             SubscriptionKindOption.ZONE ->
                 zones.find { it.slug == selectedZoneSlug }?.let { zone ->
@@ -113,7 +117,7 @@ fun SubscriptionsScreen(onBack: () -> Unit, appPreferences: AppPreferences) {
                 val lng = preset?.lng ?: customPointLng
                 if (lat != null && lng != null) {
                     suspend {
-                        SupabaseApi.createPointSubscription(
+                        val ok = SupabaseApi.createPointSubscription(
                             subscriberId = id,
                             lat = lat,
                             lng = lng,
@@ -122,31 +126,46 @@ fun SubscriptionsScreen(onBack: () -> Unit, appPreferences: AppPreferences) {
                             label = preset?.name ?: "Custom Point",
                             expiresAtEpochMs = selectedDuration.durationMs?.let { currentTimeMillis() + it }
                         )
+                        if (ok) SubscriptionCreateResult.SUCCESS else SubscriptionCreateResult.ERROR
                     }
                 } else null
             }
 
             SubscriptionKindOption.CUSTOM_POLYGON ->
                 if (polygonVertices.size >= 3) {
-                    suspend { SupabaseApi.createPolygonSubscription(id, polygonVertices, selectedConfidenceFilter) }
+                    suspend {
+                        val ok = SupabaseApi.createPolygonSubscription(id, polygonVertices, selectedConfidenceFilter)
+                        if (ok) SubscriptionCreateResult.SUCCESS else SubscriptionCreateResult.ERROR
+                    }
                 } else null
         } ?: return
 
         scope.launch {
             isSubscribing = true
             actionError = null
-            val success = performCreate()
-            if (success) {
-                selectedZoneSlug = null
-                selectedPresetSlug = null
-                customPointLat = null
-                customPointLng = null
-                selectedRadiusMeters = RADIUS_OPTIONS_METERS.first()
-                selectedDuration = SubscriptionDuration.PERMANENT
-                polygonVertices = emptyList()
-                refreshSubscriptions(id)
-            } else {
-                actionError = "Couldn't create that subscription. Try again."
+            when (performCreate()) {
+                SubscriptionCreateResult.SUCCESS -> {
+                    selectedZoneSlug = null
+                    selectedPresetSlug = null
+                    customPointLat = null
+                    customPointLng = null
+                    selectedRadiusMeters = RADIUS_OPTIONS_METERS.first()
+                    selectedDuration = SubscriptionDuration.PERMANENT
+                    polygonVertices = emptyList()
+                    refreshSubscriptions(id)
+                }
+                SubscriptionCreateResult.ALREADY_EXISTS -> {
+                    // Shouldn't normally be reachable -- the zone chips below already disable an
+                    // already-watched zone -- but a second device subscribing to the same zone at
+                    // the same moment can still race past that client-side check, and the
+                    // partial unique index is what actually rejects it. Refresh so this device's
+                    // own list picks up whatever the other one just created.
+                    actionError = "Already watching that zone."
+                    refreshSubscriptions(id)
+                }
+                SubscriptionCreateResult.ERROR -> {
+                    actionError = "Couldn't create that subscription. Try again."
+                }
             }
             isSubscribing = false
         }
@@ -165,8 +184,19 @@ fun SubscriptionsScreen(onBack: () -> Unit, appPreferences: AppPreferences) {
         }
     }
 
+    // Zones this subscriber already actively watches -- drives both the zone chips (below,
+    // rendered disabled/checked instead of selectable) and isSubscribeEnabled's own belt-and-
+    // suspenders check, so a stale selectedZoneSlug from just before a refresh can't slip an
+    // insert through the UI that the partial unique index would only reject after a round trip.
+    val subscribedZoneIds = subscriptions
+        .filter { it.isActive && it.kind == "zone" }
+        .mapNotNull { it.zoneId }
+        .toSet()
+
     val isSubscribeEnabled = !isSubscribing && when (selectedKind) {
-        SubscriptionKindOption.ZONE -> selectedZoneSlug != null
+        SubscriptionKindOption.ZONE ->
+            selectedZoneSlug != null &&
+                zones.find { it.slug == selectedZoneSlug }?.id !in subscribedZoneIds
         SubscriptionKindOption.POINT_RADIUS ->
             selectedPresetSlug != null || (customPointLat != null && customPointLng != null)
         SubscriptionKindOption.CUSTOM_POLYGON -> polygonVertices.size >= 3
@@ -260,10 +290,22 @@ fun SubscriptionsScreen(onBack: () -> Unit, appPreferences: AppPreferences) {
                                 modifier = Modifier.horizontalScroll(rememberScrollState())
                             ) {
                                 zones.forEach { zone ->
+                                    // Already-watching zones render permanently selected (yellow,
+                                    // checkmarked) and disabled -- this is the actual fix for the
+                                    // duplicate-subscription bug: nothing to tap means nothing to
+                                    // insert twice, rather than letting the tap through and
+                                    // bouncing off the partial unique index afterward.
+                                    val isAlreadyWatching = zone.id in subscribedZoneIds
                                     FilterChip(
-                                        selected = selectedZoneSlug == zone.slug,
+                                        selected = isAlreadyWatching || selectedZoneSlug == zone.slug,
+                                        enabled = !isAlreadyWatching,
                                         onClick = { selectedZoneSlug = zone.slug },
-                                        label = { Text(zone.name, fontSize = 12.sp) },
+                                        label = {
+                                            Text(
+                                                if (isAlreadyWatching) "✓ ${zone.name}" else zone.name,
+                                                fontSize = 12.sp
+                                            )
+                                        },
                                         colors = subscriptionChipColors()
                                     )
                                 }

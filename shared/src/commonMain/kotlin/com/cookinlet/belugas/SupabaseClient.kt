@@ -124,6 +124,11 @@ enum class SubscriptionConfidenceFilter(val dbValue: String, val label: String) 
     VERIFIED_ONLY("verified_only", "Verified Observer Only")
 }
 
+// createZoneSubscription's outcome -- ALREADY_EXISTS is split out from ERROR so the UI can show
+// "you're already watching that" instead of a generic failure message when the partial unique
+// index (20260911000000_add_zone_subscription_unique_constraint.sql) is what rejected the insert.
+enum class SubscriptionCreateResult { SUCCESS, ALREADY_EXISTS, ERROR }
+
 // Matches the columns Stage 1 + Stage 2 (all three subscription kinds) touch on
 // public.subscriptions. `updated_at` isn't modeled -- nothing yet edits an existing
 // subscription, only creates/deletes.
@@ -535,14 +540,18 @@ object SupabaseApi {
     }
 
     /**
-     * Creates a kind='zone' subscription watching [zoneId] for [subscriberId]. Returns true on
-     * success, false on failure (network or RLS).
+     * Creates a kind='zone' subscription watching [zoneId] for [subscriberId].
+     * [SubscriptionCreateResult.ALREADY_EXISTS] means the partial unique index on
+     * (subscriber_id, zone_id) where kind='zone' (20260911000000) rejected it -- the zone-picker
+     * UI already disables selecting an already-watched zone, so this is purely a defensive
+     * backstop for a race (e.g. the same subscriber_id subscribing from a second device at the
+     * same moment), not a path expected to fire in ordinary single-device use.
      */
     suspend fun createZoneSubscription(
         subscriberId: String,
         zoneId: String,
         confidenceFilter: SubscriptionConfidenceFilter
-    ): Boolean {
+    ): SubscriptionCreateResult {
         return try {
             supabase.postgrest["subscriptions"].insert(
                 SubscriptionRecord(
@@ -553,11 +562,20 @@ object SupabaseApi {
                 )
             )
             println("SUBSCRIPTION_CREATE_SUCCESS")
-            true
+            SubscriptionCreateResult.SUCCESS
+        } catch (e: RestException) {
+            if (e.statusCode == 409) {
+                println("SUBSCRIPTION_CREATE_ALREADY_EXISTS")
+                SubscriptionCreateResult.ALREADY_EXISTS
+            } else {
+                println("SUBSCRIPTION_CREATE_ERROR: [${e::class.simpleName}] ${e.message}")
+                e.printStackTrace()
+                SubscriptionCreateResult.ERROR
+            }
         } catch (e: Exception) {
             println("SUBSCRIPTION_CREATE_ERROR: [${e::class.simpleName}] ${e.message}")
             e.printStackTrace()
-            false
+            SubscriptionCreateResult.ERROR
         }
     }
 
