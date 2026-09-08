@@ -295,7 +295,8 @@ fun colorForBelugaPresenceStatus(status: BelugaPresenceStatus): Color = when (st
 
 // Kenai-specific label text, used only when kenaiDetail is non-null (see BelugaPresenceBanner
 // below). RED/YELLOW stay identical to the generic labels -- the tide-cycle machinery changes
-// WHEN these fire, not what they say once they have. BLUE is the one that actually differs: it's
+// WHEN these fire, not what they say once they have (except RED's own "· CHECK MAP" suffix --
+// see that case's own comment). BLUE is the one that actually differs: it's
 // not a single state here but three (see get_kenai_presence_state's own header comment) --
 // out-of-season, in-season-but-no-usable-gate-time, and the real "here's when to expect them"
 // case, each needing different text rather than one generic "no recent sightings."
@@ -308,7 +309,12 @@ fun colorForBelugaPresenceStatus(status: BelugaPresenceStatus): Color = when (st
 // avoid a !! rather than a different claim.
 private fun kenaiBannerLabel(status: BelugaPresenceStatus, detail: KenaiPresenceState, zoneSuffix: String): String =
     when (status) {
-        BelugaPresenceStatus.RED -> "BELUGAS PRESENT$zoneSuffix"
+        // RED means a qualifying sighting actually landed this cycle -- the map has something
+        // worth looking at right now, so it points there directly. YELLOW deliberately does NOT
+        // get the same suffix: it's a recency caution (nobody's seen them for a cycle or more),
+        // not a live sighting, and sending someone to the map for something hours old is weaker
+        // advice that would dilute "CHECK MAP" as a signal for when RED actually needs it.
+        BelugaPresenceStatus.RED -> "BELUGAS PRESENT · CHECK MAP$zoneSuffix"
         BelugaPresenceStatus.YELLOW -> "POSSIBLE ACTIVITY$zoneSuffix"
         BelugaPresenceStatus.BLUE -> when {
             !detail.inSeason -> "NOT EXPECTED THIS TIME OF YEAR$zoneSuffix"
@@ -356,7 +362,9 @@ fun BelugaPresenceBanner(
         status == BelugaPresenceStatus.UNKNOWN -> "STATUS UNKNOWN$zoneSuffix"
         kenaiDetail != null -> kenaiBannerLabel(status, kenaiDetail, zoneSuffix)
         else -> when (status) {
-            BelugaPresenceStatus.RED -> "BELUGAS PRESENT$zoneSuffix"
+            // Same "· CHECK MAP" reasoning as kenaiBannerLabel's RED case above -- RED is a real
+            // qualifying sighting this cycle regardless of which watched zone it's for.
+            BelugaPresenceStatus.RED -> "BELUGAS PRESENT · CHECK MAP$zoneSuffix"
             BelugaPresenceStatus.YELLOW -> "POSSIBLE ACTIVITY$zoneSuffix"
             BelugaPresenceStatus.BLUE -> "NO RECENT SIGHTINGS$zoneSuffix"
             // Unreachable (caught by the outer branch above); kept for when-exhaustiveness.
