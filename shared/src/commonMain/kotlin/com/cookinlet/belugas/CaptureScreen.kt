@@ -86,6 +86,23 @@ fun CaptureScreen(
             )
         }
 
+        // --- 3b. ONE-PHOTO-PER-SIGHTING REMINDER ---
+        // Bottom-center, clear of everything else on this screen: the reticle's own "GO HERE"
+        // label already owns vertical-center, the shutter sits at CenterEnd, and the top-left is
+        // the MENU/sync-badge/elevation-tip column -- that leaves the bottom strip free except
+        // for the system nav bar, cleared the same way the bottom panels on ManualLoggingScreen/
+        // LoggingScreen already do. Small and muted so it reads as a quiet reminder, not a
+        // warning competing with the reticle for attention.
+        Text(
+            text = "One photo per sighting, please",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 12.sp,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 12.dp)
+        )
+
         // --- 4. SHUTTER TRIGGER BAR ("CAPTURE") ---
         Button(
             onClick = { triggerSnapshot = true },
