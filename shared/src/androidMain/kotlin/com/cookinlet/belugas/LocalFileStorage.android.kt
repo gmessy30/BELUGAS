@@ -91,3 +91,17 @@ actual fun anchorageMonthDay(epochMs: Long): String {
     sdf.timeZone = java.util.TimeZone.getTimeZone("America/Anchorage")
     return sdf.format(date)
 }
+
+actual fun anchorageDateParts(epochMs: Long): Triple<Int, Int, Int> {
+    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+    sdf.timeZone = java.util.TimeZone.getTimeZone("America/Anchorage")
+    val (y, m, d) = sdf.format(java.util.Date(epochMs)).split("-").map { it.toInt() }
+    return Triple(y, m, d)
+}
+
+actual fun anchorageMidnightEpochMs(year: Int, month: Int, day: Int): Long {
+    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+    sdf.timeZone = java.util.TimeZone.getTimeZone("America/Anchorage")
+    val dateString = "${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')} 00:00:00"
+    return sdf.parse(dateString)!!.time
+}

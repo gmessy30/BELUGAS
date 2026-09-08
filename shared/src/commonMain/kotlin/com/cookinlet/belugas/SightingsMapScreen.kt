@@ -717,7 +717,21 @@ fun SightingsMapScreen(
                             QuickRange.entries.forEach { range ->
                                 FilterChip(
                                     selected = selectedQuickRange == range,
-                                    onClick = { applyQuickRange(range) },
+                                    onClick = {
+                                        // CUSTOM has no resolved range of its own to jump to --
+                                        // it's an entry point into the same FROM/TO date pickers
+                                        // below, not a quick-range like the other four. Opens
+                                        // FROM directly rather than making someone hunt for the
+                                        // separate buttons underneath; selectedQuickRange only
+                                        // actually becomes CUSTOM once a date is confirmed (see
+                                        // those pickers' own onClick), same as picking a date
+                                        // today already does without touching this chip at all.
+                                        if (range == QuickRange.CUSTOM) {
+                                            showStartDatePicker = true
+                                        } else {
+                                            applyQuickRange(range)
+                                        }
+                                    },
                                     label = { Text(range.label, fontSize = 9.sp) },
                                     colors = FilterChipDefaults.filterChipColors(
                                         selectedContainerColor = Color.Yellow,

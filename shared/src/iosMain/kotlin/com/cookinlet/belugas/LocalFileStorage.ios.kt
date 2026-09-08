@@ -149,3 +149,29 @@ actual fun anchorageMonthDay(epochMs: Long): String {
     }
     return formatter.stringFromDate(date)
 }
+
+// Built on NSDateFormatter both directions (stringFromDate here, dateFromString below) rather
+// than NSCalendar/NSDateComponents -- deliberately reusing the exact same class/property pattern
+// (dateFormat/timeZone/locale) anchorageMonthDay above already relies on, instead of introducing
+// an unrelated API this codebase has never used before.
+actual fun anchorageDateParts(epochMs: Long): Triple<Int, Int, Int> {
+    val date = NSDate.dateWithTimeIntervalSince1970(epochMs / 1000.0)
+    val formatter = NSDateFormatter().apply {
+        dateFormat = "yyyy-MM-dd"
+        timeZone = NSTimeZone.timeZoneWithName("America/Anchorage")!!
+        locale = NSLocale(localeIdentifier = "en_US_POSIX")
+    }
+    val (y, m, d) = formatter.stringFromDate(date).split("-").map { it.toInt() }
+    return Triple(y, m, d)
+}
+
+actual fun anchorageMidnightEpochMs(year: Int, month: Int, day: Int): Long {
+    val formatter = NSDateFormatter().apply {
+        dateFormat = "yyyy-MM-dd HH:mm:ss"
+        timeZone = NSTimeZone.timeZoneWithName("America/Anchorage")!!
+        locale = NSLocale(localeIdentifier = "en_US_POSIX")
+    }
+    val dateString = "${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')} 00:00:00"
+    val date = formatter.dateFromString(dateString)!!
+    return (date.timeIntervalSince1970 * 1000).toLong()
+}

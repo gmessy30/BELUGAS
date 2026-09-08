@@ -127,6 +127,24 @@ expect fun formatTime12Hour(epochMs: Long): String
 // calendar order without needing leap-year-aware day-of-year arithmetic on either side.
 expect fun anchorageMonthDay(epochMs: Long): String
 
+// Civil (year, month, day) of [epochMs] in the America/Anchorage zone -- the timezone-aware
+// counterpart PlaybackRange.kt's TODAY/YESTERDAY/SEASON quick-ranges need. Alaska is UTC-8
+// (AKDT) or UTC-9 (AKST) depending on time of year, never a fixed offset, so this (like
+// anchorageMonthDay above) has to go through a real America/Anchorage zone lookup rather than a
+// hardcoded offset -- whale entrances land on tide times at all hours, and a naive UTC "today"
+// would routinely misfile an evening sighting into the wrong calendar day (Alaska local
+// midnight is still afternoon in UTC). Platform-specific for the same reason as
+// anchorageMonthDay: no kotlinx-datetime dependency in this codebase.
+expect fun anchorageDateParts(epochMs: Long): Triple<Int, Int, Int>
+
+// Inverse of anchorageDateParts: epoch ms of local midnight (00:00:00) on the given
+// America/Anchorage calendar date. Also a real zone lookup, not fixed-offset arithmetic --
+// this is what actually resolves the AKDT/AKST changeover correctly (a "spring forward" day is
+// 23 hours long, "fall back" is 25; only asking the platform's own timezone database for that
+// specific date's offset gets this right, the same way anchorageMonthDay already does for
+// formatting).
+expect fun anchorageMidnightEpochMs(year: Int, month: Int, day: Int): Long
+
 // ISO-8601 UTC, for values sent to a Postgres timestamptz column (e.g. subscriptions.expires_at)
 // -- distinct from the locale-formatted display strings above, which aren't valid DB input.
 expect fun formatIso8601Utc(epochMs: Long): String
