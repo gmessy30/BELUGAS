@@ -142,34 +142,28 @@ fun snapToNearestCompass8Degrees(bearingDegrees: Double): Double {
 }
 
 /**
- * Builds a short arrow (shaft + two back-angled barbs, as one GeoJSON MultiLineString feature)
- * pointing along [bearingDegrees] from [lat]/[lng] -- drawn only where a travel bearing exists
- * on a sighting; a plain dot otherwise. [bearingDegrees] is expected to already be snapped via
- * [snapToNearestCompass8Degrees].
+ * Builds a plain line stub (a single GeoJSON LineString feature, no arrowhead) pointing along
+ * [bearingDegrees] from [lat]/[lng] -- drawn only where a travel bearing exists on a sighting; a
+ * plain dot otherwise. Reads like a handle on the sighting's own point marker (pan/lollipop
+ * silhouette: dot plus handle) rather than a second, separate arrow glyph -- cleaner at map scale
+ * and less visually noisy once sightings cluster than the previous shaft-plus-barbs arrow this
+ * replaced. [bearingDegrees] is expected to already be snapped via [snapToNearestCompass8Degrees].
  */
-fun buildTravelArrowGeoJsonFeature(
+fun buildTravelStubGeoJsonFeature(
     lat: Double,
     lng: Double,
     bearingDegrees: Double,
     propertiesJson: String = "{}",
-    shaftLengthMeters: Double = 40.0,
-    barbLengthMeters: Double = 15.0,
-    barbAngleDegrees: Double = 25.0
+    stubLengthMeters: Double = 40.0
 ): String {
-    val (tipLat, tipLng) = destinationPoint(lat, lng, bearingDegrees, shaftLengthMeters)
-    val (leftLat, leftLng) = destinationPoint(tipLat, tipLng, bearingDegrees + 180.0 - barbAngleDegrees, barbLengthMeters)
-    val (rightLat, rightLng) = destinationPoint(tipLat, tipLng, bearingDegrees + 180.0 + barbAngleDegrees, barbLengthMeters)
+    val (tipLat, tipLng) = destinationPoint(lat, lng, bearingDegrees, stubLengthMeters)
 
     return """
     {
       "type": "Feature",
       "geometry": {
-        "type": "MultiLineString",
-        "coordinates": [
-          [ [$lng, $lat], [$tipLng, $tipLat] ],
-          [ [$tipLng, $tipLat], [$leftLng, $leftLat] ],
-          [ [$tipLng, $tipLat], [$rightLng, $rightLat] ]
-        ]
+        "type": "LineString",
+        "coordinates": [ [$lng, $lat], [$tipLng, $tipLat] ]
       },
       "properties": $propertiesJson
     }

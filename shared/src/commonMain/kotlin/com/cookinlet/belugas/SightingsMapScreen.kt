@@ -81,9 +81,9 @@ fun SightingsMapScreen(
 
     // "High confidence only" -- photo_url is not null OR observer_tier in (1,2), hiding plain
     // manual tier-3 reports. Applied once here, before any of the three places downstream that
-    // read remoteSightings (this combine step, circleGeoJsonString, travelArrowGeoJsonString),
+    // read remoteSightings (this combine step, circleGeoJsonString, travelStubGeoJsonString),
     // rather than three separate filters that could drift -- an uncertainty circle or travel
-    // arrow with no matching pin (or vice versa) would be a confusing half-filtered map.
+    // stub with no matching pin (or vice versa) would be a confusing half-filtered map.
     // localSightings (this device's own not-yet-synced queue) is deliberately never filtered --
     // see isHighConfidence's own comment on why.
     var showHighConfidenceOnly by remember { mutableStateOf(false) }
@@ -373,23 +373,25 @@ fun SightingsMapScreen(
                     width = const(1.5.dp)
                 )
 
-                // Travel-direction arrows — drawn only where a sighting has a recorded
+                // Travel-direction stubs — drawn only where a sighting has a recorded
                 // travelBearingDegrees (optional; most won't). Snapped to the nearest of 8
-                // compass points for display, per that function's own comment.
-                val travelArrowGeoJsonString = remember(filteredRemoteSightings, region) {
+                // compass points for display, per that function's own comment. Plain line, no
+                // arrowhead, by design (see buildTravelStubGeoJsonFeature's own comment) -- reads
+                // as a handle on the sighting's own dot marker, not a second glyph.
+                val travelStubGeoJsonString = remember(filteredRemoteSightings, region) {
                     val features = filteredRemoteSightings.mapNotNull { s ->
                         val lat = s.whaleLat ?: return@mapNotNull null
                         val lng = s.whaleLng ?: return@mapNotNull null
                         val bearing = s.travelBearingDegrees ?: return@mapNotNull null
                         if (!region.containsLocation(lat, lng)) return@mapNotNull null
-                        buildTravelArrowGeoJsonFeature(lat, lng, snapToNearestCompass8Degrees(bearing))
+                        buildTravelStubGeoJsonFeature(lat, lng, snapToNearestCompass8Degrees(bearing))
                     }
                     """{ "type": "FeatureCollection", "features": [ ${features.joinToString(",")} ] }"""
                 }
-                val travelArrowSource = rememberGeoJsonSource(data = GeoJsonData.JsonString(travelArrowGeoJsonString))
+                val travelStubSource = rememberGeoJsonSource(data = GeoJsonData.JsonString(travelStubGeoJsonString))
                 LineLayer(
-                    id = "sighting-travel-arrows",
-                    source = travelArrowSource,
+                    id = "sighting-travel-stubs",
+                    source = travelStubSource,
                     color = const(Color.White),
                     width = const(2.dp)
                 )
