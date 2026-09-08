@@ -270,11 +270,13 @@ fun SightingsMapScreen(
                 //
                 // The river buffer is a real, non-zero-width polygon (unlike zones.boundary's
                 // zero-width spike, which MapLibre can't render a stroke for), so it fills and
-                // outlines correctly on its own. The separate river-centerline LineLayer below
-                // (CoastlineGeometry.riverCenterlinesForZoneSlug) is left unconditional anyway --
-                // harmless visual reinforcement down the middle of the now-filled strip for
-                // Kenai, and still doing its original job (compensating for a zero-width spike)
-                // for any zone that falls back to its full boundary.
+                // outlines correctly on its own -- no separate river-centerline reinforcement
+                // needed on top of it (that used to be drawn here via CoastlineGeometry.
+                // riverCenterlinesForZoneSlug; removed as a redundant, weaker-looking second
+                // signal for the same "watched" status this shading already communicates).
+                // riverCenterlinesForZoneSlug itself is untouched -- its own doc comment already
+                // marks it as a rendering-only accessor, distinct from realLinesForZone, which is
+                // what the actual containment/geofence buffer check reads.
                 watchedZoneShadingAreas.forEach { zoneShading ->
                     // Kenai reads the real predictor status (see this parameter's own comment);
                     // every other zone keeps the original flat-decay computation once a
@@ -313,18 +315,15 @@ fun SightingsMapScreen(
                         opacity = const(0.7f)
                     )
 
-                    riverCenterlinesForZoneSlug(zoneShading.zoneSlug).forEachIndexed { index, centerline ->
-                        val riverSource = rememberGeoJsonSource(
-                            data = GeoJsonData.JsonString(buildRiverCenterlineGeoJson(centerline))
-                        )
-                        LineLayer(
-                            id = "watched-zone-${zoneShading.zoneSlug}-river-$index",
-                            source = riverSource,
-                            color = const(zoneColor),
-                            width = const(10.dp),
-                            opacity = const(0.7f)
-                        )
-                    }
+                    // River-centerline reinforcement removed (visual only, per request): Kenai
+                    // and Kasilof were the only two rivers on the map drawn any differently from
+                    // the base style, and a second, weaker signal for the same "watched" status
+                    // the shading fill above already communicates read as "these are marked for
+                    // some reason" rather than "river". riverCenterlinesForZoneSlug's underlying
+                    // geometry (CoastlineGeometry.kt) is untouched -- containment/geofence logic
+                    // (isWithinWellSourcedWater's buffer check) reads the same source values
+                    // through the separate realLinesForZone function, not through this rendering
+                    // call, so nothing downstream of that geometry is affected.
                 }
 
                 // Filter logic based on current mode
@@ -929,10 +928,3 @@ private fun buildZoneShadingFeatureCollectionGeoJson(shadingArea: JsonElement): 
     }.toString()
 }
 
-// A watched zone's real, single-direction river centerline (CoastlineGeometry.
-// riverCenterlinesForZoneSlug) as a LineString feature, for the river-specific LineLayer next to
-// the zone's own shading FillLayer/LineLayer above.
-private fun buildRiverCenterlineGeoJson(points: List<Pair<Double, Double>>): String {
-    val coords = points.joinToString(",") { (lat, lng) -> "[$lng,$lat]" }
-    return """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"LineString","coordinates":[$coords]},"properties":{}}]}"""
-}

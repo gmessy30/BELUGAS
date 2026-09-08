@@ -72,11 +72,7 @@ fun SketchedReticle(
                 DefaultRectangularSketchedCanvas()
             }
 
-            if (arrowsArtwork != null) {
-                arrowsArtwork()
-            } else {
-                DefaultDirectionalArrowsOverlay()
-            }
+            arrowsArtwork?.invoke()
         }
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -145,33 +141,6 @@ private fun DefaultRectangularSketchedCanvas() {
             color = Color.Yellow,
             radius = 4.dp.toPx(),
             center = center
-        )
-    }
-}
-
-@Composable
-private fun DefaultDirectionalArrowsOverlay() {
-    Box(modifier = Modifier.fillMaxSize()) {
-        Text(
-            text = "▲ AWAY",
-            color = Color.Yellow,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp)
-        )
-        Text(
-            text = "◄ LEFT",
-            color = Color.Yellow,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.align(Alignment.CenterStart).padding(start = 12.dp)
-        )
-        Text(
-            text = "RIGHT ►",
-            color = Color.Yellow,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)
         )
     }
 }
