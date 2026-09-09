@@ -37,6 +37,10 @@
 -- owner at all. Setting tier=3 in place keeps claimed_subscriber_id and is_used exactly as they
 -- are -- the admin can still find this device by its owner's name/contact in tier_roster, which
 -- is the entire point: distinguishable in the roster, indistinguishable in the app.
+--
+-- MULTI-DEVICE, CONSIDERED AND DEFERRED: letting one person hold more than one code at once
+-- (e.g. a phone and a tablet) was discussed and set aside for now -- one code per device, issued
+-- by hand, stays the policy until there's an actual need to reshape it.
 alter table public.tier_roster
   drop constraint if exists tier_roster_tier_check;
 
