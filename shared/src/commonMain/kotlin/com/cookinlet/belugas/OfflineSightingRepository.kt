@@ -50,10 +50,22 @@ object OfflineSightingRepository {
     private val _pendingCount = MutableStateFlow(0)
     val pendingCount: StateFlow<Int> = _pendingCount.asStateFlow()
 
+    // Live observable pending ITEMS, not just the count -- Flag C: the Historical Sightings
+    // screen's "QUEUED FOR SYNC" section and the map's local pins both used to read
+    // sightingEntity, a SQLDelight table nothing has ever written to (its own write path was
+    // never wired up), so both were permanently empty regardless of what was actually queued.
+    // getPendingQueue() alone re-reads and decodes the JSON file fresh on every call and has no
+    // way to notify Compose of a change; this StateFlow is updated at the exact same three
+    // mutation points as _pendingCount above (refreshPendingCount/queueSighting/markAsSynced) so
+    // it can never drift out of sync with the count that's already proven correct.
+    private val _pendingSightings = MutableStateFlow<List<LocalPendingSighting>>(emptyList())
+    val pendingSightings: StateFlow<List<LocalPendingSighting>> = _pendingSightings.asStateFlow()
+
     // Call on app startup to initialize count from file
     suspend fun refreshPendingCount(storage: LocalFileStorage) = mutex.withLock {
         val list = getQueueInternal(storage)
         _pendingCount.value = list.size
+        _pendingSightings.value = list
     }
 
     // 1. Save new sighting locally immediately
@@ -72,6 +84,7 @@ object OfflineSightingRepository {
         pendingList.add(newItem)
         saveQueueInternal(storage, pendingList)
         _pendingCount.value = pendingList.size // Update live UI
+        _pendingSightings.value = pendingList
         return newItem
     }
 
@@ -88,6 +101,7 @@ object OfflineSightingRepository {
         pendingList.removeAll { it.localId == localId }
         saveQueueInternal(storage, pendingList)
         _pendingCount.value = pendingList.size // Update live UI
+        _pendingSightings.value = pendingList
     }
 
     private suspend fun getQueueInternal(storage: LocalFileStorage): List<LocalPendingSighting> {

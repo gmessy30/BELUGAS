@@ -349,12 +349,10 @@ fun App() {
         )
     }.sortedWith(presenceBannerCardComparator)
 
-    // Reactive list of all sightings for List and Map views
-    val sightings by database.sightingEntityQueries
-        .selectAllSightings()
-        .asFlow()
-        .mapToList(Dispatchers.Default)
-        .collectAsState(initial = emptyList())
+    // The real offline queue, for the map's local pins -- see OfflineSightingRepository.
+    // pendingSightings' own comment. Was database.sightingEntityQueries.selectAllSightings(),
+    // a table nothing has ever written a real sighting into.
+    val sightings by OfflineSightingRepository.pendingSightings.collectAsState()
 
     rememberSightingPhotoImageLoaderSetup()
 
@@ -713,12 +711,11 @@ fun OfflineSightingsList(
     isLoadingRemote: Boolean,
     onBack: () -> Unit
 ) {
-    // Collect reactive Flow directly from local SQLite database
-    val localSightings by database.sightingEntityQueries
-        .selectAllSightings()
-        .asFlow()
-        .mapToList(Dispatchers.Default) // commonMain standard dispatcher
-        .collectAsState(initial = emptyList())
+    // The real offline queue -- see OfflineSightingRepository.pendingSightings' own comment.
+    // Everything in here IS the unsynced set by construction (a synced item is removed from the
+    // queue outright, never flagged), so there's no separate isSynced filter to apply below.
+    // `database` is now unused (kept only until the sightingEntity/BelugaDatabase cleanup pass).
+    val localSightings by OfflineSightingRepository.pendingSightings.collectAsState()
 
     // "High confidence only" -- same predicate/reasoning as SightingsMapScreen's own toggle (see
     // isHighConfidence's comment). Applies only to REMOTE DATABASE below -- QUEUED FOR SYNC
@@ -763,21 +760,21 @@ fun OfflineSightingsList(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Show Unsynced Local Sightings first
-                    val unsynced = localSightings.filter { it.isSynced == 0L }
-                    if (unsynced.isNotEmpty()) {
+                    if (localSightings.isNotEmpty()) {
                         item {
                             Text("QUEUED FOR SYNC", color = Color.Yellow, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
-                        items(unsynced) { sighting ->
+                        items(localSightings) { pending ->
+                            val sighting = pending.record
                             SightingListItem(
                                 heading = sighting.heading,
-                                countWhites = sighting.countWhites.toInt(),
-                                countGreys = sighting.countGreys.toInt(),
-                                countCalves = sighting.countCalves.toInt(),
-                                countUnknown = sighting.countUnknown.toInt(),
-                                lat = sighting.lat,
-                                lng = sighting.lng,
-                                observedAtMs = sighting.timestamp,
+                                countWhites = sighting.countWhites,
+                                countGreys = sighting.countGreys,
+                                countCalves = sighting.countCalves,
+                                countUnknown = sighting.countUnknown,
+                                lat = sighting.whaleLat,
+                                lng = sighting.whaleLng,
+                                observedAtMs = sighting.observedAtEpochMs ?: 0L,
                                 photoUrl = sighting.photoUrl,
                                 isLocal = true
                             )

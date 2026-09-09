@@ -13,7 +13,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.cookinlet.belugas.db.SightingEntity
 import org.maplibre.compose.map.MaplibreMap
 import org.maplibre.compose.camera.*
 import org.maplibre.compose.style.BaseStyle
@@ -45,7 +44,7 @@ import kotlinx.serialization.json.putJsonArray
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SightingsMapScreen(
-    localSightings: List<SightingEntity>,
+    localSightings: List<LocalPendingSighting>,
     remoteSightings: List<SightingRecord>,
     isLoading: Boolean,
     region: RegionConfig = Regions.COOK_INLET,
@@ -95,15 +94,22 @@ fun SightingsMapScreen(
     val allSightings = remember(localSightings, filteredRemoteSightings) {
         val combined = mutableListOf<SightingDisplayModel>()
 
-        // The SQLDelight local cache (SightingEntity) still only has the old observer-position
-        // columns -- its own write path is currently unused, so this never actually carries
-        // real data, but it's kept compiling correctly rather than assumed away. No uncertainty
-        // circle/travel arrow for these: the cache has neither field yet.
-        localSightings.forEach { s ->
+        // A locally-queued sighting not yet synced to Supabase (Flag C: this used to read the
+        // dead sightingEntity table, which nothing ever wrote to, so this branch was always a
+        // no-op in practice). Same whaleLat/whaleLng-null skip as the remote branch below, and
+        // the same real uncertainty/travel-bearing fields a synced sighting has -- there's
+        // nothing structurally missing here now, unlike the old dead-table path.
+        localSightings.forEach { pending ->
+            val s = pending.record
+            val lat = s.whaleLat
+            val lng = s.whaleLng
+            if (lat == null || lng == null) return@forEach
             combined.add(SightingDisplayModel(
-                lat = s.lat, lng = s.lng, timestamp = s.timestamp,
-                total = (s.countWhites + s.countGreys + s.countCalves + s.countUnknown).toInt(),
-                isLocal = true, uncertaintyRadiusMeters = null, travelBearingDegrees = null
+                lat = lat, lng = lng, timestamp = s.observedAtEpochMs ?: 0L,
+                total = s.countWhites + s.countGreys + s.countCalves + s.countUnknown,
+                isLocal = true,
+                uncertaintyRadiusMeters = s.uncertaintyRadiusMeters,
+                travelBearingDegrees = s.travelBearingDegrees
             ))
         }
 
@@ -402,18 +408,24 @@ fun SightingsMapScreen(
                         val alpha: Float
                         val captionText: String
 
+                        // "⏳ QUEUED · " prefix is the label half of this pin's pending
+                        // treatment -- see the color switch() on sightings-circles/-labels below
+                        // for the other half. Distinct on both axes (not just alpha) so it reads
+                        // as "not yet confirmed" at a glance, not just a fainter dot.
+                        val queuedPrefix = if (s.isLocal) "⏳ QUEUED · " else ""
+
                         if (!isPlaybackVisible) {
                             alpha = 1.0f
-                            captionText = "${s.total} Belugas · ${formatDateLabel(s.timestamp)}"
+                            captionText = "$queuedPrefix${s.total} Belugas · ${formatDateLabel(s.timestamp)}"
                         } else {
                             val age = playbackTimeMs - s.timestamp
                             // Calculate opacity based on age
-                            alpha = if (fadeWindowMs == Long.MAX_VALUE || age <= 0) 1.0f 
+                            alpha = if (fadeWindowMs == Long.MAX_VALUE || age <= 0) 1.0f
                                     else (1.0f - (age.toFloat() / fadeWindowMs.toFloat())).coerceIn(0.2f, 1.0f)
-                            
+
                             val dateLabel = formatDateLabel(s.timestamp)
                             val freshness = if (alpha > 0.7f) "🔴" else "⭕"
-                            captionText = "$freshness ${s.total} Beluga${if (s.total != 1) "s" else ""} · $dateLabel"
+                            captionText = "$queuedPrefix$freshness ${s.total} Beluga${if (s.total != 1) "s" else ""} · $dateLabel"
                         }
 
                         """
@@ -484,11 +496,23 @@ fun SightingsMapScreen(
                 // Circle Layer as a reliable fallback (always visible). Filtered to unclustered
                 // points only -- clustered points are represented by the badge layers below
                 // instead of stacking individual dots on top of each other.
+                //
+                // "source" ("Local" vs "Supabase") used to be set into every feature's
+                // properties but never actually READ by any paint property here -- every dot
+                // rendered identical bright yellow regardless of sync state, so a queued
+                // sighting's pin was indistinguishable from a confirmed one even before Flag C's
+                // dead-table bug meant it never showed up at all. Gray, not a shade of yellow, so
+                // it reads as "not yet confirmed" rather than a fainter version of the real thing
+                // -- paired with the "⏳ QUEUED ·" label prefix above, not relying on color alone.
                 CircleLayer(
                     id = "sightings-circles",
                     source = source,
                     filter = isUnclustered,
-                    color = const(Color.Yellow),
+                    color = switch(
+                        input = feature.get("source").cast<StringValue>(),
+                        case(label = "Local", output = const(Color(0xFF9E9E9E))),
+                        fallback = const(Color.Yellow)
+                    ),
                     radius = const(10.dp),
                     strokeColor = const(Color.Black),
                     strokeWidth = const(2.dp),
