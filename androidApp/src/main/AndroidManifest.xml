@@ -23,7 +23,17 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:enableOnBackInvokedCallback="true">
+        <!-- Required for androidx.activity.compose.BackHandler (AppBackHandler.android.kt) to
+             actually receive the back-invoked event on API 33+/targetSdk 36, rather than only
+             the predictive-back preview/animation phase. Without this, a registered
+             BackHandler callback with enabled=true still falls through to the platform default
+             (finish the Activity) on real devices. Confirmed live on-device: logcat showed the
+             dispatcher setting an isAnimationCallback=true callback, then sendCancelIfRunning,
+             then reverting to the default priority=-1 (finish) callback. This flag is what
+             routes the real invoke to our callback instead. -->
+
 
         <!-- Points FCM at a real, named channel (created in BelugasApplication.onCreate)
              instead of its own auto-created fallback channel, so notifications show up under
