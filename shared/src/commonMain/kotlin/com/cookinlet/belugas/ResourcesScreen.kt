@@ -33,8 +33,15 @@ private const val AWA_CAM_RIVER_MOUTH_URL = "https://www.youtube.com/watch?v=w7B
 private const val AWA_CAM_RIVER_DOCK_URL = "https://www.youtube.com/watch?v=tNerDaJKjLA"
 private const val AWA_YOUTUBE_URL = "https://www.youtube.com/@alaskawildlifealliance"
 private const val COOK_INLET_BELUGAS_PHOTO_ID_URL = "https://www.cookinletbelugas.com"
-private const val AKBMP_FACEBOOK_URL = "https://www.facebook.com/alaskabmp/"
-private const val BELUGAS_COUNT_FACEBOOK_URL = "https://www.facebook.com/BelugasCount/"
+// Both Facebook links (AKBMP, Belugas Count!) were replaced with plain website equivalents --
+// tapping either opened Facebook's own app via its verified App Link, which then failed its own
+// internal fallback-to-browser redispatch (logcat: "Attempting to proceed" -> a second
+// startActivity with result code=-91) and silently backgrounded itself instead of opening
+// anything. Not a scheme/URL issue on our side -- confirmed via logcat that our own
+// startActivity call succeeds identically to every working link; the failure is entirely inside
+// Facebook's app after that point.
+private const val AKBMP_WEBSITE_URL = "https://akbmp.org/"
+private const val NOAA_BELUGAS_COUNT_URL = "https://www.fisheries.noaa.gov/alaska/endangered-species-conservation/belugas-count"
 private const val ARCHIVAL_FOOTAGE_YOUTUBE_URL = "https://www.youtube.com/@gregorymessimer"
 private const val NMFS_LAW_ENFORCEMENT_DISPLAY = "(800) 853-1964"
 private const val NMFS_LAW_ENFORCEMENT_TEL = "tel:8008531964"
@@ -225,8 +232,8 @@ fun ResourcesScreen(onBack: () -> Unit) {
                 }
 
                 ResourceSection(title = "COMMUNITY & SOCIAL MEDIA") {
-                    ResourceLinkRow("AKBMP on Facebook →", AKBMP_FACEBOOK_URL, uriHandler)
-                    ResourceLinkRow("Belugas Count! on Facebook →", BELUGAS_COUNT_FACEBOOK_URL, uriHandler)
+                    ResourceLinkRow("AKBMP →", AKBMP_WEBSITE_URL, uriHandler)
+                    ResourceLinkRow("NOAA: Belugas Count →", NOAA_BELUGAS_COUNT_URL, uriHandler)
                     ResourceLinkRow("More beluga footage (archival) →", ARCHIVAL_FOOTAGE_YOUTUBE_URL, uriHandler)
                 }
 
