@@ -42,11 +42,15 @@ private const val DEVELOPER_CONTACT_EMAIL = "keeneyeapps@gmail.com"
 // the proportional tap-zone math and why it has to be proportional, not fixed pixels) within a
 // rolling window, mirroring Android's own long-precedented "tap the build number 7 times"
 // developer-options convention: boring, easy to implement correctly, and not something a user
-// brushes into by accident. Registers ONLY while the text overlay is hidden (showText == false)
-// -- deliberate extra accident-proofing on top of "a specific whale's nose," not an oversight;
-// with text shown, the same taps do nothing. No visible hint anywhere that this exists -- the tap
-// count resets (rather than accumulating indefinitely) after any gap longer than
-// HIDDEN_GESTURE_TAP_TIMEOUT_MS between taps.
+// brushes into by accident. The nose-zone precision itself is the accident-proofing -- a real
+// tap has to land on a specific ~150x150px region of the artwork, not just "anywhere on the
+// screen". A nose tap while the caption text is still showing (showText's default on entering
+// this screen) dismisses it and counts toward the gesture in the same motion, rather than being
+// discarded outright as an earlier version of this did -- that version required one extra,
+// uncounted tap before the real count could start, which read as an off-by-one in the tap
+// requirement itself ("seven do nothing, an eighth opens it") rather than what it actually was.
+// No visible hint anywhere that this exists -- the tap count resets (rather than accumulating
+// indefinitely) after any gap longer than HIDDEN_GESTURE_TAP_TIMEOUT_MS between taps.
 private const val HIDDEN_GESTURE_TAP_COUNT = 7
 private const val HIDDEN_GESTURE_TAP_TIMEOUT_MS = 1500L
 
@@ -99,15 +103,14 @@ fun AboutScreen(onBack: () -> Unit, onNavigateToTierClaim: () -> Unit) {
                 .onSizeChanged { artworkContainerSizePx = it }
                 .pointerInput(Unit) {
                     detectTapGestures { offset ->
-                        // Gated on showText alone -- deliberately NOT on which background is
-                        // showing. This is the only route to TierClaimScreen, so it must never
-                        // depend on state the user could get stuck in (e.g. a swipe that stops
-                        // responding). isWithinWhaleBNose's zone is calibrated against Luna's
-                        // original sheet; on the alternate background the tap zone just lands
-                        // wherever it lands on that image instead -- an acceptable trade for an
-                        // undocumented, developer-only gesture, against the alternative of an
-                        // unreachable tier-claim path.
-                        if (showText) return@detectTapGestures
+                        // Deliberately NOT gated on which background is showing. This is the
+                        // only route to TierClaimScreen, so it must never depend on state the
+                        // user could get stuck in (e.g. a swipe that stops responding).
+                        // isWithinWhaleBNose's zone is calibrated against Luna's original sheet;
+                        // on the alternate background the tap zone just lands wherever it lands
+                        // on that image instead -- an acceptable trade for an undocumented,
+                        // developer-only gesture, against the alternative of an unreachable
+                        // tier-claim path.
                         val size = artworkContainerSizePx
                         if (size.width <= 0 || size.height <= 0) return@detectTapGestures
                         val point = normalizedArtworkPoint(
@@ -116,7 +119,17 @@ fun AboutScreen(onBack: () -> Unit, onNavigateToTierClaim: () -> Unit) {
                             containerWidth = size.width.toFloat(),
                             containerHeight = size.height.toFloat()
                         ) ?: return@detectTapGestures
-                        if (isWithinWhaleBNose(point)) onWhaleNoseTap()
+                        if (!isWithinWhaleBNose(point)) return@detectTapGestures
+                        // A nose tap while the caption text is still showing (showText's default
+                        // on entering this screen) both dismisses it AND counts as the gesture's
+                        // first tap, rather than being silently swallowed -- this used to require
+                        // a wasted extra tap before the real count could even start (confirmed:
+                        // "seven taps do nothing, an eighth opens it"). Accident-proofing is
+                        // unchanged -- a tap anywhere else on the screen while reading still does
+                        // nothing at all, this only changes what happens for a tap precise enough
+                        // to land on the nose itself.
+                        showText = false
+                        onWhaleNoseTap()
                     }
                 }
         )
@@ -208,9 +221,18 @@ private val ABOUT_BACKGROUND_SWITCHER_HEIGHT = 120.dp
  * artwork drawn on top of it, so this pager renders no page content of its own; swiping here
  * only moves backgroundPagerState, which AboutScreen reads to choose AppBackground's
  * backgroundImage. A plain child of the ARTWORK section's scrollable column, composed only while
- * showText is true -- exactly when AboutScreen's whale-nose tap detector is already inert (it
- * returns early whenever showText is true -- see onWhaleNoseTap's own comment), so this can never
- * fight it for taps regardless of where it lands on screen.
+ * showText is true.
+ *
+ * Used to be true unconditionally that this could never fight the whale-nose tap detector for
+ * input, because that detector used to be inert for the entire time this pager exists (showText
+ * true) -- see onWhaleNoseTap's own comment for why that's no longer the case (a nose tap now
+ * responds even with the text showing). The two still don't conflict, but for a different reason
+ * now: detectTapGestures and this Pager's own drag handling are told apart by Compose's normal
+ * touch-slop distinction between a tap (released with negligible movement) and a drag (moved
+ * past the slop threshold) -- a stationary tap on the nose zone is recognized as a tap, not a
+ * page-change swipe, even on whatever portion of the screen this pager's bounds happen to cover,
+ * and a real swipe anywhere (nose zone included) isn't recognized as a tap by detectTapGestures
+ * either. Both listen for genuinely different gestures, not the same one gated by state anymore.
  */
 @Composable
 private fun AboutBackgroundSwitcher(pagerState: PagerState) {
