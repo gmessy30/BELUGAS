@@ -319,6 +319,18 @@ private data class SubscriberIdentityParams(
     @SerialName("p_subscriber_id") val subscriberId: String
 )
 
+@Serializable
+private data class DepartureTierCheckParams(
+    @SerialName("p_subscriber_id") val subscriberId: String
+)
+
+@Serializable
+private data class ReportKenaiDepartureParams(
+    @SerialName("p_subscriber_id") val subscriberId: String,
+    @SerialName("p_lat") val lat: Double,
+    @SerialName("p_lng") val lng: Double
+)
+
 /**
  * Outcome of [SupabaseApi.redeemTierCode]. [RateLimited] is deliberately its own case, distinct
  * from [Invalid] -- see redeem_tier_code's own comment
@@ -874,6 +886,53 @@ object SupabaseApi {
             println("SUBSCRIBER_IDENTITY_ERROR: [${e::class.simpleName}] ${e.message}")
             e.printStackTrace()
             null
+        }
+    }
+
+    /**
+     * Whether [subscriberId] holds a claimed tier-1 seat -- purely a visibility signal for
+     * TierClaimScreen's departure-report button. Deliberately narrower than exposing
+     * get_observer_tier's actual tier number to anon (is_kenai_departure_reporter,
+     * 20260914000000_swap_kenai_departure_polygon_and_expose_tier_check.sql): report_kenai_
+     * departure re-checks tier itself server-side regardless of what this returns, so nothing
+     * here is ever trusted for enforcement. Fails closed (false) on any error -- a network
+     * failure should hide the button, not show it and then fail confusingly on submit.
+     */
+    suspend fun isKenaiDepartureReporter(subscriberId: String): Boolean {
+        return try {
+            val params = jsonConfig.encodeToJsonElement(
+                DepartureTierCheckParams(subscriberId = subscriberId)
+            ).jsonObject
+            val raw = supabase.postgrest.rpc("is_kenai_departure_reporter", params).data
+            jsonConfig.parseToJsonElement(raw).jsonPrimitive.booleanOrNull ?: false
+        } catch (e: Exception) {
+            println("DEPARTURE_TIER_CHECK_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Files a Kenai departure report at the caller's current [lat]/[lng]. Returns whether the
+     * server actually accepted it -- false covers every rejection reason uniformly (not tier-1,
+     * outside the viewing polygon, phase isn't RED right now) rather than distinguishing them,
+     * matching report_kenai_departure's own single-boolean design
+     * (20260913000000_add_kenai_departure_report.sql) -- the client's own tier/polygon checks
+     * already cover the ordinary "why is this button even showing" cases; a false here past
+     * those is either a race (phase changed) or someone bypassing the client entirely, neither
+     * of which needs a specific reason surfaced.
+     */
+    suspend fun reportKenaiDeparture(subscriberId: String, lat: Double, lng: Double): Boolean {
+        return try {
+            val params = jsonConfig.encodeToJsonElement(
+                ReportKenaiDepartureParams(subscriberId = subscriberId, lat = lat, lng = lng)
+            ).jsonObject
+            val raw = supabase.postgrest.rpc("report_kenai_departure", params).data
+            jsonConfig.parseToJsonElement(raw).jsonPrimitive.booleanOrNull ?: false
+        } catch (e: Exception) {
+            println("DEPARTURE_REPORT_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            false
         }
     }
 

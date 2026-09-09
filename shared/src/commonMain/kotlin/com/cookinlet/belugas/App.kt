@@ -497,6 +497,7 @@ fun App() {
             Screen.TIER_CLAIM -> {
                 TierClaimScreen(
                     appPreferences = appPreferences,
+                    locationService = locationService,
                     onBack = { currentScreen = Screen.ABOUT }
                 )
             }

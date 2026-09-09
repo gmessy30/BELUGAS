@@ -336,8 +336,9 @@ private fun metersPerDegreeLng(lat: Double): Double = METERS_PER_DEGREE_LAT * co
 // Standard PNPOLY ray-casting test, operating directly on lat/lng as a planar (lng=x, lat=y)
 // coordinate pair -- consistent with how these rings are stored server-side as
 // geometry(Polygon, 4326) (planar, not geography), so this matches rather than reinterprets
-// their semantics.
-private fun pointInPolygon(lat: Double, lng: Double, ring: List<Pair<Double, Double>>): Boolean {
+// their semantics. internal (not private) so TierClaimScreen's departure-report polygon check
+// can reuse the same ray-cast instead of a second copy of this algorithm.
+internal fun pointInPolygon(lat: Double, lng: Double, ring: List<Pair<Double, Double>>): Boolean {
     var inside = false
     var j = ring.size - 1
     for (i in ring.indices) {
