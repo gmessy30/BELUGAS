@@ -29,12 +29,15 @@ private const val ADFG_BELUGA_URL =
     "https://www.adfg.alaska.gov/index.cfm?adfg=wildlifediversity.esalisted&id=cook-inlet-beluga-whale"
 private const val ADFG_BELUGA_RESEARCH_URL =
     "https://www.adfg.alaska.gov/index.cfm?adfg=wildliferesearch.beluga"
-private const val AWA_BELUGA_CAMS_URL = "https://www.akwildlife.org/news/belugacams"
+private const val AWA_CAM_RIVER_MOUTH_URL = "https://www.youtube.com/watch?v=w7BLcV9ksFQ"
+private const val AWA_CAM_RIVER_DOCK_URL = "https://www.youtube.com/watch?v=tNerDaJKjLA"
 private const val AWA_YOUTUBE_URL = "https://www.youtube.com/@alaskawildlifealliance"
 private const val COOK_INLET_BELUGAS_PHOTO_ID_URL = "https://www.cookinletbelugas.com"
 private const val AKBMP_FACEBOOK_URL = "https://www.facebook.com/alaskabmp/"
 private const val BELUGAS_COUNT_FACEBOOK_URL = "https://www.facebook.com/BelugasCount/"
 private const val ARCHIVAL_FOOTAGE_YOUTUBE_URL = "https://www.youtube.com/@gregorymessimer"
+private const val NMFS_LAW_ENFORCEMENT_DISPLAY = "(800) 853-1964"
+private const val NMFS_LAW_ENFORCEMENT_TEL = "tel:8008531964"
 
 @Composable
 fun ResourcesScreen(onBack: () -> Unit) {
@@ -85,6 +88,38 @@ fun ResourcesScreen(onBack: () -> Unit) {
                         }
                     }
                     ResourceLinkRow("More about the stranding network →", NOAA_STRANDING_HOTLINE_INFO_URL, uriHandler)
+
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "SUSPICIOUS ACTIVITY / HARASSMENT",
+                        color = Color.Yellow,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Not a stranding -- this is a different number. Call NMFS Office of Law Enforcement.",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 13.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        color = Color(0xFFFF9800),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { uriHandler.openUri(NMFS_LAW_ENFORCEMENT_TEL) }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("📞 $NMFS_LAW_ENFORCEMENT_DISPLAY", color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                            Text("TAP TO CALL", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
 
                 ResourceSection(title = "KEEP YOUR DISTANCE") {
@@ -114,7 +149,6 @@ fun ResourcesScreen(onBack: () -> Unit) {
                 ResourceSection(title = "ALASKA STATE WILDLIFE RESOURCES") {
                     ResourceLinkRow("ADF&G: Cook Inlet Beluga Whale", ADFG_BELUGA_URL, uriHandler)
                     ResourceLinkRow("ADF&G: Beluga Whale Management & Research", ADFG_BELUGA_RESEARCH_URL, uriHandler)
-                    ResourceLinkRow("AKBMP on Facebook →", AKBMP_FACEBOOK_URL, uriHandler)
                 }
 
                 ResourceSection(title = "HOW TO USE THIS APP") {
@@ -164,9 +198,17 @@ fun ResourcesScreen(onBack: () -> Unit) {
                         "Skip the flash -- it does nothing at typical viewing distances and isn't worth disturbing wildlife or other observers for."
                     )
                     tips.forEach { tip ->
-                        Row(modifier = Modifier.padding(vertical = 4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
                             Text("•  ", color = Color(0xFF00E5FF), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            Text(tip, color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
+                            Text(
+                                tip,
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = 13.sp,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }
@@ -177,11 +219,13 @@ fun ResourcesScreen(onBack: () -> Unit) {
                         color = Color.White.copy(alpha = 0.85f),
                         fontSize = 13.sp
                     )
-                    ResourceLinkRow("Watch the Alaska Wildlife Alliance beluga cams →", AWA_BELUGA_CAMS_URL, uriHandler)
+                    ResourceLinkRow("AWA Kenai River Mouth Beluga Cam (live) →", AWA_CAM_RIVER_MOUTH_URL, uriHandler)
+                    ResourceLinkRow("AWA Kenai River Dock Beluga Cam (live) →", AWA_CAM_RIVER_DOCK_URL, uriHandler)
                     ResourceLinkRow("Alaska Wildlife Alliance on YouTube →", AWA_YOUTUBE_URL, uriHandler)
                 }
 
-                ResourceSection(title = "MORE TO FOLLOW") {
+                ResourceSection(title = "COMMUNITY & SOCIAL MEDIA") {
+                    ResourceLinkRow("AKBMP on Facebook →", AKBMP_FACEBOOK_URL, uriHandler)
                     ResourceLinkRow("Belugas Count! on Facebook →", BELUGAS_COUNT_FACEBOOK_URL, uriHandler)
                     ResourceLinkRow("More beluga footage (archival) →", ARCHIVAL_FOOTAGE_YOUTUBE_URL, uriHandler)
                 }
