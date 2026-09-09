@@ -1,11 +1,19 @@
 package com.cookinlet.belugas
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -347,6 +355,12 @@ private fun kenaiBannerLabel(status: BelugaPresenceStatus, detail: KenaiPresence
  *
  * [kenaiDetail] is non-null only for the Kenai zone (App.kt passes the fetched
  * KenaiPresenceState through) -- every other watched zone renders the original plain label.
+ *
+ * [applyNavigationBarsPadding] defaults to true (this bar reserves its own system-nav-bar-safe
+ * space, as it always has). [BelugaPresenceBannerCarousel] passes false when a dot-indicator row
+ * follows this one -- otherwise the two would each reserve the inset independently, leaving an
+ * oversized gap between the label and the dots. Whichever of the two ends up last still reserves
+ * it exactly once.
  */
 @Composable
 fun BelugaPresenceBanner(
@@ -354,7 +368,8 @@ fun BelugaPresenceBanner(
     zoneName: String?,
     modifier: Modifier = Modifier,
     kenaiDetail: KenaiPresenceState? = null,
-    isDataStale: Boolean = false
+    isDataStale: Boolean = false,
+    applyNavigationBarsPadding: Boolean = true
 ) {
     val backgroundColor = colorForBelugaPresenceStatus(status)
     val zoneSuffix = zoneName?.let { " · ${it.uppercase()}" } ?: ""
@@ -377,7 +392,7 @@ fun BelugaPresenceBanner(
         modifier = modifier
             .fillMaxWidth()
             .background(backgroundColor)
-            .navigationBarsPadding()
+            .let { if (applyNavigationBarsPadding) it.navigationBarsPadding() else it }
             .padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
@@ -398,6 +413,100 @@ fun BelugaPresenceBanner(
                     fontSize = 10.sp,
                     textAlign = TextAlign.Center
                 )
+            }
+        }
+    }
+}
+
+// One relevant watched zone's worth of the banner's inputs -- App.kt builds one of these per id
+// in (nearby watched zones ∪ subscribed watched zones), the same per-zone data BelugaPresenceBanner
+// already took as separate parameters for the single-zone case. [isSubscribed] only feeds the
+// carousel's own priority sort below, never BelugaPresenceBanner itself.
+data class PresenceBannerCardData(
+    val zoneId: String,
+    val zoneName: String?,
+    val zoneSlug: String,
+    val status: BelugaPresenceStatus,
+    val kenaiDetail: KenaiPresenceState? = null,
+    val isDataStale: Boolean = false,
+    val isSubscribed: Boolean = false
+)
+
+private fun BelugaPresenceStatus.severityRank(): Int = when (this) {
+    BelugaPresenceStatus.RED -> 0
+    BelugaPresenceStatus.YELLOW -> 1
+    BelugaPresenceStatus.BLUE -> 2
+    BelugaPresenceStatus.UNKNOWN -> 3
+}
+
+// RED before YELLOW before BLUE/UNKNOWN; within a phase, a subscribed zone before a
+// nearby-only one; a final alphabetical tiebreak for two zones tied on both. A user who never
+// taps the carousel always lands on the single most urgent, most deliberately-chosen card --
+// never whichever zone happened to come back from the RPC first.
+val presenceBannerCardComparator: Comparator<PresenceBannerCardData> = compareBy(
+    { it.status.severityRank() },
+    { if (it.isSubscribed) 0 else 1 },
+    { it.zoneName ?: "" }
+)
+
+/**
+ * Cycles through [cards] (already sorted highest-priority first, see
+ * [presenceBannerCardComparator]) one at a time via [BelugaPresenceBanner]. With a single card,
+ * this renders byte-for-byte what [BelugaPresenceBanner] alone would -- no tap target, no dot
+ * row -- since the carousel chrome only exists to navigate between cards that exist.
+ *
+ * currentIndex resets to 0 (the highest-priority card) whenever [cards]' own ORDER changes --
+ * keyed on the ordered zone-id sequence specifically, not the full card list -- so a new RED
+ * appearing, a zone dropping off, or a subscribed zone overtaking a nearby-only one all pull the
+ * viewer back to the top, but a routine same-ordering refresh (a gate-time re-estimate, a
+ * distance jitter) while mid-read on a later card doesn't.
+ */
+@Composable
+fun BelugaPresenceBannerCarousel(cards: List<PresenceBannerCardData>, modifier: Modifier = Modifier) {
+    if (cards.isEmpty()) return
+    var currentIndex by remember { mutableStateOf(0) }
+    val orderKey = cards.map { it.zoneId }
+    LaunchedEffect(orderKey) {
+        currentIndex = 0
+    }
+    val safeIndex = currentIndex.coerceIn(0, cards.lastIndex)
+    val card = cards[safeIndex]
+    val showChrome = cards.size >= 2
+
+    // The nav-bar-safe inset belongs to whichever element ends up last -- the banner itself when
+    // there's no dot row (applyNavigationBarsPadding stays true, exactly today's single-zone
+    // rendering), or this Column when the dot row follows it (banner's own copy turned off below,
+    // see BelugaPresenceBanner's own comment on why only one of the two ever applies it).
+    Column(modifier = if (showChrome) modifier.navigationBarsPadding() else modifier) {
+        BelugaPresenceBanner(
+            status = card.status,
+            zoneName = card.zoneName,
+            kenaiDetail = card.kenaiDetail,
+            isDataStale = card.isDataStale,
+            applyNavigationBarsPadding = !showChrome,
+            modifier = if (showChrome) {
+                Modifier.fillMaxWidth().clickable { currentIndex = (safeIndex + 1) % cards.size }
+            } else {
+                Modifier.fillMaxWidth()
+            }
+        )
+        if (showChrome) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colorForBelugaPresenceStatus(card.status))
+                    .padding(top = 2.dp, bottom = 6.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                cards.indices.forEach { i ->
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 3.dp)
+                            .size(if (i == safeIndex) 7.dp else 5.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = if (i == safeIndex) 0.95f else 0.5f))
+                    )
+                }
             }
         }
     }

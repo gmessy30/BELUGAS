@@ -232,6 +232,24 @@ private data class NearbyWatchedZoneParams(
     @SerialName("p_proximity_meters") val proximityMeters: Double
 )
 
+// Matches get_relevant_watched_zone_id's return shape
+// (supabase/migrations/20260916000000_match_watched_zones_by_containment.sql) -- a watched zone
+// this subscriber is relevant to via an active zone-kind subscription, either an exact match or
+// one whose polygon contains the watched zone (e.g. "Entire Inlet" containing Kenai).
+@Serializable
+private data class RelevantWatchedZoneIdResult(
+    @SerialName("zone_id") val zoneId: String
+)
+
+// Matches get_confidence_filter_overlaps' return shape
+// (supabase/migrations/20260918000000_confidence_filter_most_restrictive_wins.sql) -- one row
+// per subscription id that's a 'verified_only' overlap-tightening the subscriber's own 'all'
+// coverage somewhere.
+@Serializable
+private data class ConfidenceFilterOverlapResult(
+    @SerialName("subscription_id") val subscriptionId: String
+)
+
 // get_watched_zone_shading_areas' shading_area column as PostgREST returns it for an RPC with
 // a geometry-typed output column: a nested GeoJSON object, confirmed live (curled the RPC
 // directly) -- the same serialization zones.boundary already gets for a plain table select
@@ -730,23 +748,69 @@ object SupabaseApi {
     }
 
     /**
-     * Resolves the closer half of the bottom banner's visibility gate: the nearest watched
-     * zone within [proximityMeters] of [lat]/[lng], or null if none is that close (or on
-     * failure). The other half -- "subscribed to a watched zone" -- is a plain client-side
-     * check against getSubscriptions(), no RPC needed.
+     * Resolves the closer half of the bottom carousel's visibility gate: every watched zone
+     * within [proximityMeters] of [lat]/[lng], nearest first, or empty if none is that close (or
+     * on failure) -- a device can be simultaneously near more than one watched zone, so this is
+     * no longer a single nearest-match. The other half -- "subscribed to a watched zone" -- is a
+     * plain client-side check against getSubscriptions(), no RPC needed.
      */
-    suspend fun findNearbyWatchedZone(lat: Double, lng: Double, proximityMeters: Double): NearbyWatchedZone? {
+    suspend fun findNearbyWatchedZones(lat: Double, lng: Double, proximityMeters: Double): List<NearbyWatchedZone> {
         return try {
             val params = jsonConfig.encodeToJsonElement(
                 NearbyWatchedZoneParams(lat = lat, lng = lng, proximityMeters = proximityMeters)
             ).jsonObject
             supabase.postgrest.rpc("find_nearby_watched_zone", params)
                 .decodeList<NearbyWatchedZone>()
-                .firstOrNull()
         } catch (e: Exception) {
             println("NEARBY_WATCHED_ZONE_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
             e.printStackTrace()
-            null
+            emptyList()
+        }
+    }
+
+    /**
+     * Resolves every watched (is_banner_watched) zone this subscriber is relevant to via their
+     * active zone-kind subscriptions -- not just an exact zone_id match, but also a subscription
+     * whose polygon *contains* a watched zone (e.g. "Entire Inlet" containing Kenai), mirroring
+     * match_notification_recipients' own containment logic so a subscriber who gets push
+     * notifications for a watched zone also sees its banner and gate time. Empty on failure or if
+     * no active zone subscription is relevant to any watched zone.
+     */
+    suspend fun getRelevantWatchedZoneIds(subscriberId: String): List<String> {
+        return try {
+            val params = jsonConfig.encodeToJsonElement(
+                SubscriberIdentityParams(subscriberId = subscriberId)
+            ).jsonObject
+            supabase.postgrest.rpc("get_relevant_watched_zone_id", params)
+                .decodeList<RelevantWatchedZoneIdResult>()
+                .map { it.zoneId }
+        } catch (e: Exception) {
+            println("RELEVANT_WATCHED_ZONE_ID_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    /**
+     * Which of this subscriber's own active 'verified_only' subscriptions overlap one of their
+     * own active 'all' subscriptions (supabase/migrations/20260918000000_confidence_filter_most_
+     * restrictive_wins.sql's get_confidence_filter_overlaps) -- match_notification_recipients now
+     * applies the stricter setting whenever the two overlap, so this drives the Subscriptions
+     * screen's passive note on whichever row(s) this returns. Empty on failure or no overlap.
+     */
+    suspend fun getConfidenceFilterOverlaps(subscriberId: String): Set<String> {
+        return try {
+            val params = jsonConfig.encodeToJsonElement(
+                SubscriberIdentityParams(subscriberId = subscriberId)
+            ).jsonObject
+            supabase.postgrest.rpc("get_confidence_filter_overlaps", params)
+                .decodeList<ConfidenceFilterOverlapResult>()
+                .map { it.subscriptionId }
+                .toSet()
+        } catch (e: Exception) {
+            println("CONFIDENCE_FILTER_OVERLAPS_FETCH_ERROR: [${e::class.simpleName}] ${e.message}")
+            e.printStackTrace()
+            emptySet()
         }
     }
 

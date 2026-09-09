@@ -70,6 +70,18 @@ private const val SPLASH_DURATION_MS = 3000L
 fun App() {
     val scope = rememberCoroutineScope()
     var currentScreen by remember { mutableStateOf(Screen.SPLASH) }
+    // Origin screens for the MENU/ABOUT-reachable sub-screens (Resources, About, Sightings list,
+    // etc.) that have their own onBack -- lets both the on-screen back button and the system back
+    // button (AppBackHandler below) return to the same place, instead of the hardware button
+    // falling through to the platform default of exiting the app. See openSubScreen/closeSubScreen.
+    val subScreenBackStack = remember { mutableStateListOf<Screen>() }
+    fun openSubScreen(screen: Screen) {
+        subScreenBackStack.add(currentScreen)
+        currentScreen = screen
+    }
+    fun closeSubScreen() {
+        currentScreen = subScreenBackStack.removeLastOrNull() ?: Screen.MENU
+    }
     var capturedPhotoPath by remember { mutableStateOf<String?>(null) }
     val storage = rememberLocalFileStorage()
     val appPreferences = rememberAppPreferences()
@@ -176,16 +188,19 @@ fun App() {
     //     WatchedZoneStatuses below for how "no successful fetch yet" is tracked separately).
     //     Feeds the map (everyone sees it) and doubles as the banner's status lookup once a
     //     relevant zone id is known.
-    //   - nearbyWatchedZone: the closer of the banner's two visibility gates -- real distance,
-    //     not containment, per the spec (someone doesn't need to be in the river to see it).
-    //   - presenceStatus: the banner's own color -- for Kenai, kenaiBelugaStatus below, the
-    //     server's phase possibly ESCALATED toward UNKNOWN by effectiveKenaiPresenceStatus once
-    //     it's been too long (or too many tide cycles) since the last successful poll for that
-    //     phase to still be trustworthy (see PresenceBanner.kt's own comment on the escalation
-    //     constants) -- ticked, not purely reactive, since elapsed time alone can trigger it; for
-    //     any other watched zone, the flat-decay color once hasEverFetchedWatchedZoneStatuses is
-    //     true, recomputed on a short local tick (see PresenceBanner.kt) so it keeps visibly
-    //     aging between the infrequent network polls above instead of only updating on fetch.
+    //   - nearbyWatchedZones/subscribedWatchedZoneIds: the carousel's two relevance gates -- real
+    //     distance (not containment, per the spec: someone doesn't need to be in the river to see
+    //     it) and containment-aware subscription matching, respectively. Unioned into
+    //     relevantWatchedZoneIds below; a device can be relevant to more than one zone at once.
+    //   - presenceBannerCards: one card per relevant zone, each carrying its own status -- for
+    //     Kenai's card, kenaiBelugaStatus below, the server's phase possibly ESCALATED toward
+    //     UNKNOWN by effectiveKenaiPresenceStatus once it's been too long (or too many tide
+    //     cycles) since the last successful poll for that phase to still be trustworthy (see
+    //     PresenceBanner.kt's own comment on the escalation constants) -- ticked, not purely
+    //     reactive, since elapsed time alone can trigger it; for every other card, the flat-decay
+    //     color (nonKenaiPresenceStatuses) once hasEverFetchedWatchedZoneStatuses is true,
+    //     recomputed on a short local tick (see PresenceBanner.kt) so it keeps visibly aging
+    //     between the infrequent network polls above instead of only updating on fetch.
     //   - kenaiPresenceSnapshot: get_kenai_presence_state()'s real tide-cycle-aware RED/YELLOW/
     //     BLUE for Kenai specifically, replacing the flat-decay path for that one zone -- both the
     //     banner AND the map's Kenai river-shading color (passed into SightingsMapScreen below)
@@ -202,9 +217,10 @@ fun App() {
     var hasEverFetchedWatchedZoneStatuses by remember { mutableStateOf(false) }
     var lastSuccessfulWatchedZoneStatusesFetchAtMs by remember { mutableStateOf<Long?>(null) }
     var isWatchedZoneStatusesStale by remember { mutableStateOf(false) }
-    var subscribedWatchedZoneId by remember { mutableStateOf<String?>(null) }
-    var nearbyWatchedZone by remember { mutableStateOf<NearbyWatchedZone?>(null) }
-    var nonKenaiPresenceStatus by remember { mutableStateOf(BelugaPresenceStatus.UNKNOWN) }
+    // Every relevant zone, not just one -- see PresenceBanner.kt's BelugaPresenceBannerCarousel
+    // and presenceBannerCards below, which build one card per id in the union of these two.
+    var subscribedWatchedZoneIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var nearbyWatchedZones by remember { mutableStateOf<List<NearbyWatchedZone>>(emptyList()) }
     // KenaiPresenceState and its fetch time are always set together -- KenaiPresenceSnapshot
     // (see PresenceBanner.kt) keeps them that way instead of two separate nullable vars that
     // could drift apart.
@@ -222,13 +238,10 @@ fun App() {
                 watchedZoneStatuses = statuses
                 hasEverFetchedWatchedZoneStatuses = true
                 lastSuccessfulWatchedZoneStatusesFetchAtMs = currentTimeMillis()
-                val watchedZoneIds = statuses.map { it.zoneId }.toSet()
                 val subscriberId = appPreferences.getOrCreateSubscriberId()
-                subscribedWatchedZoneId = SupabaseApi.getSubscriptions(subscriberId)
-                    .firstOrNull { it.isActive && it.kind == "zone" && it.zoneId in watchedZoneIds }
-                    ?.zoneId
+                subscribedWatchedZoneIds = SupabaseApi.getRelevantWatchedZoneIds(subscriberId)
             }
-            // null (failure) intentionally leaves watchedZoneStatuses/subscribedWatchedZoneId
+            // null (failure) intentionally leaves watchedZoneStatuses/subscribedWatchedZoneIds
             // exactly as they were -- see this block's own comment above.
             delay(LOCATION_POLL_INTERVAL_MS)
         }
@@ -276,50 +289,65 @@ fun App() {
         while (true) {
             val coords = locationService.getCurrentLocation()
             if (coords != null) {
-                nearbyWatchedZone = SupabaseApi.findNearbyWatchedZone(coords.latitude, coords.longitude, DEFAULT_BANNER_PROXIMITY_METERS)
+                nearbyWatchedZones = SupabaseApi.findNearbyWatchedZones(coords.latitude, coords.longitude, DEFAULT_BANNER_PROXIMITY_METERS)
                 delay(LOCATION_POLL_INTERVAL_MS)
             } else {
                 // A single-shot fused-location request can easily return null on a cold GPS fix
                 // (e.g. right after launch) with no fault of the device actually being near a
                 // watched zone -- retry soon rather than leaving the banner's proximity gate
                 // starved of any data for the full 5-minute poll interval. Also deliberately
-                // doesn't clobber a previously-successful nearbyWatchedZone with null here, so a
+                // doesn't clobber a previously-successful nearbyWatchedZones with empty here, so a
                 // later transient failure can't make an already-shown banner disappear.
                 delay(LOCATION_RETRY_INTERVAL_MS)
             }
         }
     }
 
-    val relevantWatchedZoneId = nearbyWatchedZone?.zoneId ?: subscribedWatchedZoneId
-    val relevantWatchedZoneName = nearbyWatchedZone?.zoneName
-        ?: watchedZoneStatuses.find { it.zoneId == subscribedWatchedZoneId }?.zoneName
-    val relevantWatchedZoneSlug = nearbyWatchedZone?.zoneSlug
-        ?: watchedZoneStatuses.find { it.zoneId == subscribedWatchedZoneId }?.zoneSlug
-    val isRelevantZoneKenai = relevantWatchedZoneSlug == "kenai"
+    // Every banner-watched zone this device cares about right now -- subscribed to (via a
+    // containment-aware zone subscription) or physically near, unioned since a device can be
+    // both, or either, for more than one zone at once. One PresenceBannerCardData is built below
+    // per id in here.
+    val relevantWatchedZoneIds = (nearbyWatchedZones.map { it.zoneId } + subscribedWatchedZoneIds).toSet()
 
-    // Flat-decay path -- kept ticking even while Kenai is the relevant zone (harmless -- its
-    // result just isn't read in that case) rather than conditionally starting/stopping, so this
-    // doesn't need to know about Kenai at all. UNKNOWN, not a computed BLUE, until the very
-    // first successful watchedZoneStatuses fetch has landed -- see this state block's own header
-    // comment for why that distinction matters.
-    LaunchedEffect(relevantWatchedZoneId, watchedZoneStatuses, hasEverFetchedWatchedZoneStatuses) {
+    // Flat-decay path, per zone -- kept ticking for every relevant zone (Kenai included; harmless,
+    // its entry here just isn't read for Kenai's card below) rather than conditionally starting/
+    // stopping per zone, so this doesn't need to know about Kenai at all. UNKNOWN, not a computed
+    // BLUE, until the very first successful watchedZoneStatuses fetch has landed -- see this
+    // state block's own header comment for why that distinction matters.
+    var nonKenaiPresenceStatuses by remember { mutableStateOf<Map<String, BelugaPresenceStatus>>(emptyMap()) }
+    LaunchedEffect(relevantWatchedZoneIds, watchedZoneStatuses, hasEverFetchedWatchedZoneStatuses) {
         while (true) {
-            nonKenaiPresenceStatus = if (!hasEverFetchedWatchedZoneStatuses) {
-                BelugaPresenceStatus.UNKNOWN
-            } else {
-                val relevantStatus = watchedZoneStatuses.find { it.zoneId == relevantWatchedZoneId }
-                computeBelugaPresenceStatus(relevantStatus, currentTimeMillis())
+            nonKenaiPresenceStatuses = relevantWatchedZoneIds.associateWith { zoneId ->
+                if (!hasEverFetchedWatchedZoneStatuses) {
+                    BelugaPresenceStatus.UNKNOWN
+                } else {
+                    computeBelugaPresenceStatus(watchedZoneStatuses.find { it.zoneId == zoneId }, currentTimeMillis())
+                }
             }
             delay(PRESENCE_DECAY_TICK_INTERVAL_MS)
         }
     }
 
-    // The banner's actual color: Kenai's real, reactive predictor status when Kenai is the
-    // relevant zone, the original ticked flat-decay status for anything else. See flag A in the
-    // scoping discussion this implements -- this is also, deliberately, the same value fed to
-    // SightingsMapScreen's kenaiBelugaStatus parameter below, so the bottom banner and the map's
-    // Kenai river shading can never disagree.
-    val presenceStatus = if (isRelevantZoneKenai) kenaiBelugaStatus else nonKenaiPresenceStatus
+    // One card per relevant zone -- Kenai's card (if present) reads the real, reactive predictor
+    // status (kenaiBelugaStatus/kenaiPresenceSnapshot, unchanged above); every other zone reads
+    // the flat-decay map just built. Sorted RED-before-YELLOW-before-BLUE, subscribed-before-
+    // nearby-only within a phase (see presenceBannerCardComparator) -- a user who never taps the
+    // carousel always sees the single most urgent, most deliberately-chosen card.
+    val presenceBannerCards = relevantWatchedZoneIds.map { zoneId ->
+        val nearby = nearbyWatchedZones.find { it.zoneId == zoneId }
+        val statusRow = watchedZoneStatuses.find { it.zoneId == zoneId }
+        val zoneSlug = nearby?.zoneSlug ?: statusRow?.zoneSlug ?: ""
+        val isKenai = zoneSlug == "kenai"
+        PresenceBannerCardData(
+            zoneId = zoneId,
+            zoneName = nearby?.zoneName ?: statusRow?.zoneName,
+            zoneSlug = zoneSlug,
+            status = if (isKenai) kenaiBelugaStatus else (nonKenaiPresenceStatuses[zoneId] ?: BelugaPresenceStatus.UNKNOWN),
+            kenaiDetail = if (isKenai) kenaiPresenceSnapshot?.detail else null,
+            isDataStale = if (isKenai) isKenaiDataStale else isWatchedZoneStatusesStale,
+            isSubscribed = zoneId in subscribedWatchedZoneIds
+        )
+    }.sortedWith(presenceBannerCardComparator)
 
     // Reactive list of all sightings for List and Map views
     val sightings by database.sightingEntityQueries
@@ -352,7 +380,7 @@ fun App() {
         currentScreen != Screen.PHOTO_LOGGING &&
         currentScreen != Screen.MANUAL_LOGGING &&
         currentScreen != Screen.ACKNOWLEDGEMENT_GATE &&
-        relevantWatchedZoneId != null
+        presenceBannerCards.isNotEmpty()
 
     // The banner's actual rendered height (including its own navigationBarsPadding, which
     // varies by device/nav style) -- measured, not guessed, so AppBackground's reserved
@@ -379,6 +407,12 @@ fun App() {
         currentScreen == Screen.PHOTO_LOGGING ||
         currentScreen == Screen.MANUAL_LOGGING
     LockLandscapeOrientation(wantsLandscape)
+
+    // subScreenBackStack is non-empty exactly while currentScreen is one of the sub-screens
+    // openSubScreen pushed into (Resources, About, Sightings list, Map, ...), so this both gates
+    // the handler correctly and covers TIER_CLAIM's own onBack -> ABOUT without hardcoding a
+    // second screen list here that could drift from the when-block below.
+    AppBackHandler(enabled = subScreenBackStack.isNotEmpty()) { closeSubScreen() }
 
     MaterialTheme {
       Box(modifier = Modifier.fillMaxSize()) {
@@ -461,14 +495,14 @@ fun App() {
             Screen.MENU -> {
                 MainMenuDrawer(
                     onNavigateToCamera = { currentScreen = Screen.CAPTURE },
-                    onNavigateToMap = { currentScreen = Screen.MAP },
+                    onNavigateToMap = { openSubScreen(Screen.MAP) },
                     onNavigateToManualLog = { currentScreen = Screen.MANUAL_LOGGING },
-                    onNavigateToList = { currentScreen = Screen.SIGHTINGS_LIST },
-                    onNavigateToNewsFeed = { currentScreen = Screen.NEWS_FEED },
-                    onNavigateToResources = { currentScreen = Screen.RESOURCES },
-                    onNavigateToAbout = { currentScreen = Screen.ABOUT },
-                    onNavigateToExport = { currentScreen = Screen.EXPORT },
-                    onNavigateToSubscriptions = { currentScreen = Screen.SUBSCRIPTIONS },
+                    onNavigateToList = { openSubScreen(Screen.SIGHTINGS_LIST) },
+                    onNavigateToNewsFeed = { openSubScreen(Screen.NEWS_FEED) },
+                    onNavigateToResources = { openSubScreen(Screen.RESOURCES) },
+                    onNavigateToAbout = { openSubScreen(Screen.ABOUT) },
+                    onNavigateToExport = { openSubScreen(Screen.EXPORT) },
+                    onNavigateToSubscriptions = { openSubScreen(Screen.SUBSCRIPTIONS) },
                     storage = storage,
                     currentAltitude = currentAltitude,
                     appPreferences = appPreferences
@@ -479,34 +513,34 @@ fun App() {
                     database = database,
                     remoteSightings = remoteSightings,
                     isLoadingRemote = isLoadingRemote,
-                    onBack = { currentScreen = Screen.MENU }
+                    onBack = { closeSubScreen() }
                 )
             }
             Screen.NEWS_FEED -> {
-                NewsFeedScreen(onBack = { currentScreen = Screen.MENU })
+                NewsFeedScreen(onBack = { closeSubScreen() })
             }
             Screen.RESOURCES -> {
-                ResourcesScreen(onBack = { currentScreen = Screen.MENU })
+                ResourcesScreen(onBack = { closeSubScreen() })
             }
             Screen.ABOUT -> {
                 AboutScreen(
-                    onBack = { currentScreen = Screen.MENU },
-                    onNavigateToTierClaim = { currentScreen = Screen.TIER_CLAIM }
+                    onBack = { closeSubScreen() },
+                    onNavigateToTierClaim = { openSubScreen(Screen.TIER_CLAIM) }
                 )
             }
             Screen.TIER_CLAIM -> {
                 TierClaimScreen(
                     appPreferences = appPreferences,
                     locationService = locationService,
-                    onBack = { currentScreen = Screen.ABOUT }
+                    onBack = { closeSubScreen() }
                 )
             }
             Screen.EXPORT -> {
-                ExportScreen(onBack = { currentScreen = Screen.MENU })
+                ExportScreen(onBack = { closeSubScreen() })
             }
             Screen.SUBSCRIPTIONS -> {
                 SubscriptionsScreen(
-                    onBack = { currentScreen = Screen.MENU },
+                    onBack = { closeSubScreen() },
                     appPreferences = appPreferences
                 )
             }
@@ -521,7 +555,7 @@ fun App() {
                     watchedZoneStatuses = watchedZoneStatuses,
                     hasEverFetchedWatchedZoneStatuses = hasEverFetchedWatchedZoneStatuses,
                     kenaiBelugaStatus = kenaiBelugaStatus,
-                    onCloseMap = { currentScreen = Screen.MENU },
+                    onCloseMap = { closeSubScreen() },
                     onRefreshRemote = { refreshRemoteSightings() }
                 )
             }
@@ -536,14 +570,11 @@ fun App() {
         )
 
         if (showPresenceBanner) {
-            BelugaPresenceBanner(
-                status = presenceStatus,
-                zoneName = relevantWatchedZoneName,
+            BelugaPresenceBannerCarousel(
+                cards = presenceBannerCards,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .onGloballyPositioned { presenceBannerHeightDp = with(density) { it.size.height.toDp() } },
-                kenaiDetail = if (isRelevantZoneKenai) kenaiPresenceSnapshot?.detail else null,
-                isDataStale = if (isRelevantZoneKenai) isKenaiDataStale else isWatchedZoneStatusesStale
+                    .onGloballyPositioned { presenceBannerHeightDp = with(density) { it.size.height.toDp() } }
             )
         }
       }

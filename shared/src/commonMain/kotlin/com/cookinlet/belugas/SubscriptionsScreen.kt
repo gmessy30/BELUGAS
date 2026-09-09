@@ -59,6 +59,12 @@ fun SubscriptionsScreen(onBack: () -> Unit, appPreferences: AppPreferences) {
     var zones by remember { mutableStateOf<List<ZoneRecord>>(emptyList()) }
     var pointPresets by remember { mutableStateOf<List<PointPresetRecord>>(emptyList()) }
     var subscriptions by remember { mutableStateOf<List<SubscriptionRecord>>(emptyList()) }
+    // Subscription ids where this subscriber's own 'verified_only' setting overlaps one of their
+    // own 'all' subscriptions -- match_notification_recipients' most-restrictive-wins rule
+    // (supabase/migrations/20260918000000_confidence_filter_most_restrictive_wins.sql) means the
+    // stricter one silently applies to the overlap too. Drives the passive note on that row below;
+    // refreshed alongside subscriptions itself since either side of an overlap can change it.
+    var confidenceFilterOverlapIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var isLoading by remember { mutableStateOf(true) }
 
     var selectedKind by remember { mutableStateOf(SubscriptionKindOption.ZONE) }
@@ -86,6 +92,7 @@ fun SubscriptionsScreen(onBack: () -> Unit, appPreferences: AppPreferences) {
 
     suspend fun refreshSubscriptions(id: String) {
         subscriptions = SupabaseApi.getSubscriptions(id)
+        confidenceFilterOverlapIds = SupabaseApi.getConfidenceFilterOverlaps(id)
     }
 
     LaunchedEffect(Unit) {
@@ -256,6 +263,9 @@ fun SubscriptionsScreen(onBack: () -> Unit, appPreferences: AppPreferences) {
                                 SubscriptionListItem(
                                     title = title,
                                     subtitle = subtitle,
+                                    note = if (subscription.id in confidenceFilterOverlapIds) {
+                                        "Your $title (verified only) setting applies to overlapping zones."
+                                    } else null,
                                     onRemove = { unsubscribe(subscription.id) }
                                 )
                             }
@@ -700,7 +710,7 @@ private fun PolygonPickerDialog(
 }
 
 @Composable
-private fun SubscriptionListItem(title: String, subtitle: String, onRemove: () -> Unit) {
+private fun SubscriptionListItem(title: String, subtitle: String, note: String? = null, onRemove: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -712,6 +722,11 @@ private fun SubscriptionListItem(title: String, subtitle: String, onRemove: () -
         Column {
             Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Text(subtitle, color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+            // Passive, not a warning -- most-restrictive-wins is a quiet behavior change, not
+            // something wrong with this subscription. See this note's own callers.
+            if (note != null) {
+                Text(note, color = Color.White.copy(alpha = 0.45f), fontSize = 10.sp)
+            }
         }
         TextButton(onClick = onRemove) {
             Text("REMOVE", color = Color(0xFFFF5252), fontSize = 12.sp, fontWeight = FontWeight.Bold)
