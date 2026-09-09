@@ -40,11 +40,16 @@ private fun buildCsv(
     // original meaning (an export never regenerated since before this change), never a mix of
     // old-looking headers with new-meaning data. Legacy rows (position_source null) simply
     // export blank for every whale-position column below.
+    // is_geofence_verified/observer_tier appended at the end, after observer_type -- a
+    // researcher needs these to tell a verified sighting from an unverified manual report at
+    // all; the export used to omit both even though export_sightings already returns them and
+    // SightingRecord already decodes them. New columns go last so a script reading by position
+    // (rather than by header name) still finds every column it expects at its original index.
     val header = listOf(
         "id", "observed_at", "whale_lat", "whale_lng", "uncertainty_bucket",
         "uncertainty_radius_meters", "travel_bearing_degrees", "travel_bearing_source",
         "position_source", "count_whites", "count_greys", "count_calves", "count_unknown",
-        "observer_type"
+        "observer_type", "is_geofence_verified", "observer_tier"
     ) + if (includePhotoColumn) listOf("photo_filename") else emptyList()
 
     val sb = StringBuilder()
@@ -65,7 +70,9 @@ private fun buildCsv(
             r.countGreys.toString(),
             r.countCalves.toString(),
             r.countUnknown.toString(),
-            r.observerType ?: ""
+            r.observerType ?: "",
+            r.isGeofenceVerified.toString(),
+            r.observerTier?.toString() ?: ""
         )
         if (includePhotoColumn) {
             row.add(photoFilenames[r.id] ?: "")
