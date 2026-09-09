@@ -313,7 +313,11 @@ fun App() {
     // its entry here just isn't read for Kenai's card below) rather than conditionally starting/
     // stopping per zone, so this doesn't need to know about Kenai at all. UNKNOWN, not a computed
     // BLUE, until the very first successful watchedZoneStatuses fetch has landed -- see this
-    // state block's own header comment for why that distinction matters.
+    // state block's own header comment for why that distinction matters. Passed through
+    // effectivePresenceStatus so a poll that's stopped succeeding escalates an old confident
+    // BLUE toward UNKNOWN over time instead of holding a false all-clear indefinitely -- the
+    // same reasoning as Kenai's own staleness escalation, just without a tide cycle to escalate
+    // against (see effectivePresenceStatus's own comment).
     var nonKenaiPresenceStatuses by remember { mutableStateOf<Map<String, BelugaPresenceStatus>>(emptyMap()) }
     LaunchedEffect(relevantWatchedZoneIds, watchedZoneStatuses, hasEverFetchedWatchedZoneStatuses) {
         while (true) {
@@ -321,7 +325,8 @@ fun App() {
                 if (!hasEverFetchedWatchedZoneStatuses) {
                     BelugaPresenceStatus.UNKNOWN
                 } else {
-                    computeBelugaPresenceStatus(watchedZoneStatuses.find { it.zoneId == zoneId }, currentTimeMillis())
+                    val flat = computeBelugaPresenceStatus(watchedZoneStatuses.find { it.zoneId == zoneId }, currentTimeMillis())
+                    effectivePresenceStatus(flat, lastSuccessfulWatchedZoneStatusesFetchAtMs, currentTimeMillis())
                 }
             }
             delay(PRESENCE_DECAY_TICK_INTERVAL_MS)

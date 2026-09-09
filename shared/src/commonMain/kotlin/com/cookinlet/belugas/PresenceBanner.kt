@@ -289,6 +289,52 @@ fun computeBelugaPresenceStatus(
     }
 }
 
+// Generic-zone counterpart to KENAI_SECOND_BOUNDARY_OFFSET_MS -- a generic zone has no tide
+// cycle to escalate against, so this uses the same order-of-magnitude flat window (Kenai's is
+// the observed MINIMUM tide-cycle length) as the amount of additional staleness, past
+// DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS, a RED/YELLOW status gets before finally escalating
+// to UNKNOWN -- see effectivePresenceStatus below.
+const val DEFAULT_GENERIC_ESCALATION_WINDOW_MS = 12L * 60 * 60 * 1000
+
+/**
+ * Generic-zone counterpart to [effectiveKenaiPresenceStatus] -- escalates [status] (already
+ * computed by [computeBelugaPresenceStatus] from real elapsed time since the zone's last known
+ * sighting) toward UNKNOWN once the underlying poll itself has been stale for long enough that
+ * the status can no longer be trusted, not just the sighting recency it was computed from. Same
+ * motivation as Kenai's own escalation (see this file's DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS
+ * comment): a device holding a confident BLUE ("no recent sightings") from a poll that stopped
+ * succeeding hours ago is exactly the false all-clear this exists to prevent -- before this
+ * function existed, the generic path had no such escalation at all and would age straight to a
+ * confident BLUE and stay there indefinitely regardless of how long polling had actually been
+ * failing.
+ *
+ * Below [DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS] of staleness, [status] is returned unchanged
+ * -- the same gate Kenai's own escalation uses, so a healthy device sees no behavior change from
+ * before this existed. Past that, this mirrors Kenai's own asymmetric ladder using a flat
+ * [DEFAULT_GENERIC_ESCALATION_WINDOW_MS] in place of a tide-cycle boundary: RED downgrades to
+ * YELLOW then UNKNOWN over two stages, YELLOW persists through the same second stage then
+ * UNKNOWN, and BLUE -- the weakest claim, "nothing observed" -- escalates straight to UNKNOWN
+ * after just the first stage, the same "BLUE loses trust fastest" priority Kenai's own
+ * non-exempt BLUE case uses.
+ */
+fun effectivePresenceStatus(
+    status: BelugaPresenceStatus,
+    lastSuccessfulFetchAtMs: Long?,
+    nowMs: Long
+): BelugaPresenceStatus {
+    if (status == BelugaPresenceStatus.UNKNOWN) return BelugaPresenceStatus.UNKNOWN
+    if (lastSuccessfulFetchAtMs == null) return status
+    val staleness = nowMs - lastSuccessfulFetchAtMs
+    if (staleness <= DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS) return status
+    val secondStageMs = DEFAULT_PRESENCE_STALENESS_THRESHOLD_MS + DEFAULT_GENERIC_ESCALATION_WINDOW_MS
+    return when (status) {
+        BelugaPresenceStatus.RED -> if (staleness <= secondStageMs) BelugaPresenceStatus.YELLOW else BelugaPresenceStatus.UNKNOWN
+        BelugaPresenceStatus.YELLOW -> if (staleness <= secondStageMs) BelugaPresenceStatus.YELLOW else BelugaPresenceStatus.UNKNOWN
+        BelugaPresenceStatus.BLUE -> BelugaPresenceStatus.UNKNOWN
+        BelugaPresenceStatus.UNKNOWN -> BelugaPresenceStatus.UNKNOWN
+    }
+}
+
 // Shared between the bottom banner and the map's river-shading FillLayer, so both surfaces
 // always agree on what RED/YELLOW/BLUE/UNKNOWN actually look like. UNKNOWN's gray is
 // deliberately unlike all three real colors -- SightingsMapScreen doesn't actually draw this
