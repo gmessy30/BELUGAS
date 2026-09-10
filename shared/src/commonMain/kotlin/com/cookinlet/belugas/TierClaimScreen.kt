@@ -228,7 +228,19 @@ fun TierClaimScreen(appPreferences: AppPreferences, locationService: LocationSer
                         if (result is TierRedeemResult.Success) code = ""
                     }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                // All four explicit -- same MaterialTheme-has-no-colorScheme issue as the code
+                // field above. containerColor alone left contentColor/disabledContainerColor/
+                // disabledContentColor on the theme's lightColorScheme() defaults; the visible
+                // Text/CircularProgressIndicator below have their own explicit colors so the
+                // enabled state looked fine, but the disabled container (this button is disabled
+                // while isSubmitting) fell back to a near-black-on-alpha default that blended
+                // into this screen's black background.
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFF9800),
+                    contentColor = Color.Black,
+                    disabledContainerColor = Color(0xFFFF9800).copy(alpha = 0.4f),
+                    disabledContentColor = Color.Black.copy(alpha = 0.6f)
+                ),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (isSubmitting) {
@@ -397,7 +409,15 @@ fun TierClaimScreen(appPreferences: AppPreferences, locationService: LocationSer
                             isReportingDeparture = false
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
+                    // Same fix as SUBMIT above -- all four explicit so the disabled state
+                    // (while isReportingDeparture) doesn't fall back to a near-invisible
+                    // theme default.
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFFF5252),
+                        contentColor = Color.White,
+                        disabledContainerColor = Color(0xFFFF5252).copy(alpha = 0.4f),
+                        disabledContentColor = Color.White.copy(alpha = 0.6f)
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     if (isReportingDeparture) {
