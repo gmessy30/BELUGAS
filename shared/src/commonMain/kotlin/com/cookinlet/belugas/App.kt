@@ -16,12 +16,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.Dispatchers
-import app.cash.sqldelight.coroutines.asFlow
-import app.cash.sqldelight.coroutines.mapToList
-import com.cookinlet.belugas.db.BelugaDatabase
-import com.cookinlet.belugas.db.DatabaseDriverFactory
-import com.cookinlet.belugas.db.createDatabase
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -85,7 +79,6 @@ fun App() {
     var capturedPhotoPath by remember { mutableStateOf<String?>(null) }
     val storage = rememberLocalFileStorage()
     val appPreferences = rememberAppPreferences()
-    val database = remember { createDatabase(DatabaseDriverFactory()) }
     val locationService = rememberLocationService()
     var activeRegion by remember { mutableStateOf(Regions.COOK_INLET) }
     var currentAltitude by remember { mutableStateOf(0.0) }
@@ -355,8 +348,7 @@ fun App() {
     }.sortedWith(presenceBannerCardComparator)
 
     // The real offline queue, for the map's local pins -- see OfflineSightingRepository.
-    // pendingSightings' own comment. Was database.sightingEntityQueries.selectAllSightings(),
-    // a table nothing has ever written a real sighting into.
+    // pendingSightings' own comment.
     val sightings by OfflineSightingRepository.pendingSightings.collectAsState()
 
     rememberSightingPhotoImageLoaderSetup()
@@ -513,7 +505,6 @@ fun App() {
             }
             Screen.SIGHTINGS_LIST -> {
                 OfflineSightingsList(
-                    database = database,
                     remoteSightings = remoteSightings,
                     isLoadingRemote = isLoadingRemote,
                     onBack = { closeSubScreen() }
@@ -711,7 +702,6 @@ fun PendingSyncBadge(
 // ==============================================================
 @Composable
 fun OfflineSightingsList(
-    database: BelugaDatabase,
     remoteSightings: List<SightingRecord>,
     isLoadingRemote: Boolean,
     onBack: () -> Unit
@@ -719,7 +709,6 @@ fun OfflineSightingsList(
     // The real offline queue -- see OfflineSightingRepository.pendingSightings' own comment.
     // Everything in here IS the unsynced set by construction (a synced item is removed from the
     // queue outright, never flagged), so there's no separate isSynced filter to apply below.
-    // `database` is now unused (kept only until the sightingEntity/BelugaDatabase cleanup pass).
     val localSightings by OfflineSightingRepository.pendingSightings.collectAsState()
 
     // "High confidence only" -- same predicate/reasoning as SightingsMapScreen's own toggle (see

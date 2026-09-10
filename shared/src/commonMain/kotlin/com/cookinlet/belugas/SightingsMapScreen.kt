@@ -944,8 +944,8 @@ private data class SightingDisplayModel(
     val timestamp: Long,
     val total: Int,
     val isLocal: Boolean,
-    // Uncertainty circle radius -- replaces the old heading/distance sector wedge. Null only
-    // for the (currently always-empty) local SightingEntity cache, which has no such field yet.
+    // Uncertainty circle radius -- replaces the old heading/distance sector wedge. Null when a
+    // sighting (local or remote) has no recorded value.
     val uncertaintyRadiusMeters: Double?,
     // The animal's own absolute travel direction, optional -- null renders as a plain dot with
     // no arrow, same as no direction having been recorded at all.
