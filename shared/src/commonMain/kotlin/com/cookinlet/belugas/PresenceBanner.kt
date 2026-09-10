@@ -26,8 +26,18 @@ import androidx.compose.ui.unit.sp
 // YELLOW decays to BLUE after [DEFAULT_YELLOW_WINDOW_MS] since the last sighting of any kind.
 // Both are plain constants (not baked into the backend RPC) specifically so they're tunable
 // without a migration -- see supabase/migrations/20260829020000_add_beluga_presence_banner.sql.
+//
+// YELLOW's window is ~3 tide cycles (36h), matching Kenai's own server-side YELLOW lookback
+// (get_kenai_presence_state's "3 completed cycles before the current one") rather than a flat
+// 24h guess -- whales skip cycles and linger, so a plain calendar day undercounted how long a
+// real recent sighting should still read as a caution. This is the companion to
+// effectivePresenceStatus's staleness escalation below, not a replacement for it: this widens
+// how long a genuine sighting keeps a zone at YELLOW; that escalates an untrustworthy STALE
+// status (the poll itself failing) toward UNKNOWN regardless of this window's length. Also read
+// directly as the server lookback for getWatchedZoneStatuses (App.kt) -- widening it here
+// widens the server-side query window too, from the same constant, so the two can't drift apart.
 const val DEFAULT_RED_WINDOW_MS = 2L * 60 * 60 * 1000
-const val DEFAULT_YELLOW_WINDOW_MS = 24L * 60 * 60 * 1000
+const val DEFAULT_YELLOW_WINDOW_MS = 36L * 60 * 60 * 1000
 
 // How close (real distance, not polygon containment) counts as "near" a watched zone for the
 // bottom banner's proximity gate -- someone doesn't need to be standing in the river to see
