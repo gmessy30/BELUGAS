@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.maplibre.compose.map.MaplibreMap
+import org.maplibre.compose.map.OrnamentOptions
 import org.maplibre.compose.camera.*
 import org.maplibre.compose.style.BaseStyle
 import org.maplibre.spatialk.geojson.Position
@@ -230,12 +231,25 @@ fun SightingsMapScreen(
         // --- 1. ONLINE MAPLIBRE VECTOR MAP ---
         // Forcing a surface re-bind ensures the GL context isn't lost on mode changes or data updates
         key(allSightings.size, isPlaybackVisible) {
+            val baseMapOptions = getMapOptions()
             MaplibreMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraState = cameraState,
                 // Using high-reliability CARTO Positron vector tiles
                 baseStyle = BaseStyle.Uri("https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"),
-                options = getMapOptions()
+                // Default ornament padding is zero on all sides, which puts the scale bar
+                // (TopStart) under the system status bar and the logo/attribution
+                // (BottomStart/BottomEnd) behind the "Belugas present" banner drawn on top of
+                // this screen in App.kt -- push both off those obstructions. Attribution
+                // visibility here is a MapLibre/OSM licensing requirement, not cosmetic.
+                options = baseMapOptions.copy(
+                    ornamentOptions = baseMapOptions.ornamentOptions.copy(
+                        padding = PaddingValues(
+                            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+                            bottom = LocalBottomContentInset.current
+                        )
+                    )
+                )
             ) {
                 // Warm up the style's font glyph cache as soon as the map mounts, instead of
                 // waiting for the first real sighting label to need it. FillLayer/LineLayer
