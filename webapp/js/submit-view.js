@@ -165,7 +165,9 @@ function totalCount() {
   return counts.whites + counts.greys + counts.calves + counts.unknown;
 }
 
-function buildSightingRecord(photoUrl) {
+// photo_url is filled in later (by attemptUploadAndInsert in offline-queue.js) once the photo
+// upload itself succeeds -- not known yet at record-build time.
+function buildSightingRecord() {
   return {
     whale_lat: confirmedLat,
     whale_lng: confirmedLng,
@@ -176,7 +178,7 @@ function buildSightingRecord(photoUrl) {
     count_unknown: counts.unknown,
     observed_at_epoch_ms: Date.now(),
     observer_type: "SELF",
-    photo_url: photoUrl,
+    photo_url: null,
     subscriber_id: getOrCreateSubscriberId()
   };
 }
@@ -196,28 +198,19 @@ async function submitSighting() {
   setSubmitStatus("Submitting…");
 
   try {
-    let photoUrl = null;
-    if (capturedPhotoBlob) {
-      const id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-      photoUrl = await uploadSightingPhoto(id, capturedPhotoBlob);
-      if (!photoUrl) {
-        setSubmitStatus("Photo upload failed -- check your connection and try again.", true);
-        button.disabled = false;
-        return;
-      }
-    }
+    const record = buildSightingRecord();
+    const result = await submitOrQueueSighting(record, capturedPhotoBlob);
 
-    const record = buildSightingRecord(photoUrl);
-    const success = await insertSighting(record);
-    if (!success) {
+    if (result.ok) {
+      setSubmitStatus("Sighting submitted! Thank you.");
+      resetSubmitForm();
+      await refreshSightings();
+    } else if (result.queued) {
+      setSubmitStatus("You're offline -- this sighting is saved on your device and will upload automatically once you're back online.");
+      resetSubmitForm();
+    } else {
       setSubmitStatus("Couldn't save the sighting -- check your connection and try again.", true);
-      button.disabled = false;
-      return;
     }
-
-    setSubmitStatus("Sighting submitted! Thank you.");
-    resetSubmitForm();
-    await refreshSightings();
   } finally {
     button.disabled = false;
   }

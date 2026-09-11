@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-title" content="BELUGAS">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 
-  <meta name="theme-color" content="#2b6cb0">
+  <meta name="theme-color" content="#66B2B2">
   <meta name="description" content="Report and view beluga whale sightings in Cook Inlet, Alaska.">
 
   <link rel="manifest" href="manifest.json">
@@ -23,9 +23,43 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+  <div id="splash-screen" aria-hidden="true">
+    <img class="splash-art" src="img/beluga_background.png" alt="">
+    <div class="splash-content">
+      <div class="splash-logo">
+        <img src="img/beluga_sketch.png" alt="">
+      </div>
+      <h1 class="splash-title">BELUGAS</h1>
+      <p class="splash-tagline">Cook Inlet Beluga Monitoring</p>
+    </div>
+  </div>
+
   <header>
-    <h1>🐋 BELUGAS</h1>
+    <h1>BELUGAS</h1>
+    <button id="tier-code-open-btn" class="header-link-btn">Observer Code</button>
   </header>
+
+  <div id="queue-banner" class="queue-banner" hidden>
+    <span>📶 <span id="queue-count">0</span> sighting(s) waiting to upload</span>
+    <button id="queue-retry-btn" class="queue-retry-btn">Retry now</button>
+  </div>
+
+  <div id="tier-code-modal" class="modal-backdrop" hidden>
+    <div class="modal-card">
+      <h2>Enter Observer Code</h2>
+      <p class="modal-description">
+        Have a one-time observer code from BELUGAS? Enter it here to mark this device as a
+        credentialed observer.
+      </p>
+      <input id="tier-code-input" type="text" inputmode="text" autocapitalize="characters"
+             autocomplete="off" placeholder="XXXX-XXXX-XXXX">
+      <div class="modal-actions">
+        <button id="tier-code-close-btn" class="secondary">Cancel</button>
+        <button id="tier-code-submit-btn" class="primary">Submit</button>
+      </div>
+      <p id="tier-code-status" class="status-info"></p>
+    </div>
+  </div>
 
   <main>
     <section id="map-view" class="view"></section>
@@ -102,6 +136,8 @@
 
   <script src="js/config.js"></script>
   <script src="js/db.js"></script>
+  <script src="js/offline-queue.js"></script>
+  <script src="js/tier-code.js"></script>
   <script src="js/map-view.js"></script>
   <script src="js/list-view.js"></script>
   <script src="js/submit-view.js"></script>

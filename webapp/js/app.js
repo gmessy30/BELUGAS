@@ -20,14 +20,32 @@ function switchTab(tabName) {
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+// Matches SPLASH_ICON_ONLY_DURATION_MS in App.kt -- the native splash's fixed minimum hold
+// before the background artwork fades in/the app becomes interactive. Kept as a MINIMUM here
+// (raced against the initial sightings fetch below), not an added-on-top delay, so a slow
+// network doesn't extend the wait further than it already has to.
+const SPLASH_MIN_DISPLAY_MS = 1200;
+
+function hideSplash() {
+  const splash = document.getElementById("splash-screen");
+  if (!splash) return;
+  splash.classList.add("splash-hidden");
+  setTimeout(() => { splash.hidden = true; }, 400);
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
   document.querySelectorAll(".tab-button").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
 
   initMap();
   initSubmitView();
-  refreshSightings();
+  initTierCodeModal();
+  initOfflineQueue();
+
+  const minDelay = new Promise((resolve) => setTimeout(resolve, SPLASH_MIN_DISPLAY_MS));
+  await Promise.all([minDelay, refreshSightings()]);
+  hideSplash();
 
   if ("serviceWorker" in navigator) {
     // Relative path, not "/sw.js" -- this app is served from a subpath (GitHub Pages project

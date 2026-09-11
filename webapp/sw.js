@@ -2,7 +2,7 @@
 // offline. Deliberately NOT an offline sighting queue (out of scope for this pass): a sighting
 // submitted with no connection still just fails at the fetch/insert call, same as any ordinary
 // web page.
-const CACHE_NAME = "belugas-shell-v1";
+const CACHE_NAME = "belugas-shell-v2";
 
 // Relative to this file's own location (webapp/), so this works whether the app is served from
 // a domain root or a subpath like /BELUGAS/webapp/.
@@ -13,13 +13,17 @@ const APP_SHELL = [
   "./css/style.css",
   "./js/config.js",
   "./js/db.js",
+  "./js/offline-queue.js",
+  "./js/tier-code.js",
   "./js/map-view.js",
   "./js/list-view.js",
   "./js/submit-view.js",
   "./js/app.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./icons/apple-touch-icon.png"
+  "./icons/apple-touch-icon.png",
+  "./img/beluga_sketch.png",
+  "./img/beluga_background.png"
 ];
 
 self.addEventListener("install", (event) => {

@@ -35,22 +35,47 @@ async function fetchRecentSightings(limit = 200) {
 }
 
 /**
- * Uploads a photo blob to the sighting-photos bucket and returns its public URL, or null on
- * failure. Object path is "<id>.jpg", matching SupabaseApi.uploadSightingPhoto's convention.
+ * True when `error` looks like a connectivity failure (DNS/offline/timeout) rather than a real
+ * response from the server (a permissions error, a bad value, etc.) -- the offline queue
+ * (offline-queue.js) only ever queues the former; the latter is shown to the user as a genuine
+ * failure, since retrying it later can't possibly help.
+ *
+ * There's no fully reliable way to tell these apart from the error object alone (supabase-js
+ * normalizes both into a similarly-shaped {message} rather than exposing the raw fetch
+ * TypeError), so this leans on navigator.onLine plus the common browser fetch-failure strings
+ * (Chrome/Firefox: "Failed to fetch", Safari: "Load failed").
+ */
+function isNetworkError(error) {
+  if (!error) return false;
+  if (navigator.onLine === false) return true;
+  const message = String(error.message || error).toLowerCase();
+  return message.includes("failed to fetch") || message.includes("load failed") || message.includes("networkerror");
+}
+
+/**
+ * Uploads a photo blob to the sighting-photos bucket. Object path is "<id>.jpg", matching
+ * SupabaseApi.uploadSightingPhoto's convention (upsert -- a retried queued upload under the same
+ * id overwrites cleanly rather than erroring).
  */
 async function uploadSightingPhoto(id, blob) {
   const objectPath = `${id}.jpg`;
-  const { error: uploadError } = await supabaseClient.storage
-    .from(SIGHTING_PHOTOS_BUCKET)
-    .upload(objectPath, blob, { upsert: true, contentType: "image/jpeg" });
+  try {
+    const { error } = await supabaseClient.storage
+      .from(SIGHTING_PHOTOS_BUCKET)
+      .upload(objectPath, blob, { upsert: true, contentType: "image/jpeg" });
 
-  if (uploadError) {
-    console.error("PHOTO_UPLOAD_ERROR", uploadError);
-    return null;
+    if (error) {
+      console.error("PHOTO_UPLOAD_ERROR", error);
+      return { ok: false, networkError: isNetworkError(error) };
+    }
+    const { data } = supabaseClient.storage.from(SIGHTING_PHOTOS_BUCKET).getPublicUrl(objectPath);
+    return { ok: true, url: data?.publicUrl ?? null };
+  } catch (e) {
+    // A thrown (not returned) error here is almost always the underlying fetch() itself
+    // rejecting -- i.e. genuinely offline, not a server response of any kind.
+    console.error("PHOTO_UPLOAD_EXCEPTION", e);
+    return { ok: false, networkError: true };
   }
-
-  const { data } = supabaseClient.storage.from(SIGHTING_PHOTOS_BUCKET).getPublicUrl(objectPath);
-  return data?.publicUrl ?? null;
 }
 
 /**
@@ -64,12 +89,43 @@ async function uploadSightingPhoto(id, blob) {
  * requests the row back.
  */
 async function insertSighting(record) {
-  const { error } = await supabaseClient.from("sightings").insert(record);
-  if (error) {
-    console.error("SIGHTING_INSERT_ERROR", error);
-    return false;
+  try {
+    const { error } = await supabaseClient.from("sightings").insert(record);
+    if (error) {
+      console.error("SIGHTING_INSERT_ERROR", error);
+      return { ok: false, networkError: isNetworkError(error) };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error("SIGHTING_INSERT_EXCEPTION", e);
+    return { ok: false, networkError: true };
   }
-  return true;
+}
+
+/**
+ * Attempts to claim `code` onto this device's subscriber_id via the RPC's existing
+ * rate-limited, anti-enumeration design (supabase/migrations/20260905010000_add_tier_code_rate_
+ * limiting_and_identity_bind.sql) -- mirrors SupabaseApi.redeemTierCode/TierRedeemResult on the
+ * native side exactly. The RPC normalizes both the typed code and the stored value server-side
+ * (dashes/case-insensitive), so this never touches the input string itself.
+ *
+ * Every ordinary failure (bad code, already-used code, network/decode error) collapses to the
+ * same "invalid" outcome -- deliberately, so this can't be used to probe which codes exist.
+ * RATE_LIMITED is kept separate only because the RPC itself raises a distinct exception for it.
+ */
+async function redeemTierCode(code, subscriberId) {
+  const { data, error } = await supabaseClient.rpc("redeem_tier_code", {
+    p_code: code,
+    p_subscriber_id: subscriberId
+  });
+
+  if (error) {
+    if (error.message === "rate_limited") return { status: "RATE_LIMITED" };
+    console.error("TIER_CODE_REDEEM_ERROR", error);
+    return { status: "INVALID" };
+  }
+  if (data == null) return { status: "INVALID" };
+  return { status: "SUCCESS", tier: data };
 }
 
 /**
