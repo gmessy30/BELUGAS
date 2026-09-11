@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>BELUGAS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+  <!-- iOS home-screen behavior -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BELUGAS">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+  <meta name="theme-color" content="#2b6cb0">
+  <meta name="description" content="Report and view beluga whale sightings in Cook Inlet, Alaska.">
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
+        integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw=="
+        crossorigin="anonymous" referrerpolicy="no-referrer">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <h1>🐋 BELUGAS</h1>
+  </header>
+
+  <main>
+    <section id="map-view" class="view"></section>
+
+    <section id="list-view" class="view" hidden></section>
+
+    <section id="submit-view" class="view" hidden>
+      <div id="camera-step">
+        <video id="camera-preview" autoplay playsinline muted></video>
+        <img id="captured-photo" hidden alt="Captured sighting photo">
+        <canvas id="capture-canvas" hidden></canvas>
+        <button id="capture-btn" class="secondary">Capture Photo</button>
+        <button id="retake-btn" class="secondary" hidden>Retake</button>
+      </div>
+
+      <div class="step-label">Location</div>
+      <button id="locate-btn" class="secondary">Get My Location</button>
+      <p id="location-status" class="status-info"></p>
+      <div id="location-map" hidden></div>
+
+      <div class="step-label">Whale Count</div>
+      <div class="count-grid">
+        <div class="count-stepper" data-count="whites">
+          <span class="count-label">White (adult)</span>
+          <div class="count-controls">
+            <button class="count-minus" type="button">−</button>
+            <span class="count-value">0</span>
+            <button class="count-plus" type="button">+</button>
+          </div>
+        </div>
+        <div class="count-stepper" data-count="greys">
+          <span class="count-label">Grey (juvenile)</span>
+          <div class="count-controls">
+            <button class="count-minus" type="button">−</button>
+            <span class="count-value">0</span>
+            <button class="count-plus" type="button">+</button>
+          </div>
+        </div>
+        <div class="count-stepper" data-count="calves">
+          <span class="count-label">Calves</span>
+          <div class="count-controls">
+            <button class="count-minus" type="button">−</button>
+            <span class="count-value">0</span>
+            <button class="count-plus" type="button">+</button>
+          </div>
+        </div>
+        <div class="count-stepper" data-count="unknown">
+          <span class="count-label">Unknown</span>
+          <div class="count-controls">
+            <button class="count-minus" type="button">−</button>
+            <span class="count-value">0</span>
+            <button class="count-plus" type="button">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="submit-actions">
+        <button id="submit-sighting-btn" class="primary">Submit Sighting</button>
+        <p id="submit-status" class="status-info"></p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button class="tab-button active" data-tab="map">Map</button>
+    <button class="tab-button" data-tab="list">List</button>
+    <button class="tab-button" data-tab="submit">New Sighting</button>
+  </nav>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"
+          integrity="sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg=="
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+  <script src="js/config.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/map-view.js"></script>
+  <script src="js/list-view.js"></script>
+  <script src="js/submit-view.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
