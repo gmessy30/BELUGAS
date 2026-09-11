@@ -34,7 +34,7 @@ import belugas.shared.generated.resources.Res
 import belugas.shared.generated.resources.beluga_about_sketches
 import belugas.shared.generated.resources.breaching_belugas_sketches
 
-private const val LUNA_ARTWORK_INQUIRY_EMAIL = "REDACTED"
+private const val LUNA_ARTWORK_INQUIRY_EMAIL = "keeneyeapps+luna@gmail.com"
 private const val DEVELOPER_CONTACT_EMAIL = "keeneyeapps@gmail.com"
 
 // Hidden gesture into the observer-tier claim screen (see TierClaimScreen.kt) -- 7 taps on the
