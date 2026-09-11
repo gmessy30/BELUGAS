@@ -21,6 +21,20 @@
   box-sizing: border-box;
 }
 
+/* Several elements below (.modal-backdrop, .queue-banner, #splash-screen, #camera-preview/
+   #captured-photo) set `display` unconditionally on the same element JS toggles via the
+   `hidden` attribute (e.g. modal.hidden = true). A normal author rule always wins over the
+   browser's built-in `[hidden] { display: none }` UA rule regardless of selector specificity --
+   that's a cascade *origin* precedence, not something a more-specific selector can out-rank --
+   so without this, setting .hidden has no visual effect at all on any of them. This single
+   !important reset (author !important is the one tier that outranks author-normal) is what
+   makes `hidden` actually hide things again, without having to chase down every conflicting
+   `display` declaration individually.
+*/
+[hidden] {
+  display: none !important;
+}
+
 html, body {
   height: 100%;
   margin: 0;

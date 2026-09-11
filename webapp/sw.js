@@ -2,7 +2,11 @@
 // offline. Deliberately NOT an offline sighting queue (out of scope for this pass): a sighting
 // submitted with no connection still just fails at the fetch/insert call, same as any ordinary
 // web page.
-const CACHE_NAME = "belugas-shell-v2";
+// BUMP THIS on every deploy that changes any file in APP_SHELL (or this file itself) -- it's
+// the only thing that makes the activate handler below actually replace the old cached shell.
+// Without a version bump, a returning visitor's already-installed service worker sees byte-
+// identical install/activate logic and never even attempts an update.
+const CACHE_NAME = "belugas-shell-v3";
 
 // Relative to this file's own location (webapp/), so this works whether the app is served from
 // a domain root or a subpath like /BELUGAS/webapp/.
