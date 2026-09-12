@@ -23,6 +23,21 @@ async function renderAllSightings() {
 function switchTab(tabName) {
   document.querySelectorAll(".view").forEach((el) => (el.hidden = el.id !== `${tabName}-view`));
 
+  // CaptureScreen.kt/LoggingScreen.kt (the native screens behind the Report tab) never show any
+  // shared app chrome at all -- each draws its own full-bleed content with its own top row. This
+  // app's outer teal header/queue-banner are a web-only adaptation for Map/List, so they're
+  // hidden here to let the camera/review steps go truly full-bleed the same way natively.
+  const isReportTab = tabName === "submit";
+  document.querySelector("header").hidden = isReportTab;
+  if (isReportTab) {
+    document.getElementById("queue-banner").hidden = true;
+  } else {
+    refreshQueueBadge();
+  }
+  // Matches App.kt's showPresenceBanner exclusion (CAPTURE/PHOTO_LOGGING/MANUAL_LOGGING/
+  // ACKNOWLEDGEMENT_GATE) -- this tab covers the camera+logging equivalent.
+  setPresenceBannerReportTabActive(isReportTab);
+
   if (tabName === "map") {
     invalidateMapSize();
   }
@@ -46,8 +61,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   initListView();
   initSubmitView();
   initTierCodeModal();
+  initAboutPage();
+  initResourcesPage();
+  initNewsFeedPage();
+  initAlertsPage();
+  initPresenceBanner();
   initMainMenu();
   initOfflineQueue();
+  initPresenceState();
 
   const minDelay = new Promise((resolve) => setTimeout(resolve, SPLASH_MIN_DISPLAY_MS));
   await Promise.all([minDelay, refreshSightings()]);

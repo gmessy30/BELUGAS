@@ -29,9 +29,9 @@
   box-sizing: border-box;
 }
 
-/* Several elements below (.modal-backdrop, .queue-banner, #splash-screen, #camera-preview/
-   #captured-photo) set `display` unconditionally on the same element JS toggles via the
-   `hidden` attribute (e.g. modal.hidden = true). A normal author rule always wins over the
+/* Several elements below (.modal-backdrop, .menu-overlay, .queue-banner, #splash-screen,
+   #camera-preview, .review-photo) set `display` unconditionally on the same element JS toggles
+   via the `hidden` attribute (e.g. modal.hidden = true). A normal author rule always wins over the
    browser's built-in `[hidden] { display: none }` UA rule regardless of selector specificity --
    that's a cascade *origin* precedence, not something a more-specific selector can out-rank --
    so without this, setting .hidden has no visual effect at all on any of them. This single
@@ -72,6 +72,20 @@ header h1 {
   letter-spacing: 0.08em;
   color: #ffffff;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The real launcher icon (androidApp's own mipmap asset, copied into icons/), not an emoji or a
+   drawn placeholder -- native has no persistent header to match an icon+title treatment from
+   (see this file's own note on MainMenuDrawer being the closest thing to navigation chrome, and
+   it has no icon either), so this is sized purely off the wordmark's own text height. */
+.header-icon {
+  height: 1.2em;
+  width: 1.2em;
+  display: block;
+  flex-shrink: 0;
 }
 
 /* Matches CaptureScreen.kt's own "≡ MENU" button (DarkGray at 70% alpha) -- this opens the
@@ -105,13 +119,19 @@ main {
   padding: 0;
 }
 
-/* List/Submit get the same teal-gradient backdrop AppBackground.kt paints behind every native
-   screen except the full-bleed camera/map ones -- Map keeps the Leaflet tiles as its own
-   background, same as SightingsMapScreen/CaptureScreen render their own full-bleed content
-   instead of going through AppBackground natively. */
-#list-view, #submit-view {
-  background: linear-gradient(180deg, var(--brand-teal-1), var(--brand-teal-2));
+/* List gets AppBackground's real default backdrop (.mae-background, applied via HTML class) --
+   OfflineSightingsList goes through AppBackground with no override, same as Resources/News Feed.
+   Map keeps the Leaflet tiles, and Submit (Capture/Logging) keeps the camera feed/captured photo/
+   plain black fallback, as their own backgrounds -- neither of those goes through AppBackground
+   natively either (LoggingScreen draws the real photo itself; CaptureScreen/SightingsMapScreen
+   render their own full-bleed content). */
+#list-view {
   padding: 12px 16px 24px;
+}
+
+#submit-view {
+  padding: 0;
+  background: #000000;
 }
 
 .list-toolbar {
@@ -296,29 +316,727 @@ main {
   text-align: right;
 }
 
-/* --- Submit view --- */
+/* --- Shared full-screen "sub-page" pattern: About/Resources/News Feed all use this same
+   top-row (title + actions) + scrollable-content shape, matching how AboutScreen.kt/
+   ResourcesScreen.kt/NewsFeedScreen.kt are all structured near-identically in native (same
+   header Row, same AboutSection/ResourceSection styling underneath). --- */
 
-#camera-step {
-  position: relative;
-  background: #000;
-  border-radius: 10px;
-  overflow: hidden;
-  aspect-ratio: 3 / 4;
-  max-height: 50vh;
+/* AppBackground.kt's own backdrop: the teal gradient with Mae (beluga_background.png) drawn on
+   top at ContentScale.Fit (letterboxed, never cropped) -- reused verbatim (not redrawn) behind
+   every native screen that goes through AppBackground with its default background. Layered as
+   two CSS backgrounds: Mae (top layer, "contain" so it's never cropped) over the gradient
+   (bottom layer, fills the box) -- multiple backgrounds paint first-listed-on-top, matching
+   AppBackground's own Box(gradient) + Image(Fit) stacking exactly. */
+.mae-background {
+  background-image:
+    url("img/beluga_background.png"),
+    linear-gradient(180deg, var(--brand-teal-1), var(--brand-teal-2));
+  background-size: contain, cover;
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
 }
 
-#camera-preview, #captured-photo {
+.subpage-top-row {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px 16px;
+  z-index: 2;
+  flex-shrink: 0;
+}
+
+.subpage-title {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.4rem;
+  font-weight: 900;
+}
+
+.subpage-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.subpage-back-btn {
+  background: none;
+  border: none;
+  color: var(--brand-yellow);
+  font-weight: 900;
+  font-size: 0.85rem;
+  padding: 8px 10px;
+}
+
+.subpage-content {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 16px 24px;
+}
+
+.subpage-section {
+  padding: 12px 0;
+}
+
+.section-title {
+  color: var(--brand-yellow);
+  font-size: 0.8rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+.section-body {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.8rem;
+  margin: 0 0 8px;
+}
+
+.text-link {
+  display: block;
+  color: var(--brand-cyan);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-decoration: none;
+  padding-top: 8px;
+}
+
+.section-divider {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  margin: 0;
+}
+
+/* --- About page (AboutScreen.kt) --- */
+
+.about-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 960;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, var(--brand-teal-1), var(--brand-teal-2));
+  overflow: hidden;
+}
+
+/* mix-blend-mode:multiply approximates AboutScreen's own ColorFilter.tint(..., BlendMode.
+   Multiply): the sketch's white paper darkens into the teal gradient behind it while the dark
+   pencil lines stay dark, so the page reads as part of the background rather than a stark white
+   rectangle floating on top of it -- same effect, same blend mode, just CSS instead of Compose.
+   Deliberately NOT .mae-background -- AboutScreen passes its OWN backgroundImage to
+   AppBackground (this sketch, not Mae), so Mae never actually shows behind this screen natively
+   either. */
+.about-bg-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+}
+
+.about-toggle-btn {
+  background: none;
+  border: none;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 8px 10px;
+}
+
+.about-bg-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px 0 8px;
+}
+
+.about-bg-dot {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.about-bg-dot.active {
+  background: #ffffff;
+}
+
+/* --- Resources page (ResourcesScreen.kt) --- */
+
+.resources-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 960;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Matches ResourcesScreen's hotline Surface exactly: orange fill, black bold number + "TAP TO
+   CALL", tappable as a real tel: link. */
+.hotline-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--brand-amber);
+  border-radius: 8px;
+  padding: 12px 16px;
+  text-decoration: none;
+  margin-top: 8px;
+}
+
+.hotline-number {
+  color: #000000;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.hotline-cta {
+  color: #000000;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.tip-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tip-list li {
+  position: relative;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.8rem;
+  padding: 4px 0 4px 18px;
+}
+
+.tip-list li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: var(--brand-cyan);
+  font-weight: 700;
+}
+
+/* --- News Feed page (NewsFeedScreen.kt) --- */
+
+.news-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 960;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.news-filter-row {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 8px;
+  flex-shrink: 0;
+}
+
+.news-filter-chip {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.news-filter-chip.active {
+  background: var(--brand-yellow);
+  color: #000000;
+}
+
+.news-articles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.article-card {
+  display: block;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
+  padding: 14px;
+  text-decoration: none;
+}
+
+.article-title {
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.article-summary {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.75rem;
+  margin-top: 4px;
+}
+
+.article-open-link {
+  color: var(--brand-cyan);
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-top: 6px;
+}
+
+.suggest-article-btn {
+  flex-shrink: 0;
+  margin: 0 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  background: var(--brand-amber);
+  color: #000000;
+  border: none;
+  border-radius: 10px;
+  padding: 14px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.chip-toggle {
+  background: rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.chip-toggle.active {
+  background: var(--brand-teal-2);
+  color: #ffffff;
+  border-color: var(--brand-teal-2);
+}
+
+.suggest-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 0.95rem;
+  margin-top: 8px;
+}
+
+/* --- Alerts page (SubscriptionsScreen.kt) --- */
+
+.alerts-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 960;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.alerts-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip-row-scroll {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+/* subscriptionChipColors()'s dark-context treatment (white/10% off, yellow/black on) --
+   overridden here rather than in the shared .chip-toggle rule, which also serves the light
+   News Feed suggest-article modal. */
+#alerts-page .chip-toggle,
+#point-picker-overlay .chip-toggle,
+#polygon-picker-overlay .chip-toggle {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+#alerts-page .chip-toggle.active,
+#point-picker-overlay .chip-toggle.active,
+#polygon-picker-overlay .chip-toggle.active {
+  background: var(--brand-yellow);
+  color: #000000;
+}
+
+/* Already-watching zone chips: permanently selected/disabled, same fix SubscriptionsScreen's
+   own comment describes -- nothing to tap means nothing to insert twice. */
+#alerts-page .chip-toggle.watching {
+  background: var(--brand-yellow);
+  color: #000000;
+  opacity: 0.85;
+}
+
+.alerts-radius-title {
+  margin-top: 16px;
+}
+
+.drop-pin-btn {
+  display: block;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: var(--brand-yellow);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-top: 8px;
+}
+
+.drop-pin-btn.set {
+  background: var(--brand-amber);
+  border: none;
+  color: #000000;
+}
+
+.watching-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.watching-item-title {
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.watching-item-subtitle {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.7rem;
+}
+
+.watching-item-note {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.65rem;
+}
+
+.watching-item-remove {
+  background: none;
+  border: none;
+  color: #ff5252;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* --- Point+radius / custom-polygon full-screen pickers --- */
+
+.picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 980;
+  background: #102a2e;
+}
+
+.picker-map {
+  position: absolute;
+  inset: 0;
+}
+
+.picker-hint {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 16px);
+  left: 16px;
+  right: 16px;
+  z-index: 2;
+  text-align: center;
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 0;
+}
+
+.picker-bottom-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+}
+
+.picker-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.picker-actions button {
+  flex: 1;
+}
+
+/* --- Presence banner (PresenceBanner.kt) --- */
+
+.presence-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 970;
+}
+
+.presence-banner-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+}
+
+.presence-banner-main.clickable {
+  cursor: pointer;
+}
+
+.presence-banner-label {
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-align: center;
+}
+
+.presence-banner-warnings {
+  display: block;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.65rem;
+  text-align: center;
+  margin-top: 2px;
+}
+
+.presence-banner-dots {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 6px;
+}
+
+.presence-banner-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  display: block;
+}
+
+.presence-banner-dot.active {
+  width: 7px;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+/* --- Submit view: Step 1, CaptureScreen.kt --- */
+
+.capture-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000000;
+  overflow: hidden;
+}
+
+#camera-preview {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
 
-#capture-btn, #retake-btn {
+.capture-top-row {
   position: absolute;
-  bottom: 12px;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  left: 16px;
+  z-index: 5;
+}
+
+/* SketchedReticle.kt: centered column, "↘ BELUGAS ↙" above the square frame, "↗ GO HERE ↖"
+   below it -- pointer-events:none so it never intercepts taps meant for the capture button. */
+.reticle-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.reticle-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--brand-yellow);
+}
+
+.reticle-arrow {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.reticle-word {
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+}
+
+.capture-hint {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
   left: 50%;
   transform: translateX(-50%);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  margin: 0;
+}
+
+.camera-status {
+  position: absolute;
+  top: 64px;
+  left: 16px;
+  right: 16px;
+  text-align: center;
+  z-index: 5;
+}
+
+button.camera-status.secondary {
+  position: absolute;
+  top: 120px;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: auto;
+}
+
+/* Matches CaptureScreen's CAPTURE button exactly: a 99x200dp button using the real
+   beluga_capture_button.png artwork, CenterEnd-aligned, with "CAPTURE"/"SAVING..." stacked one
+   letter per line (via <br> in the HTML, same technique as native's per-character Text loop) in
+   the artwork's own negative-space corridor. */
+.capture-shutter-btn {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  transform: translateY(-50%);
+  width: 99px;
+  height: 200px;
+  border: none;
+  border-radius: 24px;
+  padding: 0;
+  background-image: url("img/beluga_capture_button.png");
+  background-size: cover;
+  background-position: center;
+}
+
+.capture-shutter-label {
+  position: absolute;
+  left: 6px;
+  top: 70px;
+  width: calc(100% - 12px);
+  color: #000000;
+  font-size: 12px;
+  line-height: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
+/* --- Submit view: Step 2, LoggingScreen.kt --- */
+
+.review-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000000;
+  overflow: hidden;
+}
+
+.review-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.review-vignette {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.review-top-row {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  left: 16px;
+  right: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 5;
+}
+
+.review-done-btn, .review-retake-btn {
+  background: rgba(0, 0, 0, 0.8);
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+}
+
+.review-done-btn {
+  color: var(--brand-yellow);
+  font-size: 1.1rem;
+  font-weight: 900;
+}
+
+.review-retake-btn {
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* Native's bottom Column here is just a heading/distance button + one count row, compact enough
+   to never need scrolling. This app's stand-in bottom content (GPS location + embedded map +
+   whale counts) is taller, so unlike native this panel gets a translucent dark backing and its
+   own scroll -- a necessary adaptation, not a style choice. */
+.review-bottom-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  max-height: 62vh;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.55);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  padding: 14px 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
 }
 
 .step-label {
@@ -331,55 +1049,74 @@ main {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
+.review-bottom-panel .step-label:first-child {
+  margin-top: 0;
+}
+
 #location-map {
   height: 220px;
   border-radius: 10px;
   margin-top: 8px;
 }
 
-.count-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.count-stepper {
-  background: var(--dark-card-bg);
-  border: 1px solid var(--dark-card-border);
-  border-radius: 10px;
-  padding: 8px 10px;
+/* WhaleCountControls.kt: each whale image IS the button, a bare "+" above and "−" below (both a
+   real 44px touch target despite the small glyph), the running count overlaid on the artwork
+   itself -- no card/box around any of it, unlike a generic stepper control. Order (Unknown/Grey/
+   Calf/White) matches WhaleCountRow's own left-to-right order exactly. */
+.whale-count-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  gap: 4px;
 }
 
-.count-stepper .count-label {
-  font-size: 0.9rem;
-  color: #ffffff;
-}
-
-.count-stepper .count-controls {
+.whale-count-col {
+  flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  min-width: 0;
 }
 
-.count-stepper button {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--dark-card-border);
-  background: var(--dark-card-alt-bg);
-  color: #ffffff;
-  font-size: 1.1rem;
+.whale-count-inc, .whale-count-dec {
+  background: none;
+  border: none;
+  width: 100%;
+  min-height: 44px;
+  font-size: 22px;
   line-height: 1;
 }
 
-.count-value {
-  min-width: 20px;
-  text-align: center;
-  font-weight: 700;
+.whale-count-art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 280 / 120;
+}
+
+.whale-count-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.whale-count-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  pointer-events: none;
+}
+
+/* Fakes native's OutlinedText (a black-stroked copy of the glyph under a solid white one) with
+   text-shadow instead -- Compose has a real stroke draw-style, CSS doesn't, and text-shadow reads
+   the same at this size without needing -webkit-text-stroke (inconsistent cross-browser). */
+.outlined-text {
   color: #ffffff;
+  font-weight: 900;
+  text-shadow:
+    -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000,
+    -1.5px 0 0 #000, 1.5px 0 0 #000, 0 -1.5px 0 #000, 0 1.5px 0 #000;
 }
 
 button {
@@ -412,13 +1149,6 @@ button.secondary {
   letter-spacing: 0.03em;
 }
 
-#submit-actions {
-  margin-top: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
 .status-error {
   color: var(--error);
   font-size: 0.9rem;
@@ -431,14 +1161,15 @@ button.secondary {
   margin-top: 8px;
 }
 
-/* #location-status/#submit-status sit directly on #submit-view's teal gradient now (not a
-   light page), so the muted/error tones above (tuned for a light card, e.g. the tier-code
-   modal) would be nearly illegible there -- overridden to light-on-teal equivalents. */
+/* #location-status/#submit-status/#camera-status all sit over dark backgrounds now (the review
+   panel's translucent black, or the black camera view), not a light page -- the muted/error
+   tones above (tuned for a light card, e.g. the tier-code modal) would be nearly illegible there,
+   so overridden to light-on-dark equivalents. */
 #location-status.status-info, #submit-status.status-info {
   color: rgba(255, 255, 255, 0.85);
 }
 
-#location-status.status-error, #submit-status.status-error {
+#location-status.status-error, #submit-status.status-error, #camera-status.status-error {
   color: #ffdada;
 }
 

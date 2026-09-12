@@ -1,7 +1,6 @@
-// Observer-code redemption modal. The native app hides this behind a 7-tap gesture on the About
-// screen (AboutScreen.kt) -- there's no equivalent "hidden" affordance that makes sense on the
-// web, so this is reached as a plain "Observer Code" item in the main menu instead (see
-// main-menu.js), per the brief.
+// Observer-code redemption modal. Reached the same way it is natively: only via the hidden
+// 7-tap-the-whale's-nose gesture on the About page (see about.js's onWhaleNoseTap), not any
+// visible menu item.
 function initTierCodeModal() {
   const modal = document.getElementById("tier-code-modal");
   const closeBtn = document.getElementById("tier-code-close-btn");
@@ -24,7 +23,7 @@ function initTierCodeModal() {
   });
 }
 
-// Called from the main menu's "Observer Code" item (main-menu.js).
+// Called from about.js's onWhaleNoseTap once the hidden gesture completes.
 function openTierCodeModal() {
   const modal = document.getElementById("tier-code-modal");
   const input = document.getElementById("tier-code-input");

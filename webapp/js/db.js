@@ -140,6 +140,228 @@ async function redeemTierCode(code, subscriberId) {
 }
 
 /**
+ * Fetches every watched zone's shading geometry for the map's river-shading fill -- matches
+ * SupabaseApi.getWatchedZoneShadingAreas exactly: a zero-argument RPC, no subscriber/location
+ * filtering of any kind. Every viewer sees every server-flagged is_banner_watched zone, which is
+ * the whole point (confirmed against SightingsMapScreen.kt/App.kt's own comments: "the map
+ * shading needs it regardless of whether the banner itself is currently shown").
+ */
+async function getWatchedZoneShadingAreas() {
+  const { data, error } = await supabaseClient.rpc("get_watched_zone_shading_areas");
+  if (error) {
+    console.error("WATCHED_ZONE_SHADING_AREAS_FETCH_ERROR", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+/**
+ * Raw sighting-recency facts for every watched zone, no location/subscription involved --
+ * matches SupabaseApi.getWatchedZoneStatuses. Returns null on failure (not the same as a real
+ * empty list) so callers can leave their last-known data alone rather than wipe it to nothing on
+ * a transient failure -- same null-vs-empty distinction native's own comment insists on.
+ */
+async function getWatchedZoneStatuses(lookbackMs) {
+  const { data, error } = await supabaseClient.rpc("get_watched_zone_statuses", { p_lookback_ms: lookbackMs });
+  if (error) {
+    console.error("WATCHED_ZONE_STATUSES_FETCH_ERROR", error);
+    return null;
+  }
+  return data ?? [];
+}
+
+/**
+ * Kenai's real tide-cycle-aware RED/YELLOW/BLUE state -- matches SupabaseApi.
+ * getKenaiPresenceState. Null on any failure; callers must keep showing their own last-known
+ * state rather than treat null as "no data."
+ */
+async function getKenaiPresenceState() {
+  const { data, error } = await supabaseClient.rpc("get_kenai_presence_state");
+  if (error) {
+    console.error("KENAI_PRESENCE_STATE_FETCH_ERROR", error);
+    return null;
+  }
+  return (data && data[0]) ?? null;
+}
+
+/**
+ * Every watched zone within proximityMeters of lat/lng, nearest first -- matches SupabaseApi.
+ * findNearbyWatchedZones. Empty on failure or if none is that close.
+ */
+async function findNearbyWatchedZones(lat, lng, proximityMeters) {
+  const { data, error } = await supabaseClient.rpc("find_nearby_watched_zone", {
+    p_lat: lat,
+    p_lng: lng,
+    p_proximity_meters: proximityMeters
+  });
+  if (error) {
+    console.error("NEARBY_WATCHED_ZONE_FETCH_ERROR", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+/**
+ * Every watched zone this subscriber is relevant to via an active zone-kind subscription --
+ * matches SupabaseApi.getRelevantWatchedZoneIds exactly, including the containment-aware match
+ * (a subscription to "Entire Inlet" also covers Kenai) -- that matching is done entirely
+ * server-side by this RPC (get_relevant_watched_zone_id), so this client never needs its own
+ * polygon-containment logic. Empty on failure or no match.
+ */
+async function getRelevantWatchedZoneIds(subscriberId) {
+  const { data, error } = await supabaseClient.rpc("get_relevant_watched_zone_id", { p_subscriber_id: subscriberId });
+  if (error) {
+    console.error("RELEVANT_WATCHED_ZONE_ID_FETCH_ERROR", error);
+    return [];
+  }
+  return (data ?? []).map((row) => row.zone_id);
+}
+
+/**
+ * The curated ~9 MVP zone presets -- matches SupabaseApi.getZones. Fetched live, not hardcoded,
+ * same as native: a new/adjusted zone shows up here without a client release.
+ */
+async function getZones(regionId) {
+  const { data, error } = await supabaseClient
+    .from("zones")
+    .select("id, slug, name, region_id, display_order")
+    .eq("region_id", regionId)
+    .order("display_order", { ascending: true });
+  if (error) {
+    console.error("ZONES_FETCH_ERROR", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+/**
+ * The curated point+radius presets -- matches SupabaseApi.getPointPresets. lat/lng come from the
+ * generated columns migration; empty (not an error) if that hasn't been applied yet, same
+ * degrade path native's own comment documents.
+ */
+async function getPointPresets(regionId) {
+  const { data, error } = await supabaseClient
+    .from("point_presets")
+    .select("id, slug, name, region_id, lat, lng, default_radius_meters, display_order")
+    .eq("region_id", regionId)
+    .order("display_order", { ascending: true });
+  if (error) {
+    console.error("POINT_PRESETS_FETCH_ERROR", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+/**
+ * This subscriber's own subscriptions (all three kinds), newest first -- matches SupabaseApi.
+ * getSubscriptions. point/custom_polygon deliberately excluded from the select (same reasoning
+ * as native: PostgREST returns geometry as nested GeoJSON, never needed back once created).
+ */
+async function getSubscriptions(subscriberId) {
+  const { data, error } = await supabaseClient
+    .from("subscriptions")
+    .select("id, subscriber_id, kind, confidence_filter, is_active, label, zone_id, radius_meters, expires_at, created_at")
+    .eq("subscriber_id", subscriberId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("SUBSCRIPTIONS_FETCH_ERROR", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+/**
+ * Which of this subscriber's own 'verified_only' subscriptions overlap one of their own 'all'
+ * subscriptions -- matches SupabaseApi.getConfidenceFilterOverlaps. Empty on failure or no
+ * overlap.
+ */
+async function getConfidenceFilterOverlaps(subscriberId) {
+  const { data, error } = await supabaseClient.rpc("get_confidence_filter_overlaps", { p_subscriber_id: subscriberId });
+  if (error) {
+    console.error("CONFIDENCE_FILTER_OVERLAPS_FETCH_ERROR", error);
+    return new Set();
+  }
+  return new Set((data ?? []).map((row) => row.subscription_id));
+}
+
+// EWKT (WKT with an explicit SRID prefix) for the two subscription geometry columns -- matches
+// SupabaseClient.kt's own ewktPoint/ewktPolygon exactly, including the explicit "SRID=4326;"
+// prefix (without it, Postgres/PostGIS's typmod check on a geometry(Polygon,4326)-declared
+// column rejects incoming WKT that defaults to SRID 0).
+function ewktPoint(lat, lng) {
+  return `SRID=4326;POINT(${lng} ${lat})`;
+}
+
+function ewktPolygon(vertices) {
+  const ring = [...vertices, vertices[0]];
+  const coords = ring.map(([lat, lng]) => `${lng} ${lat}`).join(", ");
+  return `SRID=4326;POLYGON((${coords}))`;
+}
+
+/**
+ * Creates a kind='zone' subscription. Matches SupabaseApi.createZoneSubscription, including the
+ * ALREADY_EXISTS outcome for the partial unique index on (subscriber_id, zone_id) where
+ * kind='zone' -- a 409 from Postgrest.
+ */
+async function createZoneSubscription(subscriberId, zoneId, confidenceFilter) {
+  const { error } = await supabaseClient.from("subscriptions").insert({
+    subscriber_id: subscriberId,
+    kind: "zone",
+    confidence_filter: confidenceFilter,
+    zone_id: zoneId
+  });
+  if (error) {
+    if (error.code === "23505" || error.status === 409) return "ALREADY_EXISTS";
+    console.error("SUBSCRIPTION_CREATE_ERROR", error);
+    return "ERROR";
+  }
+  return "SUCCESS";
+}
+
+/** Matches SupabaseApi.createPointSubscription. expiresAtEpochMs null = permanent. */
+async function createPointSubscription(subscriberId, lat, lng, radiusMeters, confidenceFilter, label, expiresAtEpochMs) {
+  const { error } = await supabaseClient.from("subscriptions").insert({
+    subscriber_id: subscriberId,
+    kind: "point_radius",
+    confidence_filter: confidenceFilter,
+    label,
+    point: ewktPoint(lat, lng),
+    radius_meters: radiusMeters,
+    expires_at: expiresAtEpochMs != null ? new Date(expiresAtEpochMs).toISOString() : null
+  });
+  if (error) {
+    console.error("SUBSCRIPTION_CREATE_ERROR", error);
+    return false;
+  }
+  return true;
+}
+
+/** Matches SupabaseApi.createPolygonSubscription. vertices: array of [lat, lng], not pre-closed. */
+async function createPolygonSubscription(subscriberId, vertices, confidenceFilter) {
+  const { error } = await supabaseClient.from("subscriptions").insert({
+    subscriber_id: subscriberId,
+    kind: "custom_polygon",
+    confidence_filter: confidenceFilter,
+    custom_polygon: ewktPolygon(vertices)
+  });
+  if (error) {
+    console.error("SUBSCRIPTION_CREATE_ERROR", error);
+    return false;
+  }
+  return true;
+}
+
+/** Matches SupabaseApi.deleteSubscription. */
+async function deleteSubscription(id) {
+  const { error } = await supabaseClient.from("subscriptions").delete().eq("id", id);
+  if (error) {
+    console.error("SUBSCRIPTION_DELETE_ERROR", error);
+    return false;
+  }
+  return true;
+}
+
+/**
  * This browser's persistent per-device id, generated once and kept in localStorage -- mirrors
  * AppPreferences.getOrCreateSubscriberId() on the native side. Write-only from this app's own
  * perspective too: sent at insert so the server's BEFORE INSERT trigger can compute
@@ -163,4 +385,64 @@ function randomUuidV4Fallback() {
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+/**
+ * Fetches published articles of one content type (news or research paper), newest first --
+ * matches SupabaseApi.getArticles exactly. Unapproved (pending_review) submissions are excluded
+ * by RLS server-side, not filtered here -- this only ever sees what's actually public.
+ */
+async function getArticles(contentType) {
+  const { data, error } = await supabaseClient
+    .from("articles")
+    .select("id, title, summary, source_url, content_type, status")
+    .eq("content_type", contentType)
+    .eq("status", "published")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("ARTICLES_FETCH_ERROR", error);
+    return [];
+  }
+  return data ?? [];
+}
+
+/**
+ * Submits a user-suggested article/paper. Always lands as pending_review (the RLS insert policy
+ * enforces this server-side too, via a WITH CHECK, not just relying on the column default) --
+ * matches SupabaseApi.submitArticle exactly. No moderation UI yet, so approval is a manual
+ * status edit in the Supabase dashboard, same as native.
+ */
+async function submitArticle(title, sourceUrl, summary, submittedBy, contentType) {
+  const { error } = await supabaseClient.from("articles").insert({
+    title,
+    summary,
+    source_url: sourceUrl,
+    submitted_by: submittedBy,
+    content_type: contentType
+  });
+
+  if (error) {
+    console.error("ARTICLE_SUBMIT_ERROR", error);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Real-coastline-curve check for a point the client's own well-sourced-zone/sparse-point
+ * fallbacks (geofence.js's isWithinGeofenceBuffer) couldn't resolve -- matches SupabaseApi.
+ * isPointWithinCoastlineChannel exactly. Returns null both when the RPC has no coastline_traces
+ * coverage near this point and on any network/decode failure -- callers must treat null as "no
+ * additional evidence either way," not a rejection. Unlike the Kotlin client (which has to
+ * parse the raw response body to avoid a non-null generic constraint), supabase-js just hands
+ * back the true/false/null value directly.
+ */
+async function isPointWithinCoastlineChannel(lat, lng) {
+  const { data, error } = await supabaseClient.rpc("is_point_within_coastline_channel", { p_lat: lat, p_lng: lng });
+  if (error) {
+    console.error("COASTLINE_CHANNEL_CHECK_ERROR", error);
+    return null;
+  }
+  return data;
 }

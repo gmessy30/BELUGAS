@@ -11,6 +11,7 @@
 // that needs a clustering library (e.g. Leaflet.markercluster) this MVP doesn't pull in; plain
 // overlapping dots are shown instead, noted as a known gap rather than forced.
 let mapInstance = null;
+let mapShadingLayer = null;
 let mapMarkersLayer = null;
 let lastCombinedSightings = [];
 let mapVerifiedOnly = false;
@@ -25,7 +26,13 @@ function initMap() {
     maxZoom: 19
   }).addTo(mapInstance);
 
+  // Shading added before the markers layer so it always paints underneath sighting pins,
+  // matching SightingsMapScreen's own draw order (shading, then uncertainty circles, then pins).
+  mapShadingLayer = L.layerGroup().addTo(mapInstance);
   mapMarkersLayer = L.layerGroup().addTo(mapInstance);
+
+  onPresenceStateChanged(drawWatchedZoneShading);
+  drawWatchedZoneShading();
 
   const toggleBtn = document.getElementById("map-verified-toggle-btn");
   toggleBtn.addEventListener("click", () => {
@@ -45,6 +52,43 @@ function updateMapVerifiedToggleUi() {
 function renderSightingsOnMap(sightings) {
   lastCombinedSightings = sightings;
   drawMapMarkers();
+}
+
+/**
+ * River/zone presence shading -- ports SightingsMapScreen's own FillLayer/LineLayer loop
+ * exactly, no gating of any kind (every viewer sees every server-flagged watched zone,
+ * regardless of subscriptions or location -- confirmed against App.kt/SightingsMapScreen.kt's
+ * own comments before porting this). For "kenai" specifically, status is kenaiBelugaStatus (the
+ * already-escalated value shared with the banner); every other zone uses
+ * computeBelugaPresenceStatus's flat-decay result DIRECTLY -- deliberately NOT run through
+ * effectivePresenceStatus's staleness escalation, unlike the banner's own non-Kenai handling.
+ * That asymmetry is real in the native source (SightingsMapScreen.kt never calls
+ * effectivePresenceStatus at all), not an oversight to "fix" here.
+ */
+function drawWatchedZoneShading() {
+  if (!mapShadingLayer) return;
+  mapShadingLayer.clearLayers();
+
+  presenceState.watchedZoneShadingAreas.forEach((zoneShading) => {
+    let zoneStatus;
+    if (zoneShading.zone_slug === "kenai") {
+      zoneStatus = presenceState.kenaiBelugaStatus;
+    } else if (!presenceState.hasEverFetchedWatchedZoneStatuses) {
+      zoneStatus = PRESENCE_UNKNOWN;
+    } else {
+      const statusRow = presenceState.watchedZoneStatuses.find((s) => s.zone_id === zoneShading.zone_id);
+      zoneStatus = computeBelugaPresenceStatus(statusRow, Date.now());
+    }
+
+    // UNKNOWN isn't drawn in a placeholder color -- it isn't drawn at all, same as native.
+    if (zoneStatus === PRESENCE_UNKNOWN) return;
+
+    const zoneColor = colorForBelugaPresenceStatus(zoneStatus);
+    L.geoJSON(
+      { type: "Feature", properties: {}, geometry: zoneShading.shading_area },
+      { style: { fillColor: zoneColor, fillOpacity: 0.35, color: zoneColor, weight: 3, opacity: 0.7 } }
+    ).addTo(mapShadingLayer);
+  });
 }
 
 // Native's own dot color (Color.Yellow), not a generic map-pin yellow -- kept as a named

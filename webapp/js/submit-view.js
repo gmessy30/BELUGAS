@@ -1,35 +1,59 @@
-// Submit tab: camera capture (getUserMedia) + GPS (Geolocation API) + photo upload + sightings
-// insert, matching the native app's PIN-style manual logging flow (ManualLoggingScreen.kt):
-// the confirmed point IS the whale position, no heading/distance projection, so
-// uncertainty_radius_meters/uncertainty_bucket are left null, same as every PIN-sourced record
-// there. position_source is 'PIN' for the same reason -- there's no projection math involved,
-// which is the actual distinction PIN/PROJECTED/FALLBACK encodes (see PositionSource in
-// shared/src/commonMain/kotlin/com/cookinlet/belugas/SightingRecord.kt).
+// Report Sighting tab: ports the native app's actual two-screen flow -- CaptureScreen.kt (live
+// camera + reticle, no location/count UI at all) then LoggingScreen.kt (the captured photo full-
+// bleed, "← DONE"/"RETAKE ↻" top row, controls stacked at the bottom) -- as two steps within this
+// one tab, rather than a single scrolling form. Also ports ManualLoggingScreen.kt's "Report
+// Manually" path (see openManualReportFlow below): the same review-step UI, entered directly
+// from the menu with no camera/photo at all -- native's own separate, always-available manual-
+// entry screen, not something reachable only when the camera happens to work.
+//
+// NOT ported from LoggingScreen: the compass-heading + distance-bucket picker and the AWAY/LEFT/
+// RIGHT direction arrows, and the position math tied to them (PROJECTED/FALLBACK whale-position
+// estimation). That whole pipeline exists to estimate the whale's position FROM the observer's
+// compass bearing + a distance guess, which needs a working magnetometer -- inconsistent/gated-
+// behind-extra-permission-prompts across mobile browsers (iOS Safari in particular) and a lot of
+// native-only machinery to reproduce for a fallback capability. Both this app's paths use the
+// GPS+draggable-pin approach instead (PIN semantics, matching ManualLoggingScreen's own position
+// handling exactly, including its geofence check -- see submitSighting below) -- same eventual
+// data shape, just a different, browser-feasible way of arriving at a whale_lat/whale_lng.
 
 let cameraStream = null;
 let capturedPhotoBlob = null;
+let reviewPhotoObjectUrl = null;
 let confirmedLat = null;
 let confirmedLng = null;
 let locationMarker = null;
 let locationMapInstance = null;
+let isManualReportMode = false;
 
 const counts = { whites: 0, greys: 0, calves: 0, unknown: 0 };
 
 function initSubmitView() {
   document.getElementById("capture-btn").addEventListener("click", capturePhoto);
+  document.getElementById("skip-camera-btn").addEventListener("click", () => goToReviewStep());
   document.getElementById("retake-btn").addEventListener("click", retakePhoto);
   document.getElementById("locate-btn").addEventListener("click", locateMe);
-  document.getElementById("submit-sighting-btn").addEventListener("click", submitSighting);
+  document.getElementById("done-btn").addEventListener("click", submitSighting);
 
-  document.querySelectorAll(".count-stepper").forEach((stepper) => {
-    const key = stepper.dataset.count;
-    const valueEl = stepper.querySelector(".count-value");
-    stepper.querySelector(".count-minus").addEventListener("click", () => {
-      counts[key] = Math.max(0, counts[key] - 1);
+  document.getElementById("outer-geofence-reject-ok-btn").addEventListener("click", () => {
+    document.getElementById("outer-geofence-reject-modal").hidden = true;
+  });
+  document.getElementById("geofence-warning-cancel-btn").addEventListener("click", () => {
+    document.getElementById("geofence-warning-modal").hidden = true;
+  });
+  document.getElementById("geofence-warning-save-btn").addEventListener("click", () => {
+    document.getElementById("geofence-warning-modal").hidden = true;
+    finishSubmit(false); // SAVE ANYWAY -- not geofence-verified
+  });
+
+  document.querySelectorAll(".whale-count-col").forEach((col) => {
+    const key = col.dataset.count;
+    const valueEl = col.querySelector(".whale-count-value");
+    col.querySelector(".whale-count-inc").addEventListener("click", () => {
+      counts[key] = counts[key] + 1;
       valueEl.textContent = counts[key];
     });
-    stepper.querySelector(".count-plus").addEventListener("click", () => {
-      counts[key] = counts[key] + 1;
+    col.querySelector(".whale-count-dec").addEventListener("click", () => {
+      counts[key] = Math.max(0, counts[key] - 1);
       valueEl.textContent = counts[key];
     });
   });
@@ -37,26 +61,52 @@ function initSubmitView() {
   startCamera();
 }
 
+// Called from the main menu's "Report Manually" item -- matches ManualLoggingScreen being its
+// own separate, always-reachable screen natively (never gated behind the camera actually
+// working). Skips the camera step entirely and goes straight to the review step's GPS+pin+count
+// UI, auto-fetching a GPS fix immediately the same way ManualLoggingScreen's own
+// LaunchedEffect(Unit) { recenterOnGps() } does on entry (the camera-path review step is
+// unchanged and still requires an explicit "Get My Location" tap, per keeping that path as-is).
+function openManualReportFlow() {
+  switchTab("submit");
+  isManualReportMode = true;
+  capturedPhotoBlob = null;
+  stopCamera();
+  document.getElementById("camera-step").hidden = true;
+  document.getElementById("review-step").hidden = false;
+  updateReviewStepModeUi();
+  locateMe();
+}
+
+// "← DONE"/"RETAKE ↻" (camera path) vs. ManualLoggingScreen's own "← SUBMIT" with no retake
+// affordance at all (nothing to retake -- there was never a photo).
+function updateReviewStepModeUi() {
+  document.getElementById("review-photo").hidden = true;
+  document.getElementById("done-btn").textContent = isManualReportMode ? "← SUBMIT" : "← DONE";
+  document.getElementById("retake-btn").hidden = isManualReportMode;
+}
+
 async function startCamera() {
   const video = document.getElementById("camera-preview");
-  setSubmitStatus("");
+  const cameraStatus = document.getElementById("camera-status");
+  const skipBtn = document.getElementById("skip-camera-btn");
+  cameraStatus.hidden = true;
+  skipBtn.hidden = true;
+
   try {
     cameraStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: "environment" } },
       audio: false
     });
     video.srcObject = cameraStream;
-    video.hidden = false;
-    document.getElementById("captured-photo").hidden = true;
-    document.getElementById("capture-btn").hidden = false;
-    document.getElementById("retake-btn").hidden = true;
   } catch (e) {
+    // Native always has a working camera to trigger LoggingScreen from -- a browser can't
+    // guarantee that, so this is the one deliberate departure from native's flow: a way to
+    // reach the location/count step without a photo at all, rather than a dead end.
     console.error("CAMERA_ERROR", e);
-    setSubmitStatus(
-      "Camera unavailable (" + e.name + "). You can still submit without a photo if your browser allows it, " +
-      "or check camera permissions in Settings.",
-      true
-    );
+    cameraStatus.hidden = false;
+    cameraStatus.textContent = `Camera unavailable (${e.name}). You can continue without a photo, or check camera permissions.`;
+    skipBtn.hidden = false;
   }
 }
 
@@ -67,10 +117,19 @@ function stopCamera() {
   }
 }
 
+function setCaptureLabel(text) {
+  document.getElementById("capture-shutter-label").innerHTML = text.split("").join("<br>");
+}
+
 function capturePhoto() {
   const video = document.getElementById("camera-preview");
   const canvas = document.getElementById("capture-canvas");
   if (!video.videoWidth) return;
+
+  // Matches CaptureScreen's own transient "SAVING..." label swap while the platform camera API
+  // writes the photo out -- this app's capture is just a canvas draw, effectively instant, but
+  // the same brief state change is kept for the same interaction feel.
+  setCaptureLabel("SAVING...");
 
   // Cap the longest edge so a 12MP phone photo doesn't become a multi-MB upload over cellular.
   const MAX_EDGE = 1600;
@@ -82,22 +141,58 @@ function capturePhoto() {
   canvas.toBlob(
     (blob) => {
       capturedPhotoBlob = blob;
-      const img = document.getElementById("captured-photo");
-      img.src = URL.createObjectURL(blob);
-      img.hidden = false;
-      video.hidden = true;
-      document.getElementById("capture-btn").hidden = true;
-      document.getElementById("retake-btn").hidden = false;
-      stopCamera();
+      setCaptureLabel("CAPTURE");
+      goToReviewStep();
     },
     "image/jpeg",
     0.85
   );
 }
 
+function goToReviewStep() {
+  stopCamera();
+  isManualReportMode = false;
+
+  const photoEl = document.getElementById("review-photo");
+  if (reviewPhotoObjectUrl) {
+    URL.revokeObjectURL(reviewPhotoObjectUrl);
+    reviewPhotoObjectUrl = null;
+  }
+  if (capturedPhotoBlob) {
+    reviewPhotoObjectUrl = URL.createObjectURL(capturedPhotoBlob);
+    photoEl.src = reviewPhotoObjectUrl;
+    photoEl.hidden = false;
+  } else {
+    photoEl.hidden = true; // no photo (camera unavailable, user chose to skip) -- plain black background
+  }
+  document.getElementById("done-btn").textContent = "← DONE";
+  document.getElementById("retake-btn").hidden = false;
+
+  document.getElementById("camera-step").hidden = true;
+  document.getElementById("review-step").hidden = false;
+}
+
+// Matches both LoggingScreen's and ManualLoggingScreen's onDoneClick -- both return to
+// Screen.CAPTURE, not back to the menu, ready for the next report. Also the shared reset path
+// out of manual mode: whichever path got here, the next visit to this tab starts fresh on the
+// camera step.
+function goToCameraStep() {
+  if (reviewPhotoObjectUrl) {
+    URL.revokeObjectURL(reviewPhotoObjectUrl);
+    reviewPhotoObjectUrl = null;
+  }
+  isManualReportMode = false;
+  document.getElementById("review-step").hidden = true;
+  document.getElementById("camera-step").hidden = false;
+  startCamera();
+}
+
+// Matches LoggingScreen's onRetakeClick -- discards the captured photo entirely and returns to
+// the camera step (native also deletes the saved photo file at this point; here that's just
+// dropping the in-memory blob, nothing was ever written to disk).
 function retakePhoto() {
   capturedPhotoBlob = null;
-  startCamera();
+  goToCameraStep();
 }
 
 function locateMe() {
@@ -166,8 +261,10 @@ function totalCount() {
 }
 
 // photo_url is filled in later (by attemptUploadAndInsert in offline-queue.js) once the photo
-// upload itself succeeds -- not known yet at record-build time.
-function buildSightingRecord() {
+// upload itself succeeds -- not known yet at record-build time. isGeofenceVerified matches
+// SightingRecord.isGeofenceVerified: whether the geofence check below actually passed, as
+// opposed to the user overriding a rejected location via SAVE ANYWAY.
+function buildSightingRecord(isGeofenceVerified) {
   return {
     whale_lat: confirmedLat,
     whale_lng: confirmedLng,
@@ -178,11 +275,19 @@ function buildSightingRecord() {
     count_unknown: counts.unknown,
     observed_at_epoch_ms: Date.now(),
     observer_type: "SELF",
+    is_geofence_verified: isGeofenceVerified,
     photo_url: null,
     subscriber_id: getOrCreateSubscriberId()
   };
 }
 
+// Bound to the review step's "← DONE"/"← SUBMIT" button -- matches LoggingScreen's/
+// ManualLoggingScreen's own onClick exactly: that button IS the save/submit trigger natively,
+// not a separate button further down the screen. Runs the same geofence check
+// ManualLoggingScreen uses (both this app's paths are PIN semantics): a coarse outer-bound hard
+// reject with no override, then a real coastline/river-data buffer check that can be overridden
+// via SAVE ANYWAY, falling back to the online coastline-channel RPC when the offline check has
+// no data either way for this point.
 async function submitSighting() {
   if (totalCount() === 0) {
     setSubmitStatus("Enter at least one whale count before submitting.", true);
@@ -193,12 +298,53 @@ async function submitSighting() {
     return;
   }
 
-  const button = document.getElementById("submit-sighting-btn");
+  if (!isWithinOuterGeofence(confirmedLat, confirmedLng)) {
+    // No SAVE ANYWAY here, deliberately -- matches native exactly: this location isn't remotely
+    // Cook Inlet, not a borderline call.
+    document.getElementById("outer-geofence-reject-modal").hidden = false;
+    return;
+  }
+
+  const button = document.getElementById("done-btn");
+  button.disabled = true;
+  setSubmitStatus("Checking location…");
+
+  const verified = isWhalePositionVerified(confirmedLat, confirmedLng, MANUAL_PIN_GEOFENCE_CHECK_RADIUS_METERS);
+  if (verified === true) {
+    await finishSubmit(true);
+  } else if (verified === false) {
+    button.disabled = false;
+    setSubmitStatus("");
+    showGeofenceWarning();
+  } else {
+    // Only reachable once the buffer check found no well-sourced data near this point at all --
+    // the online fallback never runs, and this status never shows, on a normal (resolved) submit.
+    setSubmitStatus("Checking water data…");
+    const validByChannel = await isWithinCoastlineChannelFallback(confirmedLat, confirmedLng);
+    if (validByChannel) {
+      await finishSubmit(true);
+    } else {
+      button.disabled = false;
+      setSubmitStatus("");
+      showGeofenceWarning();
+    }
+  }
+}
+
+function showGeofenceWarning() {
+  document.getElementById("geofence-warning-text").textContent =
+    `The whale position (${confirmedLat.toFixed(4)}, ${confirmedLng.toFixed(4)}) falls outside ` +
+    "the primary observation area for Cook Inlet. Do you still want to log this sighting?";
+  document.getElementById("geofence-warning-modal").hidden = false;
+}
+
+async function finishSubmit(isGeofenceVerified) {
+  const button = document.getElementById("done-btn");
   button.disabled = true;
   setSubmitStatus("Submitting…");
 
   try {
-    const record = buildSightingRecord();
+    const record = buildSightingRecord(isGeofenceVerified);
     const result = await submitOrQueueSighting(record, capturedPhotoBlob);
 
     if (result.ok) {
@@ -216,13 +362,15 @@ async function submitSighting() {
   }
 }
 
+// Matches LoggingScreen's onDoneClick -- returns to the camera step (native: Screen.CAPTURE),
+// ready for the next report.
 function resetSubmitForm() {
   capturedPhotoBlob = null;
   confirmedLat = null;
   confirmedLng = null;
   Object.keys(counts).forEach((key) => (counts[key] = 0));
-  document.querySelectorAll(".count-value").forEach((el) => (el.textContent = "0"));
+  document.querySelectorAll(".whale-count-value").forEach((el) => (el.textContent = "0"));
   document.getElementById("location-status").textContent = "";
   document.getElementById("location-map").hidden = true;
-  startCamera();
+  goToCameraStep();
 }

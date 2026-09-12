@@ -6,7 +6,7 @@
 // the only thing that makes the activate handler below actually replace the old cached shell.
 // Without a version bump, a returning visitor's already-installed service worker sees byte-
 // identical install/activate logic and never even attempts an update.
-const CACHE_NAME = "belugas-shell-v5";
+const CACHE_NAME = "belugas-shell-v10";
 
 // Relative to this file's own location (webapp/), so this works whether the app is served from
 // a domain root or a subpath like /BELUGAS/webapp/.
@@ -17,8 +17,16 @@ const APP_SHELL = [
   "./css/style.css",
   "./js/config.js",
   "./js/db.js",
+  "./js/geofence.js",
+  "./js/presence.js",
+  "./js/presence-state.js",
   "./js/offline-queue.js",
   "./js/tier-code.js",
+  "./js/about.js",
+  "./js/resources.js",
+  "./js/news-feed.js",
+  "./js/subscriptions.js",
+  "./js/presence-banner.js",
   "./js/main-menu.js",
   "./js/map-view.js",
   "./js/list-view.js",
@@ -28,7 +36,14 @@ const APP_SHELL = [
   "./icons/icon-512.png",
   "./icons/apple-touch-icon.png",
   "./img/beluga_sketch.png",
-  "./img/beluga_background.png"
+  "./img/beluga_background.png",
+  "./img/beluga_capture_button.png",
+  "./img/Unknownbreaching.png",
+  "./img/Greybreaching.png",
+  "./img/Calfbreaching.png",
+  "./img/Whitebreaching.png",
+  "./img/beluga_about_sketches.jpg",
+  "./img/breaching_belugas_sketches.png"
 ];
 
 self.addEventListener("install", (event) => {
