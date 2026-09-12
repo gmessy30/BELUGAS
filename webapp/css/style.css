@@ -708,6 +708,7 @@ main {
 #point-picker-overlay .chip-toggle,
 #polygon-picker-overlay .chip-toggle,
 #review-step .chip-toggle,
+#manual-log-step .chip-toggle,
 #playback-panel .chip-toggle,
 #main-menu .chip-toggle {
   background: rgba(255, 255, 255, 0.1);
@@ -720,6 +721,7 @@ main {
 #point-picker-overlay .chip-toggle.active,
 #polygon-picker-overlay .chip-toggle.active,
 #review-step .chip-toggle.active,
+#manual-log-step .chip-toggle.active,
 #playback-panel .chip-toggle.active,
 #main-menu .chip-toggle.active {
   background: var(--brand-yellow);
@@ -1135,16 +1137,28 @@ button.camera-status.secondary {
 
 /* WhaleCountControls.kt has no card/box behind it at all -- "each whale image IS the button...
    no card/box around any of it" (see that rule's own comment below). The translucent backdrop
-   above is right for #manual-log-step (a busy map behind it, not a photo -- SELF/OTHER/date-time/
-   direction-rose genuinely need it for contrast) but was wrong here: a flat grey panel behind the
-   whale counters that native never draws. Removed for the camera path specifically so the count
-   controls sit directly on the photo, same as native -- heading-distance-btn keeps its own pill
-   background regardless (button.secondary, independent of this panel), the count glyphs already
-   have their own black-outlined-white treatment (.outlined-text) for contrast against ANY photo,
-   and #submit-status gets a text-shadow of its own (see that rule) rather than reinstating a
-   panel just for its sake. */
+   above was a flat grey panel behind the whale counters that native never draws, on EITHER
+   screen -- removed here for the camera path so the count controls sit directly on the photo,
+   same as native (and again below for #manual-log-step, directly on the map). heading-distance-
+   btn/the SELF-OTHER/SET DATE-TIME chips and buttons all keep their own pill/chip backgrounds
+   regardless (independent of this panel's own background), the count glyphs already have their
+   own black-outlined-white treatment (.outlined-text) for contrast against ANY backdrop, and
+   #submit-status/#manual-submit-status get a text-shadow of their own (see that rule) rather than
+   reinstating a panel just for their sake. */
 #review-step .review-bottom-panel {
   background: none;
+}
+
+/* No grey backing here either (same reasoning as #review-step's own override above -- native's
+   bottom Column has no card/box in ManualLoggingScreen any more than LoggingScreen's does), and
+   no scrolling: now that BearingDial lives on the map itself rather than in this panel, the
+   remaining content (SELF/OTHER + a compact SET DATE/TIME button + whale count) is exactly as
+   compact as native's own bottom Column, so it stays fully visible and reachable at once instead
+   of needing to scroll over itself. */
+#manual-log-step .review-bottom-panel {
+  background: none;
+  max-height: none;
+  overflow-y: visible;
 }
 
 .step-label {
@@ -1179,11 +1193,18 @@ button.camera-status.secondary {
    ResizeObserver, mirroring ManualLoggingScreen's own bottomPanelHeightPx/onGloballyPositioned
    pattern for the exact same problem), so this always reserves exactly the space the panel is
    actually using, on any viewport, rather than a guess that can be wrong in either direction. */
+/* DIAGNOSED (item 26): z-index was 4 here vs. .review-bottom-panel's 5 -- an ordering mistake,
+   not the padding reservation itself. Whenever the reservation was even slightly short (the
+   ResizeObserver hadn't caught up yet, or any other transient mismatch), the panel -- being
+   numerically higher, and with no pointer-events:none of its own -- painted OVER the arrows in
+   the overlap AND intercepted taps meant for them. z-index:6 makes this permanent and
+   unconditional: the arrows are always on top and always clickable regardless of whether the
+   padding reservation is exactly right, not just usually right. */
 .direction-arrows-overlay {
   position: absolute;
   inset: 0;
   padding: 60px 0 var(--review-bottom-panel-height, 140px);
-  z-index: 4;
+  z-index: 6;
   pointer-events: none;
 }
 
@@ -1297,45 +1318,57 @@ button.camera-status.secondary {
   isolation: isolate;
 }
 
-/* BearingDial's ring sits at screen-center in native; this app's map-pans-under-a-fixed-point
-   mechanism (a plain Leaflet map, panned by the user, rather than native's MapLibre camera +
-   drag-anywhere BearingDial) needs the same fixed visual anchor -- a simple crosshair here,
-   the compass-rose below standing in for BearingDial's fused drag-to-set-bearing behavior
-   (see the HTML's own comment on that simplification). pointer-events:none so it never
-   intercepts the map's own pan/zoom gestures underneath it. */
-.manual-center-crosshair {
+/* BearingDial.kt ported directly -- fixed at screen-center over the map (you pan the map under
+   it; there is no draggable pin), fusing the exact-position crosshair with the travel-direction
+   control in one element, matching native's own fused control instead of a separate chip-grid
+   substitute. Sized a little larger than the SVG's own ring so the pin (which extends above the
+   ring) and a comfortable drag-hit-area both fit without clipping. */
+.bearing-dial-wrap {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 36px;
-  height: 36px;
+  /* Higher than .review-bottom-panel's z-index:5 -- on a short viewport the panel and the dial
+     can plausibly reach each other; per item 26's own lesson (never rely on spatial reservation
+     ALONE to keep an interactive control from being covered/made unclickable), the dial wins
+     unconditionally regardless. */
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
   pointer-events: none;
-  z-index: 4;
 }
 
-.manual-center-crosshair::before,
-.manual-center-crosshair::after {
-  content: "";
+.bearing-dial {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.bearing-dial svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Fixed at the ring's own north point -- decorative only, never rotates with the dragged
+   bearing (see BearingDial's own doc comment on why: it's what used to be the standalone map pin,
+   kept here purely as a visual anchor). */
+.bearing-dial-pin {
   position: absolute;
-  background: var(--brand-yellow);
-  border: 1px solid #000000;
-}
-
-.manual-center-crosshair::before {
-  top: 50%;
-  left: 0;
-  right: 0;
-  height: 2px;
-  transform: translateY(-50%);
-}
-
-.manual-center-crosshair::after {
-  left: 50%;
   top: 0;
-  bottom: 0;
-  width: 2px;
-  transform: translateX(-50%);
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.bearing-dial-unknown-btn {
+  pointer-events: auto;
+  font-size: 0.75rem;
+  padding: 6px 14px;
 }
 
 .manual-menu-btn {
@@ -1344,45 +1377,34 @@ button.camera-status.secondary {
 }
 
 /* Directly under the top bar, not floating at the bottom edge -- .review-bottom-panel is tall
-   enough (SELF/OTHER + date/time + direction picker + whale count) to fully cover anything
-   anchored to the bottom of the screen instead, in either orientation. */
+   enough (SELF/OTHER + date/time + whale count) to fully cover anything anchored to the bottom
+   of the screen instead, in either orientation. Only RECENTER now -- "Get My Location" was
+   removed entirely (see the HTML's own comment on why). */
 .manual-locate-row {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 64px);
-  left: 16px;
   right: 16px;
   z-index: 5;
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
 }
 
-.manual-datetime-input {
+.manual-datetime-btn {
   display: block;
-  width: 100%;
-  margin-top: 6px;
-  padding: 8px 10px;
-  border-radius: 8px;
+  width: fit-content;
+  margin: 0 auto 4px;
+}
+
+/* Never shown itself -- purely a vehicle for the platform's own datetime picker UI, triggered by
+   #manual-datetime-btn's click handler calling this element's showPicker(). Kept in the DOM
+   (not display:none) since some browsers refuse showPicker()/focus() on a non-rendered element;
+   collapsed to nothing visually instead. */
+.manual-datetime-input-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
   border: none;
-  font-size: 0.9rem;
-}
-
-/* 3x3 grid stands in for a compass rose: the 8 outer tiles are the compass points (NW/N/NE on
-   top row through SW/S/SE on bottom), center tile is the explicit "unknown direction" option --
-   see the HTML comment above this markup for why an absolute picker replaces BearingDial's
-   continuous drag here. */
-.direction-rose {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  max-width: 240px;
-  margin: 6px auto 0;
-}
-
-.direction-chip {
-  border-radius: 8px;
-  padding: 10px 4px;
-  text-align: center;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Landscape: the Report tab no longer forces/locks this orientation (see orientation-lock.js's
@@ -1417,11 +1439,22 @@ button.camera-status.secondary {
   min-width: 0;
 }
 
+/* DIAGNOSED (item 26b): width:100% stretched this button's actual clickable hit area across the
+   WHOLE column (roughly a quarter of the panel's width) at a 44px height, even though the visible
+   "+"/"-" glyph is small and centered -- on the leftmost/rightmost whale-count columns, that
+   full-width invisible hit area geometrically overlapped the LEFT/RIGHT direction arrows
+   positioned at the screen's edges, capturing taps meant for them regardless of the (separately
+   fixed) z-index ordering between .direction-arrows-overlay and .review-bottom-panel. A fixed
+   44x44 box (still a full accessible touch target) centered in the column via margin:0 auto
+   matches the actual drawn glyph's footprint instead of the whole column's, so nothing invisible
+   extends into the arrow zone at all -- not relying on stacking order alone to keep the two apart. */
 .whale-count-inc, .whale-count-dec {
   background: none;
   border: none;
-  width: 100%;
-  min-height: 44px;
+  display: block;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto;
   font-size: 22px;
   line-height: 1;
 }
@@ -1502,20 +1535,19 @@ button.secondary {
   margin-top: 8px;
 }
 
-/* #location-status/#submit-status/#camera-status sit over dark backgrounds (manual-log-step's
-   translucent panel, or the black camera view) -- #submit-status specifically now has NO backing
-   at all behind it (.review-bottom-panel's own background was removed for #review-step, see that
-   rule's own comment) and sits directly over a real photo of unpredictable brightness, so a text-
-   shadow is added on top of the light-on-dark color itself -- belt and suspenders against a
-   bright sky/water photo where near-white text alone could still wash out. The muted/error tones
-   these override (tuned for a light card, e.g. the tier-code modal) would be nearly illegible on
-   any of these. */
-#location-status.status-info, #submit-status.status-info {
+/* #submit-status/#manual-submit-status/#camera-status all sit with NO backing behind them now
+   (.review-bottom-panel's own background was removed for both #review-step and #manual-log-step,
+   see those rules' own comments) -- directly over a real photo or a live map, both of
+   unpredictable brightness, so a text-shadow is added on top of the light-on-dark color itself,
+   belt and suspenders against a bright sky/water photo or map tile where near-white text alone
+   could still wash out. The muted/error tones these override (tuned for a light card, e.g. the
+   tier-code modal) would be nearly illegible on any of these. */
+#submit-status.status-info, #manual-submit-status.status-info {
   color: rgba(255, 255, 255, 0.85);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
 
-#location-status.status-error, #submit-status.status-error, #camera-status.status-error {
+#submit-status.status-error, #manual-submit-status.status-error, #camera-status.status-error {
   color: #ffdada;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }

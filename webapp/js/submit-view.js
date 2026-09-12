@@ -204,6 +204,7 @@ function goToReviewStep() {
 
   document.getElementById("camera-step").hidden = true;
   document.getElementById("review-step").hidden = false;
+  measureReviewBottomPanelHeightNow();
 
   cacheObserverAltitudeForHeadingDialog();
 
@@ -225,7 +226,18 @@ function goToCameraStep() {
   document.getElementById("manual-log-step").hidden = true;
   document.getElementById("camera-step").hidden = false;
   resetCameraPositionControls();
+  resetManualPositionControls();
   startCamera();
+}
+
+// Resets manual-path state on ANY exit from #manual-log-step (abandoned mid-way via back
+// gesture/menu, not just a successful submit -- resetManualSubmitForm covers that path too, but
+// this covers it unconditionally here) -- matches native's own remembered state resetting fresh
+// every time ManualLoggingScreen is re-entered.
+function resetManualPositionControls() {
+  manualTravelBearingDegrees = null;
+  updateBearingDialNeedle(null);
+  setManualObserverType("SELF");
 }
 
 function retakePhoto() {
@@ -258,6 +270,23 @@ function initReviewBottomPanelHeightTracking() {
     }
   });
   observer.observe(panel);
+}
+
+// Belt-and-suspenders alongside the ResizeObserver above: a hidden-ancestor-to-visible transition
+// (exactly what happens every time goToReviewStep runs) is the one case a ResizeObserver callback
+// isn't guaranteed to fire promptly/at all for across every browser, so this explicitly re-measures
+// the instant the panel is actually laid out and visible (one rAF after unhiding, not the same
+// tick -- the browser hasn't computed its real box yet at the moment `hidden` is cleared). The
+// z-index fix on .direction-arrows-overlay (style.css) means the arrows are never truly occluded/
+// unclickable even if this were somehow stale, but there's no reason to leave the reservation
+// itself wrong when it's this cheap to get right immediately.
+function measureReviewBottomPanelHeightNow() {
+  const panel = document.querySelector("#review-step .review-bottom-panel");
+  const reviewStep = document.getElementById("review-step");
+  if (!panel || !reviewStep) return;
+  requestAnimationFrame(() => {
+    reviewStep.style.setProperty("--review-bottom-panel-height", `${Math.ceil(panel.getBoundingClientRect().height)}px`);
+  });
 }
 
 function initDirectionArrows() {
@@ -511,12 +540,11 @@ function openManualReportFlow() {
   // fixed center pin reads at SUBMIT time (wherever the user has panned to), never locked to
   // that initial fetch. This app overrides that on purpose anyway (explicitly confirmed, not an
   // oversight): manual reporting is meant to be explicitly NOT "where I am now" from the moment
-  // this screen opens, not just at submit time. The map starts at DEFAULT_MAP_CENTER instead: the
-  // existing "Get My Location" button (a web-only affordance native has no equivalent for, since
-  // panning a world map to find Cook Inlet by hand is a real usability problem on a phone screen)
-  // is still there, user-initiated only, never automatic.
+  // this screen opens, not just at submit time. The map starts at DEFAULT_MAP_CENTER instead, and
+  // there is no manual GPS button at all here any more, matching native exactly.
   initManualMapIfNeeded();
   setManualDatetimeInputToNow();
+  updateManualDatetimeButtonLabel();
 }
 
 // DatePickerDialog.kt, ported as a plain datetime-local input (the platform supplies its own
@@ -562,46 +590,124 @@ function updateManualPositionFromMapCenter() {
   manualLng = center.lng;
 }
 
-function setManualLocationStatus(message, isError = false) {
-  const el = document.getElementById("manual-location-status");
-  el.textContent = message;
-  el.className = isError ? "status-error" : "status-info";
-}
-
 function initManualPositionControls() {
-  // Web-only affordance (native has no manual GPS button at all here) -- user-initiated only,
-  // never automatic, see openManualReportFlow's own comment.
-  document.getElementById("manual-locate-btn").addEventListener("click", () => {
-    if (!navigator.geolocation) {
-      setManualLocationStatus("Geolocation isn't available in this browser.", true);
-      return;
-    }
-    setManualLocationStatus("Getting your location…");
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        manualMapInstance.setView([position.coords.latitude, position.coords.longitude], 15);
-        setManualLocationStatus("");
-      },
-      (err) => {
-        console.error("GEOLOCATION_ERROR", err);
-        setManualLocationStatus("Couldn't get your location (" + err.message + ").", true);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-  });
-
   // View reset only -- no GPS refetch, matching ManualLoggingScreen's own RECENTER exactly (this
-  // screen marks where the whales were, not the observer's own position).
+  // screen marks where the whales were, not the observer's own position). "Get My Location" was
+  // removed entirely (see the HTML's own comment) -- it implied the observer's own position is
+  // the whale's, which this screen exists specifically to not assume.
   document.getElementById("manual-recenter-btn").addEventListener("click", () => {
     manualMapInstance.setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
   });
 
-  document.querySelectorAll("#manual-log-step .direction-chip").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("#manual-log-step .direction-chip").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      manualTravelBearingDegrees = btn.dataset.bearing === "" ? null : Number(btn.dataset.bearing);
-    });
+  document.getElementById("manual-datetime-btn").addEventListener("click", openManualDatetimePicker);
+  document.getElementById("manual-datetime-input").addEventListener("change", updateManualDatetimeButtonLabel);
+
+  initBearingDial();
+}
+
+// DatePickerDialog.kt as a compact trigger rather than a full-width bar -- the hidden input
+// supplies the platform's own real picker UI via showPicker(); .click()/.focus() are the fallback
+// wherever showPicker() itself isn't supported (older Safari versions in particular).
+function openManualDatetimePicker() {
+  const input = document.getElementById("manual-datetime-input");
+  if (typeof input.showPicker === "function") {
+    try {
+      input.showPicker();
+      return;
+    } catch (e) {
+      console.warn("DATETIME_SHOW_PICKER_ERROR", e);
+    }
+  }
+  input.focus();
+  input.click();
+}
+
+function updateManualDatetimeButtonLabel() {
+  const btn = document.getElementById("manual-datetime-btn");
+  const value = document.getElementById("manual-datetime-input").value;
+  if (!value) {
+    btn.textContent = "📅 SET DATE / TIME";
+    return;
+  }
+  btn.textContent = `📅 ${new Date(value).toLocaleString()}`;
+}
+
+// --- BearingDial.kt, ported directly: continuous drag anywhere on the dial sets a LIVE angle
+// (no snapping while dragging, so the needle tracks the finger/pointer smoothly), snapping to the
+// nearest of 16 compass points (22.5deg steps) only at release -- matches
+// detectDragGestures(onDragStart/onDrag/onDragEnd) exactly, one pointer-events-based drag instead
+// of Compose's gesture detector. setPointerCapture keeps the whole drag routed to the dial even
+// if the pointer moves outside its own bounds mid-gesture. ---
+let bearingDialLiveDegrees = null;
+
+function bearingFromPointerEvent(event, dialElement) {
+  const rect = dialElement.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const dx = event.clientX - centerX;
+  const dy = event.clientY - centerY;
+  const degrees = (Math.atan2(dx, -dy) * 180) / Math.PI;
+  return (degrees + 360) % 360;
+}
+
+// Nearest of 16 compass points (22.5 degree steps) -- matches BearingDial's own
+// snapToNearest16Point exactly.
+function snapToNearest16Point(degrees) {
+  return (Math.round(degrees / 22.5) * 22.5) % 360;
+}
+
+function updateBearingDialNeedle(degrees) {
+  const needle = document.getElementById("bearing-dial-needle");
+  if (degrees == null) {
+    needle.hidden = true;
+    return;
+  }
+  needle.hidden = false;
+  const cx = 75, cy = 85, radius = 58; // must match the SVG geometry in index.html
+  const radians = (degrees * Math.PI) / 180;
+  const endX = cx + Math.sin(radians) * radius;
+  const endY = cy - Math.cos(radians) * radius;
+  ["bearing-dial-needle-outline", "bearing-dial-needle-line"].forEach((id) => {
+    const line = document.getElementById(id);
+    line.setAttribute("x2", endX);
+    line.setAttribute("y2", endY);
+  });
+}
+
+function initBearingDial() {
+  const dial = document.getElementById("bearing-dial");
+
+  dial.addEventListener("pointerdown", (event) => {
+    dial.setPointerCapture(event.pointerId);
+    bearingDialLiveDegrees = bearingFromPointerEvent(event, dial);
+    updateBearingDialNeedle(bearingDialLiveDegrees);
+    event.preventDefault();
+  });
+
+  dial.addEventListener("pointermove", (event) => {
+    if (bearingDialLiveDegrees == null) return;
+    bearingDialLiveDegrees = bearingFromPointerEvent(event, dial);
+    updateBearingDialNeedle(bearingDialLiveDegrees);
+  });
+
+  const commitDrag = () => {
+    if (bearingDialLiveDegrees == null) return;
+    manualTravelBearingDegrees = snapToNearest16Point(bearingDialLiveDegrees);
+    bearingDialLiveDegrees = null;
+    updateBearingDialNeedle(manualTravelBearingDegrees);
+  };
+  dial.addEventListener("pointerup", commitDrag);
+  dial.addEventListener("pointercancel", () => {
+    bearingDialLiveDegrees = null;
+    updateBearingDialNeedle(manualTravelBearingDegrees); // revert to whatever was last committed
+  });
+
+  // Native's own drag gesture has no separate "clear" input at all (only ever reachable by never
+  // touching the dial) -- this lets a user undo an accidental drag back to "not recorded" without
+  // it being a native-tracked feature, see the HTML's own comment.
+  document.getElementById("bearing-dial-unknown-btn").addEventListener("click", () => {
+    manualTravelBearingDegrees = null;
+    updateBearingDialNeedle(null);
   });
 }
 
@@ -720,16 +826,12 @@ async function finishManualSubmit(lat, lng, isGeofenceVerified) {
 
 function resetManualSubmitForm() {
   resetWhaleCountUi("#manual-log-step", manualCounts);
-  manualTravelBearingDegrees = null;
-  document.querySelectorAll("#manual-log-step .direction-chip").forEach((b) => {
-    b.classList.toggle("active", b.classList.contains("direction-chip-unknown"));
-  });
-  setManualObserverType("SELF");
-  setManualLocationStatus("");
   setManualDatetimeInputToNow();
+  updateManualDatetimeButtonLabel();
   // No nested nav-stack layer to pop here -- manual mode's manual-log-step IS the "manual-report"
   // layer's own resting content (see openManualReportFlow's own push), so returning to
-  // camera-step is just a visual change, not a back-stack pop.
+  // camera-step is just a visual change, not a back-stack pop. goToCameraStep itself resets the
+  // bearing dial/observer-type state (resetManualPositionControls), so this doesn't duplicate it.
   goToCameraStep();
 }
 
