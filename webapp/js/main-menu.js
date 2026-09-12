@@ -4,7 +4,7 @@
 // full-screen column of bold uppercase white text items over the teal/art backdrop, not a
 // persistent bottom bar).
 //
-// Item set/order/wording here mirrors native's own menu order exactly: Report Sighting (CAMERA),
+// Item set/order/wording here mirrors native's own menu order exactly: Camera (CAMERA),
 // Report Manually (REPORT MANUALLY -- opens ManualLoggingScreen.kt's port directly, see
 // openManualReportFlow in submit-view.js), Sightings List, Sightings Map, News Feed, Resources,
 // About, Alerts, in that same relative order. EXPORT DATA has no web equivalent yet, so it's

@@ -1,4 +1,5 @@
-// Report Sighting tab: ports the native app's actual two-screen flow -- CaptureScreen.kt (live
+// Camera tab (native's own menu label -- App.kt's MainMenuDrawer): ports the native app's actual
+// two-screen flow -- CaptureScreen.kt (live
 // camera + reticle, no location/count UI at all) then LoggingScreen.kt (the captured photo full-
 // bleed, "← DONE"/"RETAKE ↻" top row, controls stacked at the bottom) -- as two steps within this
 // one tab, rather than a single scrolling form. Also ports ManualLoggingScreen.kt's "Report

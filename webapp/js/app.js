@@ -97,9 +97,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   initPushForegroundBanner();
   initPushEnableButtons();
   initPushNotifications();
+  initLaunchScreenPicker();
 
   const minDelay = new Promise((resolve) => setTimeout(resolve, SPLASH_MIN_DISPLAY_MS));
   await Promise.all([minDelay, refreshSightings()]);
+  // Resolved while still covered by the splash screen, same timing intent as App.kt's own
+  // resolveAndSetLaunchScreen (called during the splash's own display window) -- the very first
+  // thing visible once the splash clears is already the right screen, not a Map flash-then-swap.
+  resolveLaunchScreen();
   hideSplash();
 
   if ("serviceWorker" in navigator) {

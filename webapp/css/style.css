@@ -275,7 +275,12 @@ main {
   position: fixed;
   inset: 0;
   z-index: 950;
-  background: linear-gradient(180deg, var(--brand-teal-1), var(--brand-teal-2));
+  /* Background comes from the .mae-background class added alongside this one in HTML --
+     MainMenuDrawer is wrapped in AppBackground natively (same as every other AppBackground
+     screen), so it gets the gradient+Mae-artwork treatment too, not a plain gradient. This rule
+     used to paint its own flat gradient here, which is what made Mae never show up behind the
+     menu items even though every sibling screen (List/Resources/Alerts/News Feed) already had
+     her. */
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -314,6 +319,24 @@ main {
   padding: 10px 0;
   margin-top: 18px;
   text-align: right;
+}
+
+/* Ports MainMenuDrawer's own "OPEN APP TO" FilterChip row -- .menu-overlay is already a
+   column with align-items:flex-end, so this just needs to lay out its own row right-aligned
+   too, matching the nav items above it. */
+.menu-launch-pref {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.menu-launch-pref-label {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
 }
 
 /* --- Shared full-screen "sub-page" pattern: About/Resources/News Feed all use this same
@@ -668,7 +691,8 @@ main {
 #point-picker-overlay .chip-toggle,
 #polygon-picker-overlay .chip-toggle,
 #review-step .chip-toggle,
-#playback-panel .chip-toggle {
+#playback-panel .chip-toggle,
+#main-menu .chip-toggle {
   background: rgba(255, 255, 255, 0.1);
   border: none;
   color: #ffffff;
@@ -679,7 +703,8 @@ main {
 #point-picker-overlay .chip-toggle.active,
 #polygon-picker-overlay .chip-toggle.active,
 #review-step .chip-toggle.active,
-#playback-panel .chip-toggle.active {
+#playback-panel .chip-toggle.active,
+#main-menu .chip-toggle.active {
   background: var(--brand-yellow);
   color: #000000;
 }
