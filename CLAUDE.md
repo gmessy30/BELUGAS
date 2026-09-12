@@ -18,9 +18,30 @@ deliberate deviation from native in a code comment rather than silently divergin
 
 `webapp/sw.js` registers with `updateViaCache: "none"` plus a `controllerchange` reload, so a new
 deploy actually takes over an already-open tab instead of requiring a full close/reopen.
-**Always bump `CACHE_NAME` on any change to a file listed in `APP_SHELL`** (currently `v15`) —
-without a bump, a returning visitor's installed service worker sees byte-identical install/activate
-logic and never attempts an update.
+**Always bump `CACHE_NAME` on any change to a file listed in `APP_SHELL`** (check the current value
+in `webapp/sw.js` rather than trusting a number here, it moves every deploy) — without a bump, a
+returning visitor's installed service worker sees byte-identical install/activate logic and never
+attempts an update.
+
+### Known pattern: Leaflet's internal z-index escapes an unisolated container
+
+Leaflet's bundled CSS gives its own internal panes real z-index values (tile pane 200, overlay
+400, marker 600, controls 1000). Any element that hosts an `L.map(...)` instance MUST have
+`isolation: isolate` (or an equivalent stacking-context trigger) in this app's CSS, or those
+values escape the container and compete directly against sibling UI in the SAME parent stacking
+context — since 200+ beats a typical UI z-index like 2-5, the map paints OVER that sibling
+entirely (not just a corner control), not merely under it. This has already recurred twice:
+- The Sightings Map's own OSM attribution poking through every other screen (`.view` didn't
+  isolate `#map-view`'s Leaflet instance) -- fixed with `isolation: isolate` on `.view`.
+- Report Manually's entire bottom panel (SELF/OTHER, whale count, direction picker, date/time)
+  rendering invisible under the map (`.manual-map` didn't isolate its own Leaflet instance) --
+  fixed with `isolation: isolate` on `.manual-map`, and proactively on `.picker-map` (the Alerts
+  point/polygon pickers, same latent bug, not yet symptomatic) for the same reason.
+
+Every current Leaflet container in the app is covered by one of these three selectors --
+`.view` (`#map-view`), `.manual-map` (`#manual-map`), `.picker-map` (`#point-picker-map`/
+`#polygon-picker-map`). **Any new Leaflet map added to this app needs the same treatment on its
+own container the moment it's created**, not just when a symptom is actually reported.
 
 ### Deliberate deviations from native (documented in code, not oversights)
 
@@ -59,5 +80,6 @@ project (via `supabase db query --linked --file <path>`) — don't tell the user
   `webapp/js/firebase-config.js` (currently placeholder values) before it can work at all.
 - Self-service re-verification by email (deferred to after the Sunday deadline).
 - Real-device testing still needed for: time-lapse playback + clustering (Sightings Map), the
-  Android/PWA back-gesture nav stack, forced landscape on Camera/Report Manually, and the
-  Android/iOS install prompt — none of this has been exercised in an actual browser this session.
+  Android/PWA back-gesture nav stack, Camera/Report Manually's responsive (portrait+landscape,
+  no forced orientation) layout and fullscreen-on-touch-devices behavior, and the Android/iOS
+  install prompt — none of this has been exercised in an actual browser this session.

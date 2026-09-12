@@ -1,4 +1,5 @@
-// NOT App.kt's LockLandscapeOrientation -- deliberately not ported, and removed after being tried.
+// Report-tab environment: fullscreen + a non-blocking rotate hint. NOT App.kt's
+// LockLandscapeOrientation -- a forced/locked orientation was tried here and removed.
 // screen.orientation.lock("landscape") turned out to be a genuine LOCK on Android/Chrome (auto-
 // rotation disabled entirely, frozen at whichever landscape variant was current the instant it
 // resolved), not a live sensor-following choice between landscape-primary/secondary the way
@@ -11,9 +12,17 @@
 // #review-step/#manual-log-step, which now lay out correctly in EITHER orientation instead of
 // assuming landscape-only.
 //
-// All that's left here is a small, non-blocking, dismissible hint ("Rotate for a better view") on
-// phone-sized touch devices while the Report tab is in portrait -- never a barrier, and never
-// shown on a tablet/desktop-class screen where portrait is perfectly usable there too.
+// FULLSCREEN: entering the Report tab requests fullscreen on touch devices, reclaiming the space
+// the browser's own address bar/chrome would otherwise take up -- no native equivalent to port at
+// all (a native app has no browser chrome to reclaim space from in the first place). Best-effort
+// and wrapped in try/catch: iOS Safari does not support Element.requestFullscreen on most
+// elements (historically only <video> via a WebKit-specific API), so this silently no-ops there --
+// see style.css's own 100dvh sizing for #camera-step/#review-step/#manual-log-step, which is what
+// actually reclaims that space on iPhone instead.
+//
+// ROTATE HINT: a small, non-blocking, dismissible hint ("Rotate for a better view") on phone-sized
+// touch devices while the Report tab is in portrait -- never a barrier, and never shown on a
+// tablet/desktop-class screen where portrait is perfectly usable there too.
 
 let orientationChangeListenerAttached = false;
 let rotateHintDismissedForThisVisit = false;
@@ -32,6 +41,10 @@ function isPhoneSizedTouchDevice() {
   return hasCoarsePointer && isPhoneSized;
 }
 
+function isTouchDevice() {
+  return "ontouchstart" in window || navigator.maxTouchPoints > 0;
+}
+
 function updateRotateHint() {
   const banner = document.getElementById("rotate-hint-banner");
   const reportTabVisible = !document.getElementById("submit-view").hidden;
@@ -45,15 +58,34 @@ function dismissRotateHint() {
   updateRotateHint();
 }
 
-// Names kept for call-site continuity with switchTab (app.js) -- neither locks/unlocks anything
-// any more, only shows/hides the hint banner for as long as the Report tab is the active one.
+async function enterFullscreenForReportTab() {
+  if (!isTouchDevice() || !document.documentElement.requestFullscreen) return;
+  try {
+    await document.documentElement.requestFullscreen();
+  } catch (e) {
+    // Expected on iOS Safari (no real support here) and whenever the browser withholds
+    // fullscreen for its own reasons (no direct user gesture in the call stack, etc.) -- never
+    // worth surfacing to the user, the app is fully usable without it.
+    console.warn("FULLSCREEN_REQUEST_UNAVAILABLE", e);
+  }
+}
+
+function exitFullscreenForReportTab() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch((e) => console.warn("FULLSCREEN_EXIT_ERROR", e));
+  }
+}
+
+// Names kept for call-site continuity with switchTab (app.js).
 function lockLandscapeForReportTab() {
   rotateHintDismissedForThisVisit = false; // a fresh hint each time the tab is (re)entered
   updateRotateHint();
+  enterFullscreenForReportTab();
 }
 
 function unlockOrientationForOtherTabs() {
   document.getElementById("rotate-hint-banner").hidden = true;
+  exitFullscreenForReportTab();
 }
 
 function initOrientationLock() {

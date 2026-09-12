@@ -76,6 +76,7 @@ function initSubmitView() {
   initDirectionArrows();
   initHeadingDistanceModal();
   initWhaleCountWiring("#review-step", cameraCounts);
+  initReviewBottomPanelHeightTracking();
 
   initManualObserverToggle();
   initManualPositionControls();
@@ -238,6 +239,25 @@ function resetCameraPositionControls() {
   headingDegrees = null;
   selectedDistanceBucketKey = "MEDIUM";
   updateHeadingDistanceButtonLabel();
+}
+
+// Mirrors ManualLoggingScreen.kt's own bottomPanelHeightPx/onGloballyPositioned pattern (used
+// there to anchor RECENTER above its bottom panel) for the same underlying problem: the direction
+// arrows need to know the REAL rendered height of #review-step's bottom panel, not a guessed
+// constant, so they never overlap it regardless of viewport height or font metrics (see
+// .direction-arrows-overlay's own comment in style.css). ResizeObserver reports the panel's
+// actual box whenever it changes -- including the very first time it becomes visible, since going
+// from a hidden ancestor to shown is itself a real resize from 0x0.
+function initReviewBottomPanelHeightTracking() {
+  const panel = document.querySelector("#review-step .review-bottom-panel");
+  const reviewStep = document.getElementById("review-step");
+  if (!panel || !reviewStep || typeof ResizeObserver === "undefined") return;
+  const observer = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      reviewStep.style.setProperty("--review-bottom-panel-height", `${Math.ceil(entry.contentRect.height)}px`);
+    }
+  });
+  observer.observe(panel);
 }
 
 function initDirectionArrows() {
