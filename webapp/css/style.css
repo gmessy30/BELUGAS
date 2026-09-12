@@ -523,6 +523,33 @@ main {
   overflow: hidden;
 }
 
+/* Item 28a: native's AppBackground applies a global text drop-shadow to every Text drawn over it
+   (AppBackground.kt's TextLegibilityShadow: Shadow(Color.Black @ 55% alpha, offset (0,1), blur
+   3f)) precisely because Mae's own light body tones leave plain white/yellow/cyan text with too
+   little contrast -- this web port never carried that treatment over, so Resources' text sat
+   directly on Mae with no help at all. Scoped to #resources-page for this pass; every other
+   .mae-background screen (Alerts, News Feed, the main menu) gets the identical native shadow too
+   and would read better with the same rule if/when they're revisited. */
+#resources-page .subpage-title,
+#resources-page .section-title,
+#resources-page .section-body,
+#resources-page .text-link,
+#resources-page .tip-list li {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+/* Item 28b: shown/hidden by resources.js's toggle -- see the HTML's own comment on this element
+   for why a scrim rather than literally removing the background image. Sits above .mae-background
+   (painted via the page's own background-image/color) but below .subpage-top-row/.subpage-content
+   (both z-index:2), so it dims the backdrop without ever dimming the text drawn on top of it. */
+.mae-dim-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+}
+
 /* Matches ResourcesScreen's hotline Surface exactly: orange fill, black bold number + "TAP TO
    CALL", tappable as a real tel: link. */
 .hotline-card {

@@ -157,9 +157,23 @@
 
   <!-- Ports ResourcesScreen.kt verbatim -- same sections/order/text/links. -->
   <div id="resources-page" class="resources-screen mae-background" hidden>
+    <!-- Item 28b: reader-controlled fallback for when the text-shadow below still isn't enough
+         over a particularly light patch of Mae's own artwork -- same idea as the About page's
+         HIDE TEXT/SHOW TEXT toggle (about.js's setAboutTextVisible), but toggling the BACKGROUND
+         here instead of the text, since Resources' text is the actual content a reader came for,
+         not something to hide. A dark scrim over the whole page rather than literally swapping
+         out the background image -- dims Mae and the teal gradient underneath it uniformly, so
+         contrast improves regardless of which patch of either sits behind a given line. Choice
+         persisted in localStorage (resources.js) so it survives reopening this page or the app,
+         not just the current visit. -->
+    <div id="resources-dim-overlay" class="mae-dim-overlay" hidden></div>
+
     <div class="subpage-top-row">
       <h1 class="subpage-title">RESOURCES</h1>
-      <button id="resources-back-btn" class="subpage-back-btn">← BACK</button>
+      <div class="subpage-top-actions">
+        <button id="resources-toggle-bg-btn" class="about-toggle-btn" type="button">DIM BACKGROUND</button>
+        <button id="resources-back-btn" class="subpage-back-btn">← BACK</button>
+      </div>
     </div>
 
     <div class="subpage-content">
