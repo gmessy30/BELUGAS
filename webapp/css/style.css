@@ -736,6 +736,24 @@ main {
   opacity: 0.85;
 }
 
+/* BUG FIX (item 27c): unlike every OTHER context sharing .chip-toggle (alerts page, the point/
+   polygon pickers, main menu -- all solid/near-opaque backdrops), #manual-log-step's SELF/OTHER
+   chips sit directly on the live map with only a 10%-white background behind the unselected
+   state (.review-bottom-panel's own backing was removed here, see that rule's comment) -- against
+   pale tiles (open water, cleared land) the white "My Sighting"/"Reported By Other" lettering
+   nearly disappeared. Same outlined-text-style shadow as the whale-count glyphs keeps it legible
+   over ANY tile color; the active chip's solid yellow fill already reads fine on its own, but a
+   black border makes "this one is selected" unmistakable at a glance rather than relying on the
+   translucent-vs-opaque background contrast alone. */
+#manual-log-step .chip-toggle {
+  text-shadow:
+    -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+}
+
+#manual-log-step .chip-toggle.active {
+  border: 2px solid #000000;
+}
+
 .alerts-radius-title {
   margin-top: 16px;
 }
@@ -1155,10 +1173,23 @@ button.camera-status.secondary {
    remaining content (SELF/OTHER + a compact SET DATE/TIME button + whale count) is exactly as
    compact as native's own bottom Column, so it stays fully visible and reachable at once instead
    of needing to scroll over itself. */
+/* BUG FIX (item 27a): this panel has no visible backing here (see above), but it's still a
+   full-width/bottom-anchored absolutely-positioned box sitting OVER the live map underneath --
+   its own empty padding/gaps (around the SELF/OTHER chips, the date/time button, the whale-count
+   columns) were still capturing touchstart, so a pan gesture starting anywhere in the bottom
+   half-plus of the screen never reached the map at all (only a drag already in progress, started
+   elsewhere, continued through). pointer-events:none here lets all of that empty space fall
+   through to the map; the button/input rule below re-enables it ONLY on the actual controls. */
 #manual-log-step .review-bottom-panel {
   background: none;
   max-height: none;
   overflow-y: visible;
+  pointer-events: none;
+}
+
+#manual-log-step .review-bottom-panel button,
+#manual-log-step .review-bottom-panel input {
+  pointer-events: auto;
 }
 
 .step-label {
@@ -1348,7 +1379,13 @@ button.camera-status.secondary {
   touch-action: none;
 }
 
-.bearing-dial svg {
+/* :not(.bearing-dial-pin) matters -- the pin below is ALSO an <svg> inside .bearing-dial, so
+   without the exclusion this width:100%/height:100% (meant only for the main ring svg) wins over
+   .bearing-dial-pin's own 30x30 sizing anyway: a bare-class selector (0,1,0) loses to this
+   class+type selector's higher specificity (0,1,1) regardless of source order. That's what made
+   the decorative pin balloon up to the dial's own full 150x150 box instead of staying pinhead-
+   sized (DIAGNOSED item 27d). */
+.bearing-dial svg:not(.bearing-dial-pin) {
   display: block;
   width: 100%;
   height: 100%;
@@ -1356,11 +1393,16 @@ button.camera-status.secondary {
 
 /* Fixed at the ring's own north point -- decorative only, never rotates with the dragged
    bearing (see BearingDial's own doc comment on why: it's what used to be the standalone map pin,
-   kept here purely as a visual anchor). */
+   kept here purely as a visual anchor). Explicit width/height (matching the SVG's own 30x30
+   attributes, ~23% of the ring's diameter -- BearingDial.kt's own BEARING_DIAL_PIN_SIZE/
+   BEARING_DIAL_OUTER_RADIUS*2 ratio) so nothing upstream can stretch it again the way the
+   unscoped .bearing-dial svg rule just did. */
 .bearing-dial-pin {
   position: absolute;
   top: 0;
   left: 50%;
+  width: 30px;
+  height: 30px;
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
@@ -1374,6 +1416,28 @@ button.camera-status.secondary {
 .manual-menu-btn {
   background: rgba(255, 152, 0, 0.9);
   color: #000000;
+}
+
+/* BUG FIX (item 27e): previously sat just above screen-center, where the fixed BearingDial
+   assembly (150px tall, also screen-centered) directly overlapped it. Top-center instead --
+   clear of the dial below it, and clear of RECENTER (right-anchored at the same height band) since
+   this is centered rather than right-anchored. Same dark-pill treatment as .manual-datetime-btn/
+   .bearing-dial-unknown-btn (button.secondary) for consistency, though it's plain text, not a
+   control. */
+.manual-coords-readout {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 60px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* Directly under the top bar, not floating at the bottom edge -- .review-bottom-panel is tall

@@ -588,6 +588,8 @@ function updateManualPositionFromMapCenter() {
   const center = manualMapInstance.getCenter();
   manualLat = center.lat;
   manualLng = center.lng;
+  document.getElementById("manual-coords-readout").textContent =
+    `${manualLat.toFixed(4)}, ${manualLng.toFixed(4)}`;
 }
 
 function initManualPositionControls() {
@@ -658,6 +660,10 @@ function snapToNearest16Point(degrees) {
 
 function updateBearingDialNeedle(degrees) {
   const needle = document.getElementById("bearing-dial-needle");
+  // The "?" mark and the needle are mutually exclusive -- exactly one of them is ever visible, so
+  // the dial always shows SOMETHING explicit rather than going blank when degrees is null (which
+  // read as ambiguous: "not set yet" vs. "no needle drawn for some other reason" -- item 27b).
+  document.getElementById("bearing-dial-unknown-mark").hidden = degrees != null;
   if (degrees == null) {
     needle.hidden = true;
     return;

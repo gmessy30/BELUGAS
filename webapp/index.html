@@ -714,6 +714,15 @@
                 <line id="bearing-dial-needle-outline" x1="75" y1="85" x2="75" y2="27" stroke="#000000" stroke-width="8" stroke-linecap="round"/>
                 <line id="bearing-dial-needle-line" x1="75" y1="85" x2="75" y2="27" stroke="#FFFF00" stroke-width="4" stroke-linecap="round"/>
               </g>
+              <!-- Shown exactly when the needle above is hidden (no bearing set, whether never
+                   touched or explicitly cleared via "Unknown Direction") -- an empty dial read as
+                   ambiguous ("not set yet" vs "no needle rendered for some other reason"), so the
+                   un-set state now always draws something explicit rather than just omitting the
+                   needle. -->
+              <g id="bearing-dial-unknown-mark">
+                <text x="75" y="93" text-anchor="middle" font-size="26" font-weight="900" fill="#000000">?</text>
+                <text x="75" y="92" text-anchor="middle" font-size="26" font-weight="900" fill="#ffffff">?</text>
+              </g>
             </svg>
             <svg class="bearing-dial-pin" viewBox="0 0 30 30" width="30" height="30" aria-hidden="true">
               <path d="M15,29 C9,23 3,18 3,12 A12,12 0 0 1 27,12 C27,18 21,23 15,29 Z" fill="#e53935" stroke="#000000" stroke-width="1"/>
@@ -727,6 +736,14 @@
           <button id="manual-submit-btn" class="review-done-btn" type="button">← SUBMIT</button>
           <button class="menu-open-btn menu-trigger-btn manual-menu-btn" type="button">☰ MENU</button>
         </div>
+
+        <!-- The dial's own crosshair position, as text -- native has no equivalent readout
+             (BearingDial's crosshair speaks for itself over a MapLibre view the user can see
+             clearly), but this app's dial sits directly over the map with no other confirmation
+             of the exact coordinate about to be submitted. Anchored top-center, clear of the dial
+             (which occupies the screen's actual center) and of RECENTER (right-anchored below the
+             top row), so it never competes with either. -->
+        <div id="manual-coords-readout" class="manual-coords-readout" aria-live="polite"></div>
 
         <div class="manual-locate-row">
           <button id="manual-recenter-btn" class="secondary" type="button">📍 RECENTER</button>
