@@ -38,15 +38,20 @@
     </div>
   </div>
 
-  <!-- Ports App.kt's LockLandscapeOrientation for the web: stands in for the lock on platforms/
-       contexts where screen.orientation.lock() isn't available or hasn't taken effect yet (iOS
-       Safari always; a non-installed Android Chrome tab often) -- see orientation-lock.js. -->
-  <div id="rotate-device-overlay" class="rotate-device-overlay" hidden>
-    <svg class="rotate-device-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- NOT App.kt's LockLandscapeOrientation -- deliberately not ported. A forced/locked
+       orientation (screen.orientation.lock()) was tried and caused a real upside-down rendering
+       bug (see orientation-lock.js's header comment) as well as leaving Report Manually's own
+       controls unreachable when the layout built for one fixed orientation didn't fit the
+       other. Camera/Report Manually now lay out correctly in EITHER orientation instead, and
+       this is only a small non-blocking, dismissible suggestion on phone-sized touch devices in
+       portrait -- never a barrier, never shown on tablets/desktop. -->
+  <div id="rotate-hint-banner" class="rotate-hint-banner" hidden>
+    <svg class="rotate-hint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
       <rect x="6" y="3" width="12" height="18" rx="2"/>
       <line x1="6" y1="18" x2="18" y2="18"/>
     </svg>
-    <p class="rotate-device-text">Rotate your device to continue</p>
+    <span class="rotate-hint-text">Rotate for a better view</span>
+    <button id="rotate-hint-dismiss-btn" class="rotate-hint-dismiss-btn" type="button" aria-label="Dismiss">✕</button>
   </div>
 
   <header>
@@ -592,7 +597,8 @@
                own sensor read comes back null, not an invented simplification. -->
           <button id="heading-distance-btn" class="secondary heading-distance-btn" type="button">🧭 SET HEADING &amp; DISTANCE</button>
 
-          <div class="step-label">Whale Count</div>
+          <!-- No "Whale Count" label -- native's own WhaleCountRow has no preceding Text label
+               at all in either screen; the artwork speaks for itself. -->
           <div class="whale-count-row">
             <div class="whale-count-col" data-count="unknown">
               <button class="whale-count-inc outlined-text" type="button">+</button>
@@ -658,15 +664,23 @@
 
       <!-- ManualLoggingScreen.kt: a real interactive map with a fixed center crosshair (the pin
            IS whatever the map is centered on when SUBMIT is tapped -- no heading/distance
-           projection, no photo). SELF/OTHER toggle ("MY SIGHTING"/"REPORTED BY OTHER"), the same
-           whale-count row, SET DATE/TIME is NOT ported (out of scope for this pass), RECENTER
-           resets to the region's own default center (no GPS refetch, matching native exactly).
-           GPS is NOT auto-fetched on entry here -- a DELIBERATE web-only deviation from native's
-           own LaunchedEffect(Unit) { recenterOnGps() }, confirmed against source and overridden
-           on purpose (not an oversight): manual reporting is meant to be explicitly NOT "where I
-           am now". The existing "Get My Location" button below is a web-only affordance (native
-           has none at all here) so panning a world map to find Cook Inlet by hand isn't the only
-           option -- it's user-initiated only, never automatic. -->
+           projection, no photo). SELF/OTHER toggle ("MY SIGHTING"/"REPORTED BY OTHER"), a
+           date/time picker (native's own DatePickerDialog -- a plain datetime-local input here,
+           letting the platform supply its own picker UI rather than a custom one), the same
+           whale-count row, RECENTER resets to the region's own default center (no GPS refetch,
+           matching native exactly). GPS is NOT auto-fetched on entry here -- a DELIBERATE
+           web-only deviation from native's own LaunchedEffect(Unit) { recenterOnGps() }, confirmed
+           against source and overridden on purpose (not an oversight): manual reporting is meant
+           to be explicitly NOT "where I am now". The existing "Get My Location" button is a
+           web-only affordance (native has none at all here) so panning a world map to find Cook
+           Inlet by hand isn't the only option -- it's user-initiated only, never automatic.
+
+           LOCATE/RECENTER sit in their own row directly under the top bar, not floating at the
+           screen's bottom edge -- the bottom panel below is tall enough (SELF/OTHER + direction
+           picker + date/time + whale count) that anything else anchored to the bottom would end
+           up hidden behind it. Everything here lays out the same way in portrait or landscape;
+           the panel scrolls internally (max-height + overflow-y) rather than needing a
+           per-orientation layout of its own. -->
       <div id="manual-log-step" class="review-screen" hidden>
         <div id="manual-map" class="manual-map"></div>
         <div class="manual-center-crosshair" aria-hidden="true"></div>
@@ -676,14 +690,19 @@
           <button class="menu-open-btn menu-trigger-btn manual-menu-btn" type="button">☰ MENU</button>
         </div>
 
-        <button id="manual-locate-btn" class="secondary manual-locate-btn" type="button">📍 Get My Location</button>
-        <button id="manual-recenter-btn" class="secondary manual-recenter-btn" type="button">📍 RECENTER</button>
+        <div class="manual-locate-row">
+          <button id="manual-locate-btn" class="secondary" type="button">📍 Get My Location</button>
+          <button id="manual-recenter-btn" class="secondary" type="button">📍 RECENTER</button>
+        </div>
 
         <div class="review-bottom-panel">
           <div class="chip-row">
             <button type="button" id="manual-observer-self-btn" class="chip-toggle active" data-observer-type="SELF">My Sighting</button>
             <button type="button" id="manual-observer-other-btn" class="chip-toggle" data-observer-type="OTHER">Reported By Other</button>
           </div>
+
+          <div class="step-label">Date &amp; Time</div>
+          <input type="datetime-local" id="manual-datetime-input" class="manual-datetime-input">
 
           <!-- BearingDial.kt's fused position-marker + travel-direction control, simplified here
                as discrete 8-point chips (matching SightingsMapScreen's own 8-point arrow display
@@ -703,7 +722,7 @@
             <button type="button" class="chip-toggle direction-chip" data-bearing="135">SE</button>
           </div>
 
-          <div class="step-label">Whale Count</div>
+          <!-- No "Whale Count" label -- see the camera path's own identical note above. -->
           <div class="whale-count-row">
             <div class="whale-count-col" data-count="unknown">
               <button class="whale-count-inc outlined-text" type="button">+</button>

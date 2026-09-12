@@ -1,62 +1,64 @@
-// Forces landscape while the Report tab is active -- matches App.kt's wantsLandscape exactly:
-// native computes ONE combined lock spanning CAPTURE + PHOTO_LOGGING + MANUAL_LOGGING (the same
-// three screens WhaleCountRow lives on) rather than one lock per sub-screen, so moving directly
-// between the camera step and the review step doesn't release-then-reacquire and flicker back
-// toward portrait for a frame -- this app's Report tab covers exactly that same span (both
-// sub-steps, both camera-path and manual-path), so it's locked/unlocked once per tab visit here,
-// not per sub-step.
+// NOT App.kt's LockLandscapeOrientation -- deliberately not ported, and removed after being tried.
+// screen.orientation.lock("landscape") turned out to be a genuine LOCK on Android/Chrome (auto-
+// rotation disabled entirely, frozen at whichever landscape variant was current the instant it
+// resolved), not a live sensor-following choice between landscape-primary/secondary the way
+// native's own SCREEN_ORIENTATION_SENSOR_LANDSCAPE is -- if the user physically held the phone in
+// the OTHER landscape variant than whatever got locked, the screen rendered upside down relative
+// to how they were actually holding it. On top of that, a layout built assuming one single locked
+// orientation left Report Manually's own controls (SELF/OTHER, whale count, RECENTER, SUBMIT)
+// unreachable once that assumption didn't hold. Removing the lock removes both failure modes at
+// their real source, rather than patching around either one -- see the CSS for #camera-step/
+// #review-step/#manual-log-step, which now lay out correctly in EITHER orientation instead of
+// assuming landscape-only.
 //
-// Android/Chrome: a real screen.orientation.lock() attempt, best-effort and wrapped in try/catch
-// -- it throws/rejects outside a fullscreen or installed-PWA context (a plain browser tab has no
-// equivalent of native's unconditional Activity.requestedOrientation override; this is the real
-// ceiling of what a web page can force). iOS Safari has no lock API at all, so a full-screen
-// "Rotate your device" overlay stands in for the lock there. That overlay isn't actually gated to
-// iOS in code -- it's driven by the device's REAL current orientation (matchMedia), shown
-// whenever the Report tab is active and the device is still in portrait regardless of platform.
-// A failed/unsupported lock() on Android leaves the device in exactly the same "still portrait"
-// state iOS is always in, so a non-installed Android Chrome tab gets the same helpful nudge
-// instead of silently rendering a cramped portrait-shaped layout with no explanation.
+// All that's left here is a small, non-blocking, dismissible hint ("Rotate for a better view") on
+// phone-sized touch devices while the Report tab is in portrait -- never a barrier, and never
+// shown on a tablet/desktop-class screen where portrait is perfectly usable there too.
+
 let orientationChangeListenerAttached = false;
+let rotateHintDismissedForThisVisit = false;
 
 function isPortraitOrientation() {
   return window.matchMedia("(orientation: portrait)").matches;
 }
 
-async function lockLandscapeForReportTab() {
-  if (screen.orientation && screen.orientation.lock) {
-    try {
-      await screen.orientation.lock("landscape");
-    } catch (e) {
-      // Expected/common outside fullscreen or an installed PWA -- not an error worth surfacing
-      // to the user, the rotate-overlay below is exactly the fallback for this case.
-      console.warn("ORIENTATION_LOCK_UNAVAILABLE", e);
-    }
-  }
-  updateRotateOverlay();
+// "Phone-sized" -- a tablet has plenty of room to lay either orientation out comfortably, so the
+// hint would just be noise there. Touch-based (not pointer:fine) since a phone is the only device
+// this hint is meant for; a small emulated/resized desktop browser window has a mouse, not a
+// thumb to rotate.
+function isPhoneSizedTouchDevice() {
+  const hasCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
+  const isPhoneSized = Math.min(window.innerWidth, window.innerHeight) < 600;
+  return hasCoarsePointer && isPhoneSized;
+}
+
+function updateRotateHint() {
+  const banner = document.getElementById("rotate-hint-banner");
+  const reportTabVisible = !document.getElementById("submit-view").hidden;
+  banner.hidden = !(
+    reportTabVisible && isPortraitOrientation() && isPhoneSizedTouchDevice() && !rotateHintDismissedForThisVisit
+  );
+}
+
+function dismissRotateHint() {
+  rotateHintDismissedForThisVisit = true;
+  updateRotateHint();
+}
+
+// Names kept for call-site continuity with switchTab (app.js) -- neither locks/unlocks anything
+// any more, only shows/hides the hint banner for as long as the Report tab is the active one.
+function lockLandscapeForReportTab() {
+  rotateHintDismissedForThisVisit = false; // a fresh hint each time the tab is (re)entered
+  updateRotateHint();
 }
 
 function unlockOrientationForOtherTabs() {
-  if (screen.orientation && screen.orientation.unlock) {
-    try {
-      screen.orientation.unlock();
-    } catch (e) {
-      console.warn("ORIENTATION_UNLOCK_ERROR", e);
-    }
-  }
-  document.getElementById("rotate-device-overlay").hidden = true;
+  document.getElementById("rotate-hint-banner").hidden = true;
 }
 
-function updateRotateOverlay() {
-  const overlay = document.getElementById("rotate-device-overlay");
-  const reportTabVisible = !document.getElementById("submit-view").hidden;
-  overlay.hidden = !(reportTabVisible && isPortraitOrientation());
-}
-
-// Registered once, globally -- cheap to leave attached even while the Report tab isn't active,
-// since updateRotateOverlay's own reportTabVisible check makes it a no-op (overlay stays hidden)
-// the rest of the time.
 function initOrientationLock() {
   if (orientationChangeListenerAttached) return;
-  window.matchMedia("(orientation: portrait)").addEventListener("change", updateRotateOverlay);
+  window.matchMedia("(orientation: portrait)").addEventListener("change", updateRotateHint);
+  document.getElementById("rotate-hint-dismiss-btn").addEventListener("click", dismissRotateHint);
   orientationChangeListenerAttached = true;
 }

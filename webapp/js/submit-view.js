@@ -496,6 +496,28 @@ function openManualReportFlow() {
   // panning a world map to find Cook Inlet by hand is a real usability problem on a phone screen)
   // is still there, user-initiated only, never automatic.
   initManualMapIfNeeded();
+  setManualDatetimeInputToNow();
+}
+
+// DatePickerDialog.kt, ported as a plain datetime-local input (the platform supplies its own
+// picker UI) -- defaults to "now" each time this screen is entered, matching
+// ManualLoggingScreen's own `var selectedTimestampMs by remember { mutableStateOf(currentTimeMillis()) }`.
+function formatDatetimeLocalValue(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function setManualDatetimeInputToNow() {
+  document.getElementById("manual-datetime-input").value = formatDatetimeLocalValue(new Date());
+}
+
+// Falls back to "now" if the input is somehow empty/invalid -- matches the field's own default,
+// never a hard failure over a timestamp.
+function manualSelectedTimestampMs() {
+  const value = document.getElementById("manual-datetime-input").value;
+  if (!value) return Date.now();
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? Date.now() : parsed;
 }
 
 function initManualMapIfNeeded() {
@@ -644,7 +666,7 @@ function buildManualSightingRecord(lat, lng, isGeofenceVerified) {
     count_greys: manualCounts.greys,
     count_calves: manualCounts.calves,
     count_unknown: manualCounts.unknown,
-    observed_at_epoch_ms: Date.now(),
+    observed_at_epoch_ms: manualSelectedTimestampMs(),
     observer_type: manualObserverType,
     is_geofence_verified: isGeofenceVerified,
     photo_url: null,
@@ -684,6 +706,7 @@ function resetManualSubmitForm() {
   });
   setManualObserverType("SELF");
   setManualLocationStatus("");
+  setManualDatetimeInputToNow();
   // No nested nav-stack layer to pop here -- manual mode's manual-log-step IS the "manual-report"
   // layer's own resting content (see openManualReportFlow's own push), so returning to
   // camera-step is just a visual change, not a back-stack pop.

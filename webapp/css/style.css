@@ -1281,18 +1281,28 @@ button.camera-status.secondary {
   color: #000000;
 }
 
-.manual-locate-btn {
+/* Directly under the top bar, not floating at the bottom edge -- .review-bottom-panel is tall
+   enough (SELF/OTHER + date/time + direction picker + whale count) to fully cover anything
+   anchored to the bottom of the screen instead, in either orientation. */
+.manual-locate-row {
   position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
   left: 16px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  right: 16px;
   z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.manual-recenter-btn {
-  position: absolute;
-  right: 16px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
-  z-index: 5;
+.manual-datetime-input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: none;
+  font-size: 0.9rem;
 }
 
 /* 3x3 grid stands in for a compass rose: the 8 outer tiles are the compass points (NW/N/NE on
@@ -1313,57 +1323,18 @@ button.camera-status.secondary {
   text-align: center;
 }
 
-/* Landscape (the Report tab is forced into this orientation, see orientation-lock.js) -- native's
-   CaptureScreen/LoggingScreen/ManualLoggingScreen are landscape-ONLY by construction (every dp
-   value in their source is already a landscape-space coordinate; they have no portrait layout to
-   diverge from at all). This app additionally supports a brief portrait window before the lock
-   engages (or on a browser that can't lock at all -- see orientation-lock.js's rotate-overlay
-   fallback), so landscape is treated as the real, native-matching layout and portrait as the
-   secondary/adapted one -- the opposite of a mobile-first "landscape override" media query. */
+/* Landscape: the Report tab no longer forces/locks this orientation (see orientation-lock.js's
+   header comment on why that was removed) -- .review-bottom-panel/.direction-arrows-overlay/
+   .manual-locate-row above are ONE layout that already works in both orientations (a bottom
+   panel that scrolls internally past a fixed max-height, arrows/buttons positioned in percentage/
+   safe-area terms rather than assuming one fixed aspect ratio) rather than a separate landscape-
+   specific rearrangement. The only thing landscape genuinely changes is WHERE a notch/home-
+   indicator safe area sits (the sides, not the top), which these right-anchored elements need
+   directly -- padding wouldn't move a fixed `right` offset; .capture-top-row only ever anchors
+   via `left`, so it needs no equivalent change. */
 @media (orientation: landscape) {
-  .review-bottom-panel {
-    left: auto;
-    top: 0;
-    bottom: 0;
-    right: 0;
-    width: min(280px, 40vw);
-    max-height: none;
-    border-radius: 0;
-    border-top-left-radius: 16px;
-    border-bottom-left-radius: 16px;
-    padding-top: calc(env(safe-area-inset-top, 0px) + 60px);
-    padding-right: calc(env(safe-area-inset-right, 0px) + 16px);
-  }
-
-  .step-label {
-    margin-top: 8px;
-  }
-
-  /* In landscape a notch/home-indicator safe area sits on the SIDES, not the top -- these
-     right-anchored elements need that inset directly (padding wouldn't move a fixed `right`
-     offset); .capture-top-row only ever anchors via `left`, so it needs no equivalent change. */
   .review-top-row, .capture-shutter-btn {
     right: calc(env(safe-area-inset-right, 0px) + 16px);
-  }
-
-  /* The review-bottom-panel becoming a right-side rail (above) leaves the direction arrows'
-     own padding-bottom=140px reserved for a BOTTOM panel that no longer renders there in
-     landscape -- narrowed so LEFT/RIGHT don't end up squeezed into a short vertical strip
-     above a now-empty gap, and widened on the right so RIGHT clears the rail itself. */
-  .direction-arrows-overlay {
-    padding: 48px min(280px, 40vw) 24px 0;
-  }
-
-  .manual-locate-btn {
-    left: calc(env(safe-area-inset-left, 0px) + 16px);
-  }
-
-  /* The bottom panel occupies the right-side rail in landscape (see .review-bottom-panel
-     above), so RECENTER moves to the left side, clear of it, rather than being covered by it. */
-  .manual-recenter-btn {
-    right: auto;
-    left: calc(env(safe-area-inset-left, 0px) + 16px);
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);
   }
 }
 
@@ -1655,38 +1626,50 @@ button.secondary {
   border-bottom: none;
 }
 
-/* --- Rotate-device overlay (orientation-lock.js) --- */
-.rotate-device-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
+/* --- Rotate hint banner (orientation-lock.js) -- non-blocking, dismissible. Camera/Report
+   Manually no longer force/lock a single orientation at all (see orientation-lock.js's own
+   header comment) -- both screens lay out correctly in portrait or landscape, so this is only
+   ever a suggestion, never a barrier: a slim top bar, not a full-screen takeover, shown only on
+   phone-sized touch devices while in portrait. --- */
+.rotate-hint-banner {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 900;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 16px;
-  background: rgba(6, 20, 22, 0.94);
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  border-radius: 999px;
+  background: rgba(6, 20, 22, 0.85);
   color: #ffffff;
+  max-width: calc(100% - 32px);
 }
 
-.rotate-device-icon {
-  width: 56px;
-  height: 56px;
-  animation: rotate-device-spin 1.6s ease-in-out infinite;
+.rotate-hint-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
-@keyframes rotate-device-spin {
-  0%, 15% { transform: rotate(0deg); }
-  50%, 65% { transform: rotate(-90deg); }
-  100% { transform: rotate(-90deg); }
-}
-
-.rotate-device-text {
-  font-size: 0.95rem;
+.rotate-hint-text {
+  font-size: 0.8rem;
   font-weight: 700;
-  text-align: center;
-  margin: 0;
-  padding: 0 32px;
+  white-space: nowrap;
+}
+
+.rotate-hint-dismiss-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: #ffffff;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  line-height: 1;
+  flex-shrink: 0;
+  padding: 0;
 }
 
 /* --- Splash screen --- */
