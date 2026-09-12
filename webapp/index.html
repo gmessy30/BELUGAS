@@ -36,12 +36,23 @@
 
   <header>
     <h1>BELUGAS</h1>
-    <button id="tier-code-open-btn" class="header-link-btn">Observer Code</button>
+    <button id="menu-open-btn" class="menu-open-btn">≡ MENU</button>
   </header>
 
   <div id="queue-banner" class="queue-banner" hidden>
     <span>📶 <span id="queue-count">0</span> sighting(s) waiting to upload</span>
     <button id="queue-retry-btn" class="queue-retry-btn">Retry now</button>
+  </div>
+
+  <!-- Ports App.kt's MainMenuDrawer -- see main-menu.js's own header comment for the item-set
+       reasoning. Right-aligned, vertically centered, bold uppercase white text over the teal
+       backdrop, exactly like the native menu column. -->
+  <div id="main-menu" class="menu-overlay" hidden>
+    <button class="menu-nav-item" data-nav="map">Sightings Map</button>
+    <button class="menu-nav-item" data-nav="list">Sightings List</button>
+    <button class="menu-nav-item" data-nav="submit">Report Sighting</button>
+    <button id="menu-observer-code-item" class="menu-nav-item">Observer Code</button>
+    <button id="menu-close-item" class="menu-close-item">← Close</button>
   </div>
 
   <div id="tier-code-modal" class="modal-backdrop" hidden>
@@ -130,28 +141,6 @@
     </section>
   </main>
 
-  <!-- The native app has no bottom tab bar at all -- its primary navigation is a full-screen
-       uppercase text menu (App.kt's MainMenuDrawer). This persistent bottom bar is a web-
-       appropriate substitute with no direct native equivalent (including the icons, which are
-       a reasonable web affordance, not a ported native asset) -- but its active/inactive
-       styling below is real: cyan for the active label matches the app's actual "on/selected"
-       color (the VERIFIED ONLY toggle, the acknowledgement checkbox), and bold uppercase white
-       labels on a dark bar matches its menu-item/dark-card typography. -->
-  <nav class="tabs">
-    <button class="tab-button active" data-tab="map">
-      <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.5-7-11a7 7 0 0 1 14 0c0 4.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
-      <span>Map</span>
-    </button>
-    <button class="tab-button" data-tab="list">
-      <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg>
-      <span>List</span>
-    </button>
-    <button class="tab-button" data-tab="submit">
-      <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
-      <span>Report</span>
-    </button>
-  </nav>
-
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"
           integrity="sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg=="
           crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -161,6 +150,7 @@
   <script src="js/db.js"></script>
   <script src="js/offline-queue.js"></script>
   <script src="js/tier-code.js"></script>
+  <script src="js/main-menu.js"></script>
   <script src="js/map-view.js"></script>
   <script src="js/list-view.js"></script>
   <script src="js/submit-view.js"></script>

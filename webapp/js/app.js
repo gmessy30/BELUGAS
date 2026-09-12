@@ -22,9 +22,6 @@ async function renderAllSightings() {
 
 function switchTab(tabName) {
   document.querySelectorAll(".view").forEach((el) => (el.hidden = el.id !== `${tabName}-view`));
-  document.querySelectorAll(".tab-button").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.tab === tabName);
-  });
 
   if (tabName === "map") {
     invalidateMapSize();
@@ -45,14 +42,11 @@ function hideSplash() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  document.querySelectorAll(".tab-button").forEach((btn) => {
-    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
-  });
-
   initMap();
   initListView();
   initSubmitView();
   initTierCodeModal();
+  initMainMenu();
   initOfflineQueue();
 
   const minDelay = new Promise((resolve) => setTimeout(resolve, SPLASH_MIN_DISPLAY_MS));

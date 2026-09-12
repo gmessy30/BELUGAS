@@ -6,7 +6,7 @@
 // the only thing that makes the activate handler below actually replace the old cached shell.
 // Without a version bump, a returning visitor's already-installed service worker sees byte-
 // identical install/activate logic and never even attempts an update.
-const CACHE_NAME = "belugas-shell-v4";
+const CACHE_NAME = "belugas-shell-v5";
 
 // Relative to this file's own location (webapp/), so this works whether the app is served from
 // a domain root or a subpath like /BELUGAS/webapp/.
@@ -19,6 +19,7 @@ const APP_SHELL = [
   "./js/db.js",
   "./js/offline-queue.js",
   "./js/tier-code.js",
+  "./js/main-menu.js",
   "./js/map-view.js",
   "./js/list-view.js",
   "./js/submit-view.js",
