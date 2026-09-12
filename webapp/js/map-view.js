@@ -6,10 +6,9 @@
 // Color.Yellow fill, black 2dp stroke) with a permanent text caption below it (native:
 // SymbolLayer, black text/white halo, "{N} Belugas · {date}"), gray instead of yellow for this
 // device's own not-yet-synced queue (native: "Local" source -> Color(0xFF9E9E9E)), and the same
-// cyan (0xFF00E5FF) uncertainty circle at the same 18% fill / stroke treatment. Native's cluster
-// badges (a separate orange circle + count layer once markers overlap) are NOT reproduced here --
-// that needs a clustering library (e.g. Leaflet.markercluster) this MVP doesn't pull in; plain
-// overlapping dots are shown instead, noted as a known gap rather than forced.
+// cyan (0xFF00E5FF) uncertainty circle at the same 18% fill / stroke treatment. Clustering (below)
+// uses Leaflet.markercluster (native: GeoJsonOptions(cluster = true)) with a matching solid-orange
+// (0xFFFF6D00), black-stroke badge.
 let mapInstance = null;
 let mapShadingLayer = null;
 let mapMarkersLayer = null;
@@ -29,7 +28,27 @@ function initMap() {
   // Shading added before the markers layer so it always paints underneath sighting pins,
   // matching SightingsMapScreen's own draw order (shading, then uncertainty circles, then pins).
   mapShadingLayer = L.layerGroup().addTo(mapInstance);
-  mapMarkersLayer = L.layerGroup().addTo(mapInstance);
+
+  // zoomToBoundsOnClick: false -- clusterClick below decides between zooming in (the normal case)
+  // and showing the same-point sightings sheet (when every pin in the cluster shares one exact
+  // coordinate, common for a fixed vantage point's manual reports -- zooming further wouldn't
+  // separate them, matching SightingsMapScreen's own onClusterClick special case).
+  mapMarkersLayer = L.markerClusterGroup({
+    iconCreateFunction: clusterIconFn,
+    zoomToBoundsOnClick: false,
+    showCoverageOnHover: false
+  }).addTo(mapInstance);
+  mapMarkersLayer.on("clusterclick", (event) => {
+    const cluster = event.layer;
+    const children = cluster.getAllChildMarkers();
+    const firstLatLng = children[0].getLatLng();
+    const allSamePoint = children.every((m) => m.getLatLng().equals(firstLatLng));
+    if (allSamePoint) {
+      showSamePointSightingsSheet(children.map((m) => m.sightingData));
+    } else {
+      mapInstance.fitBounds(cluster.getBounds().pad(0.2));
+    }
+  });
 
   onPresenceStateChanged(drawWatchedZoneShading);
   drawWatchedZoneShading();
@@ -41,6 +60,38 @@ function initMap() {
     drawMapMarkers();
   });
   updateMapVerifiedToggleUi();
+
+  document.getElementById("same-point-close-btn").addEventListener("click", () => {
+    navigateBack();
+  });
+
+  initPlaybackPanel();
+}
+
+function clusterIconFn(cluster) {
+  return L.divIcon({
+    html: `<div class="sighting-cluster-badge">${cluster.getChildCount()}</div>`,
+    className: "sighting-cluster-icon",
+    iconSize: [32, 32]
+  });
+}
+
+function showSamePointSightingsSheet(sightings) {
+  const list = document.getElementById("same-point-list");
+  list.innerHTML = "";
+  sightings
+    .slice()
+    .sort((a, b) => (b.observed_at_epoch_ms || 0) - (a.observed_at_epoch_ms || 0))
+    .forEach((s) => {
+      const item = document.createElement("div");
+      item.className = "same-point-item";
+      item.textContent = sightingCaptionText(s);
+      list.appendChild(item);
+    });
+  document.getElementById("same-point-sheet").hidden = false;
+  pushNavLayer("same-point-sheet", () => {
+    document.getElementById("same-point-sheet").hidden = true;
+  });
 }
 
 function updateMapVerifiedToggleUi() {
@@ -96,18 +147,24 @@ function drawWatchedZoneShading() {
 const SIGHTING_DOT_COLOR = "#FFFF00";
 const SIGHTING_DOT_LOCAL_COLOR = "#9E9E9E";
 
-function drawMapMarkers() {
+// skipFitBounds -- a playback scrub/tick/chip change redraws this very frequently (up to every
+// 100ms while playing) and should never hijack the user's current pan/zoom the way a genuinely
+// new data refresh should; only real data refreshes (renderSightingsOnMap) and the VERIFIED ONLY
+// toggle fit bounds.
+function drawMapMarkers(skipFitBounds = false) {
   if (!mapInstance) return;
   mapMarkersLayer.clearLayers();
 
   const visible = lastCombinedSightings.filter((s) => {
     if (s.whale_lat == null || s.whale_lng == null) return false;
+    if (playbackIsOpen && !isWithinPlaybackWindow(s)) return false;
     if (s.is_local) return true; // never filtered by VERIFIED ONLY -- see isHighConfidence's own comment
     return !mapVerifiedOnly || isHighConfidence(s);
   });
 
   visible.forEach((s) => {
     const marker = L.marker([s.whale_lat, s.whale_lng], { icon: sightingDivIcon(s.is_local) });
+    marker.sightingData = s; // read back by the cluster-click handler's same-point check above
     marker.bindPopup(sightingPopupHtml(s));
     marker.bindTooltip(sightingCaptionText(s), {
       permanent: true,
@@ -131,7 +188,7 @@ function drawMapMarkers() {
     }
   });
 
-  if (visible.length > 0) {
+  if (!skipFitBounds && visible.length > 0) {
     const bounds = L.latLngBounds(visible.map((s) => [s.whale_lat, s.whale_lng]));
     mapInstance.fitBounds(bounds.pad(0.2), { maxZoom: 12 });
   }
@@ -161,10 +218,22 @@ function sightingCaptionText(s) {
 function sightingPopupHtml(s) {
   const time = s.observed_at_epoch_ms ? new Date(s.observed_at_epoch_ms).toLocaleString() : "Unknown time";
   const counts = formatCounts(s);
+  const direction = formatTravelDirection(s.travel_bearing_degrees);
   const photo = s.photo_url
     ? `<img src="${escapeHtml(s.photo_url)}" alt="Sighting photo" style="width:100%;border-radius:6px;margin-top:6px;">`
     : "";
-  return `<div class="popup"><strong>${time}</strong><br>${counts}${photo}</div>`;
+  return `<div class="popup"><strong>${time}</strong><br>${counts}<br>${direction}${photo}</div>`;
+}
+
+// Same 8-point display-only snapping SightingsMapScreen's own travel-bearing stub rendering
+// uses (SightingRecord.kt's snapToNearestCompass8Degrees) -- the stored value keeps its full
+// precision, only the label shown here is snapped.
+const COMPASS_POINT_LABELS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+function formatTravelDirection(bearingDegrees) {
+  if (bearingDegrees == null) return "Direction: unknown";
+  const normalized = ((bearingDegrees % 360) + 360) % 360;
+  const index = Math.round(normalized / 45) % 8;
+  return `Direction: ${COMPASS_POINT_LABELS[index]}`;
 }
 
 function formatCounts(s) {
@@ -187,4 +256,348 @@ function escapeHtml(str) {
 // whenever the map tab is switched into view.
 function invalidateMapSize() {
   if (mapInstance) mapInstance.invalidateSize();
+}
+
+// --- Playback / time-lapse + date-range filter -- SightingsMapScreen.kt's own scrub slider,
+// quick-range chips, fade window, and speed control. Ported as one panel, matching native's own
+// single Surface/Column (no separate bottom-sheet wrapper for the date range). ---
+
+// PlaybackRange.kt's QuickRange enum. Default is ALL_TIME (native: `remember { mutableStateOf
+// (QuickRange.ALL_TIME) }`), not "since midnight" -- confirmed directly against source rather
+// than assumed.
+const QUICK_RANGES = [
+  { key: "TODAY", label: "TODAY" },
+  { key: "YESTERDAY", label: "YESTERDAY" },
+  { key: "THIS_SEASON", label: "SEASON" },
+  { key: "ALL_TIME", label: "ALL TIME" },
+  { key: "CUSTOM", label: "CUSTOM" }
+];
+const PLAYBACK_SPEED_OPTIONS = [1, 5, 10, 30, 60];
+const FADE_WINDOW_OPTIONS = [
+  { key: "2h", label: "2H", ms: 2 * 60 * 60 * 1000 },
+  { key: "6h", label: "6H", ms: 6 * 60 * 60 * 1000 },
+  { key: "12h", label: "12H", ms: 12 * 60 * 60 * 1000 },
+  { key: "24h", label: "24H", ms: 24 * 60 * 60 * 1000 },
+  { key: "ALL", label: "ALL", ms: null }
+];
+
+const DAY_MS = 86400000;
+const HALF_DAY_MS = DAY_MS / 2;
+
+// PlaybackRange.kt's own FALL_START/END + SPRING_START/END constants (kept in sync with
+// PresenceBanner.kt's isKenaiInSeasonLocally natively -- ported verbatim, not re-derived).
+const SPRING_START_MONTH = 3, SPRING_START_DAY = 15;
+const SPRING_END_MONTH = 5, SPRING_END_DAY = 14;
+const FALL_START_MONTH = 8, FALL_START_DAY = 15;
+const FALL_END_MONTH = 12, FALL_END_DAY = 31;
+
+let playbackIsOpen = false;
+let playbackIsMinimized = false;
+let playbackIsPlaying = false;
+let playbackSpeedMultiplier = 1;
+let playbackFadeWindowKey = "ALL";
+let playbackSelectedQuickRange = "ALL_TIME";
+let playbackCustomFromMs = null;
+let playbackCustomToMs = null;
+let playbackRangeStart = 0;
+let playbackRangeEnd = 0;
+let playbackTimeMs = 0;
+let playbackTickerId = null;
+
+// Real America/Anchorage zone lookup (DST-safe), not a fixed UTC-9/-8 offset -- matches
+// OfflineSightingRepository.kt's anchorageDateParts/anchorageMidnightEpochMs expect/actual pair,
+// which native documents as deliberately going through a real timezone-database lookup rather
+// than fixed arithmetic. JS has no direct equivalent, so this derives the same real offset via
+// Intl's own timezone-aware formatting (formatting a UTC instant AS Anchorage-local time, then
+// diffing against the instant, yields exactly that instant's real UTC offset).
+function anchorageOffsetMinutesAt(epochMsUtc) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Anchorage", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+  }).formatToParts(new Date(epochMsUtc));
+  const get = (type) => Number(parts.find((p) => p.type === type).value);
+  const asIfUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second"));
+  return Math.round((asIfUtc - epochMsUtc) / 60000);
+}
+
+function anchorageDateParts(epochMs) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Anchorage", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(new Date(epochMs));
+  const get = (type) => Number(parts.find((p) => p.type === type).value);
+  return [get("year"), get("month"), get("day")];
+}
+
+function anchorageMidnightEpochMs(year, month, day) {
+  const utcGuess = Date.UTC(year, month - 1, day);
+  return utcGuess - anchorageOffsetMinutesAt(utcGuess) * 60000;
+}
+
+// PlaybackRange.kt's private thisSeasonRange -- backward-looking only (never a future window
+// with no data in it yet): inside a window, that window from its start through now; between
+// windows, whichever one ended most recently.
+function thisSeasonRange(nowMs) {
+  const [year] = anchorageDateParts(nowMs);
+  const springStart = anchorageMidnightEpochMs(year, SPRING_START_MONTH, SPRING_START_DAY);
+  const springEnd = anchorageMidnightEpochMs(year, SPRING_END_MONTH, SPRING_END_DAY) + DAY_MS - 1;
+  const fallStart = anchorageMidnightEpochMs(year, FALL_START_MONTH, FALL_START_DAY);
+  const fallEnd = anchorageMidnightEpochMs(year, FALL_END_MONTH, FALL_END_DAY) + DAY_MS - 1;
+
+  if (nowMs >= springStart && nowMs <= springEnd) return [springStart, nowMs];
+  if (nowMs >= fallStart && nowMs <= fallEnd) return [fallStart, nowMs];
+  if (nowMs < springStart) {
+    const prevFallStart = anchorageMidnightEpochMs(year - 1, FALL_START_MONTH, FALL_START_DAY);
+    const prevFallEnd = anchorageMidnightEpochMs(year - 1, FALL_END_MONTH, FALL_END_DAY) + DAY_MS - 1;
+    return [prevFallStart, prevFallEnd];
+  }
+  return [springStart, springEnd];
+}
+
+// QuickRange.resolve's per-shortcut window (the clamp-to-data-range + never-inverted guard lives
+// in recomputePlaybackRange below, matching resolve()'s own trailing coerceIn/fallback).
+function resolveQuickRange(key, dataMinMs, dataMaxMs, nowMs) {
+  if (key === "TODAY") {
+    const [y, m, d] = anchorageDateParts(nowMs);
+    return [anchorageMidnightEpochMs(y, m, d), nowMs];
+  }
+  if (key === "YESTERDAY") {
+    const [ty, tm, td] = anchorageDateParts(nowMs);
+    const todayMidnight = anchorageMidnightEpochMs(ty, tm, td);
+    const [yy, ym, yd] = anchorageDateParts(todayMidnight - HALF_DAY_MS);
+    return [anchorageMidnightEpochMs(yy, ym, yd), todayMidnight - 1];
+  }
+  if (key === "THIS_SEASON") return thisSeasonRange(nowMs);
+  return [dataMinMs, dataMaxMs]; // ALL_TIME, CUSTOM (CUSTOM's own from/to override this separately)
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function initPlaybackPanel() {
+  document.getElementById("playback-fab-btn").addEventListener("click", openPlaybackPanel);
+  document.getElementById("playback-close-btn").addEventListener("click", () => navigateBack());
+  document.getElementById("playback-minimize-btn").addEventListener("click", () => {
+    playbackIsMinimized = !playbackIsMinimized;
+    updatePlaybackPanelUi();
+  });
+  document.getElementById("playback-play-btn").addEventListener("click", togglePlayback);
+
+  document.getElementById("playback-slider").addEventListener("input", (event) => {
+    playbackTimeMs = playbackRangeStart + Number(event.target.value);
+    stopPlaybackTicker(); // matches native: dragging the slider stops playback
+    playbackIsPlaying = false;
+    updatePlaybackPlayButtonUi();
+    updatePlaybackTimeLabel();
+    drawMapMarkers(true);
+  });
+
+  document.getElementById("date-range-from-input").addEventListener("change", (event) => {
+    playbackCustomFromMs = event.target.value ? parseDateInputToStartOfDayMs(event.target.value) : null;
+    onPlaybackFilterChanged();
+  });
+  document.getElementById("date-range-to-input").addEventListener("change", (event) => {
+    playbackCustomToMs = event.target.value ? (parseDateInputToStartOfDayMs(event.target.value) + DAY_MS - 1) : null;
+    onPlaybackFilterChanged();
+  });
+
+  renderDateRangeChips();
+  renderFadeWindowChips();
+  renderPlaybackSpeedChips();
+}
+
+function parseDateInputToStartOfDayMs(dateInputValue) {
+  const [y, m, d] = dateInputValue.split("-").map(Number);
+  return anchorageMidnightEpochMs(y, m, d);
+}
+
+function openPlaybackPanel() {
+  playbackIsOpen = true;
+  playbackIsMinimized = false;
+  document.getElementById("playback-panel").hidden = false;
+  updatePlaybackPanelUi();
+  recomputePlaybackRange();
+  playbackTimeMs = playbackRangeStart; // matches native: opening the panel resets the scrub to the range start
+  updatePlaybackSliderUi();
+  drawMapMarkers(true);
+  pushNavLayer("playback-panel", closePlaybackPanel);
+}
+
+function closePlaybackPanel() {
+  stopPlaybackTicker();
+  playbackIsPlaying = false;
+  playbackIsOpen = false;
+  document.getElementById("playback-panel").hidden = true;
+  // Reset to defaults -- native's own playback state is `remember`ed per screen-entry, so this
+  // app's persistent (never-torn-down) Map view resets it here instead, at the equivalent
+  // "leaving the feature" boundary.
+  playbackSelectedQuickRange = "ALL_TIME";
+  playbackCustomFromMs = null;
+  playbackCustomToMs = null;
+  playbackFadeWindowKey = "ALL";
+  playbackSpeedMultiplier = 1;
+  document.getElementById("date-range-from-input").value = "";
+  document.getElementById("date-range-to-input").value = "";
+  document.getElementById("date-range-custom").hidden = true;
+  renderDateRangeChips();
+  renderFadeWindowChips();
+  renderPlaybackSpeedChips();
+  drawMapMarkers();
+}
+
+function recomputePlaybackRange() {
+  const timestamps = lastCombinedSightings
+    .map((s) => s.observed_at_epoch_ms)
+    .filter((t) => t != null && t > 0);
+  const nowMs = Date.now();
+  const dataMinMs = timestamps.length ? Math.min(...timestamps) : nowMs;
+  const dataMaxMs = timestamps.length ? Math.max(...timestamps) : nowMs;
+
+  let start, end;
+  if (playbackSelectedQuickRange === "CUSTOM") {
+    start = playbackCustomFromMs ?? dataMinMs;
+    end = playbackCustomToMs ?? dataMaxMs;
+  } else {
+    [start, end] = resolveQuickRange(playbackSelectedQuickRange, dataMinMs, dataMaxMs, nowMs);
+  }
+
+  start = clamp(start, dataMinMs, dataMaxMs);
+  end = clamp(end, dataMinMs, dataMaxMs);
+  if (end <= start) end = Math.min(start + 1000, dataMaxMs);
+
+  playbackRangeStart = start;
+  playbackRangeEnd = end;
+}
+
+function isWithinPlaybackWindow(s) {
+  if (s.observed_at_epoch_ms == null) return false;
+  if (s.observed_at_epoch_ms > playbackTimeMs) return false;
+  if (s.observed_at_epoch_ms < playbackRangeStart || s.observed_at_epoch_ms > playbackRangeEnd) return false;
+  const fadeOption = FADE_WINDOW_OPTIONS.find((f) => f.key === playbackFadeWindowKey);
+  if (fadeOption.ms == null) return true;
+  return playbackTimeMs - s.observed_at_epoch_ms <= fadeOption.ms;
+}
+
+function onPlaybackFilterChanged() {
+  recomputePlaybackRange();
+  playbackTimeMs = playbackRangeEnd;
+  updatePlaybackSliderUi();
+  drawMapMarkers(true);
+}
+
+function updatePlaybackPanelUi() {
+  document.getElementById("playback-full-controls").hidden = playbackIsMinimized;
+  document.getElementById("playback-minimize-btn").textContent = playbackIsMinimized ? "⌃" : "⌄";
+}
+
+function updatePlaybackPlayButtonUi() {
+  document.getElementById("playback-play-btn").textContent = playbackIsPlaying ? "⏸" : "▶";
+}
+
+function updatePlaybackTimeLabel() {
+  document.getElementById("playback-time-label").textContent = playbackTimeMs
+    ? new Date(playbackTimeMs).toLocaleString()
+    : "";
+}
+
+// Slider fix ported from SightingsMapScreen.kt's own current (already-fixed) code: an absolute
+// epoch-ms value fed straight to a Float-backed Slider collapses to ~2-minute steps once the
+// range spans multiple days (Float32's 24-bit mantissa can't hold a ~41-bit absolute-epoch
+// magnitude precisely). The fix offsets to rangeStart BEFORE converting, so the control only ever
+// sees the SPAN being scrubbed, not the giant absolute timestamp. JS numbers are doubles (no
+// Float32 precision floor at this magnitude regardless), but the relative-offset design is kept
+// anyway, per spec, rather than relying on wider precision to paper over the same shape of bug.
+function updatePlaybackSliderUi() {
+  const slider = document.getElementById("playback-slider");
+  const span = Math.max(1, playbackRangeEnd - playbackRangeStart);
+  slider.max = String(span);
+  slider.value = String(clamp(playbackTimeMs, playbackRangeStart, playbackRangeEnd) - playbackRangeStart);
+  updatePlaybackTimeLabel();
+}
+
+function togglePlayback() {
+  playbackIsPlaying = !playbackIsPlaying;
+  updatePlaybackPlayButtonUi();
+  if (playbackIsPlaying) {
+    playbackIsMinimized = true; // matches native: the panel auto-minimizes while playing
+    updatePlaybackPanelUi();
+    startPlaybackTicker();
+  } else {
+    stopPlaybackTicker();
+  }
+}
+
+// 100ms real-time tick advancing 60 simulated seconds per tick (times the speed multiplier) --
+// matches SightingsMapScreen's own LaunchedEffect ticker exactly.
+function startPlaybackTicker() {
+  stopPlaybackTicker();
+  playbackTickerId = setInterval(() => {
+    playbackTimeMs += 60000 * playbackSpeedMultiplier;
+    if (playbackTimeMs >= playbackRangeEnd) {
+      playbackTimeMs = playbackRangeEnd;
+      playbackIsPlaying = false;
+      stopPlaybackTicker();
+      updatePlaybackPlayButtonUi();
+    }
+    updatePlaybackSliderUi();
+    drawMapMarkers(true);
+  }, 100);
+}
+
+function stopPlaybackTicker() {
+  if (playbackTickerId != null) {
+    clearInterval(playbackTickerId);
+    playbackTickerId = null;
+  }
+}
+
+function renderDateRangeChips() {
+  const container = document.getElementById("date-range-chips");
+  container.innerHTML = "";
+  QUICK_RANGES.forEach((r) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip-toggle" + (playbackSelectedQuickRange === r.key ? " active" : "");
+    chip.textContent = r.label;
+    chip.addEventListener("click", () => {
+      playbackSelectedQuickRange = r.key;
+      document.getElementById("date-range-custom").hidden = r.key !== "CUSTOM";
+      renderDateRangeChips();
+      onPlaybackFilterChanged();
+    });
+    container.appendChild(chip);
+  });
+}
+
+function renderFadeWindowChips() {
+  const container = document.getElementById("fade-window-chips");
+  container.innerHTML = "";
+  FADE_WINDOW_OPTIONS.forEach((f) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip-toggle" + (playbackFadeWindowKey === f.key ? " active" : "");
+    chip.textContent = f.label;
+    chip.addEventListener("click", () => {
+      playbackFadeWindowKey = f.key;
+      renderFadeWindowChips();
+      drawMapMarkers(true);
+    });
+    container.appendChild(chip);
+  });
+}
+
+function renderPlaybackSpeedChips() {
+  const container = document.getElementById("playback-speed-chips");
+  container.innerHTML = "";
+  PLAYBACK_SPEED_OPTIONS.forEach((speed) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip-toggle" + (playbackSpeedMultiplier === speed ? " active" : "");
+    chip.textContent = `${speed}x`;
+    chip.addEventListener("click", () => {
+      playbackSpeedMultiplier = speed;
+      renderPlaybackSpeedChips();
+    });
+    container.appendChild(chip);
+  });
 }

@@ -3,7 +3,7 @@
 // there's no dynamic behavior beyond showing/hiding the page.
 function initResourcesPage() {
   document.getElementById("resources-back-btn").addEventListener("click", () => {
-    document.getElementById("resources-page").hidden = true;
+    navigateBack();
   });
 }
 

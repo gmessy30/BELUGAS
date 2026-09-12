@@ -39,13 +39,13 @@ function initSubmitView() {
   document.getElementById("done-btn").addEventListener("click", submitSighting);
 
   document.getElementById("outer-geofence-reject-ok-btn").addEventListener("click", () => {
-    document.getElementById("outer-geofence-reject-modal").hidden = true;
+    navigateBack();
   });
   document.getElementById("geofence-warning-cancel-btn").addEventListener("click", () => {
-    document.getElementById("geofence-warning-modal").hidden = true;
+    navigateBack();
   });
   document.getElementById("geofence-warning-save-btn").addEventListener("click", () => {
-    document.getElementById("geofence-warning-modal").hidden = true;
+    navigateBack();
     finishSubmit(false); // SAVE ANYWAY -- not geofence-verified
   });
 
@@ -184,6 +184,12 @@ function goToReviewStep() {
 
   document.getElementById("camera-step").hidden = true;
   document.getElementById("review-step").hidden = false;
+
+  // Pushes its own nav-stack layer (see nav-stack.js) so the back gesture/hardware back button
+  // returns to the camera step exactly like RETAKE does -- goToCameraStep is literally RETAKE's
+  // own teardown, reused directly as this layer's onPop. Manual mode never reaches this function
+  // (see openManualReportFlow's own push in main-menu.js), so this is always the camera path.
+  pushNavLayer("review-step", goToCameraStep);
 }
 
 // Matches both LoggingScreen's and ManualLoggingScreen's onDoneClick -- both return to
@@ -206,7 +212,9 @@ function goToCameraStep() {
 // dropping the in-memory blob, nothing was ever written to disk).
 function retakePhoto() {
   capturedPhotoBlob = null;
-  goToCameraStep();
+  // Pops the review-step layer pushed in goToReviewStep -- its onPop IS goToCameraStep, so this
+  // button and a plain back gesture end up doing exactly the same thing (see nav-stack.js).
+  navigateBack();
 }
 
 function locateMe() {
@@ -318,6 +326,9 @@ async function submitSighting() {
     // No SAVE ANYWAY here, deliberately -- matches native exactly: this location isn't remotely
     // Cook Inlet, not a borderline call.
     document.getElementById("outer-geofence-reject-modal").hidden = false;
+    pushNavLayer("outer-geofence-reject-modal", () => {
+      document.getElementById("outer-geofence-reject-modal").hidden = true;
+    });
     return;
   }
 
@@ -352,6 +363,9 @@ function showGeofenceWarning() {
     `The whale position (${confirmedLat.toFixed(4)}, ${confirmedLng.toFixed(4)}) falls outside ` +
     "the primary observation area for Cook Inlet. Do you still want to log this sighting?";
   document.getElementById("geofence-warning-modal").hidden = false;
+  pushNavLayer("geofence-warning-modal", () => {
+    document.getElementById("geofence-warning-modal").hidden = true;
+  });
 }
 
 async function finishSubmit(isGeofenceVerified) {
@@ -392,5 +406,16 @@ function resetSubmitForm() {
   });
   document.getElementById("location-status").textContent = "";
   document.getElementById("location-map").hidden = true;
-  goToCameraStep();
+
+  if (isManualReportMode) {
+    // No nested nav-stack layer to pop here -- manual mode's review-step IS the "manual-report"
+    // layer's own resting content (see main-menu.js's push), so returning to camera-step is just
+    // a visual change, not a back-stack pop.
+    goToCameraStep();
+  } else {
+    // The camera-path review-step was pushed as its OWN nested layer (see goToReviewStep), whose
+    // onPop IS goToCameraStep -- popping it here (rather than calling goToCameraStep directly)
+    // keeps this button and the back gesture in sync, per nav-stack.js's whole point.
+    navigateBack();
+  }
 }

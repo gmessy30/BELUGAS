@@ -55,12 +55,12 @@ function initInstallPrompt() {
 
   menuItem.addEventListener("click", onInstallItemClick);
   document.getElementById("ios-install-close-btn").addEventListener("click", () => {
-    document.getElementById("ios-install-modal").hidden = true;
+    navigateBack();
   });
 }
 
 async function onInstallItemClick() {
-  document.getElementById("main-menu").hidden = true;
+  const menu = document.getElementById("main-menu");
 
   if (deferredInstallPrompt) {
     // A captured event can only ever be prompted once -- clear it (and hide the item) up front
@@ -68,9 +68,18 @@ async function onInstallItemClick() {
     const promptEvent = deferredInstallPrompt;
     deferredInstallPrompt = null;
     document.getElementById("menu-install-item").hidden = true;
+    // Nothing of ours opens in the menu's place here -- the browser's own native install dialog
+    // takes over, so this just pops the "menu" nav-stack layer (see nav-stack.js) rather than
+    // pushing a new one, same as the plain "Close" item.
+    navigateBack();
     promptEvent.prompt();
     await promptEvent.userChoice;
   } else if (isIosDevice()) {
+    menu.hidden = true;
     document.getElementById("ios-install-modal").hidden = false;
+    pushNavLayer("ios-install-modal", () => {
+      document.getElementById("ios-install-modal").hidden = true;
+      menu.hidden = false;
+    });
   }
 }

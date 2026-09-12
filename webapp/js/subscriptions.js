@@ -64,7 +64,7 @@ function subscribedZoneIds() {
 
 function initAlertsPage() {
   document.getElementById("alerts-back-btn").addEventListener("click", () => {
-    document.getElementById("alerts-page").hidden = true;
+    navigateBack();
   });
 
   document.getElementById("alerts-kind-zone").addEventListener("click", () => setAlertsKind("zone"));
@@ -406,18 +406,18 @@ let pointPickerRadius = RADIUS_OPTIONS_METERS[0];
 
 function initPointPicker() {
   document.getElementById("point-picker-cancel-btn").addEventListener("click", () => {
-    document.getElementById("point-picker-overlay").hidden = true;
+    navigateBack();
   });
   document.getElementById("point-picker-confirm-btn").addEventListener("click", () => {
     alertsCustomPointLat = pointPickerLat;
     alertsCustomPointLng = pointPickerLng;
     alertsSelectedRadiusMeters = pointPickerRadius;
     alertsSelectedPresetSlug = null;
-    document.getElementById("point-picker-overlay").hidden = true;
     renderPointPresetChips();
     renderRadiusChips();
     updateDropPinButton();
     updateAlertsSubscribeEnabled();
+    navigateBack();
   });
   renderPointPickerRadiusChips();
 }
@@ -428,6 +428,9 @@ function openPointPicker() {
   pointPickerRadius = alertsSelectedRadiusMeters;
 
   document.getElementById("point-picker-overlay").hidden = false;
+  pushNavLayer("point-picker", () => {
+    document.getElementById("point-picker-overlay").hidden = true;
+  });
 
   if (!pointPickerMap) {
     pointPickerMap = L.map("point-picker-map").setView([pointPickerLat, pointPickerLng], ALERTS_DEFAULT_ZOOM);
@@ -501,7 +504,7 @@ let polygonPickerMarkersLayer = null;
 
 function initPolygonPicker() {
   document.getElementById("polygon-picker-cancel-btn").addEventListener("click", () => {
-    document.getElementById("polygon-picker-overlay").hidden = true;
+    navigateBack();
   });
   document.getElementById("polygon-picker-undo-btn").addEventListener("click", () => {
     polygonPickerVertices = polygonPickerVertices.slice(0, -1);
@@ -510,15 +513,18 @@ function initPolygonPicker() {
   document.getElementById("polygon-picker-finish-btn").addEventListener("click", () => {
     if (polygonPickerVertices.length < 3) return;
     alertsPolygonVertices = polygonPickerVertices;
-    document.getElementById("polygon-picker-overlay").hidden = true;
     updatePolygonStatus();
     updateAlertsSubscribeEnabled();
+    navigateBack();
   });
 }
 
 function openPolygonPicker() {
   polygonPickerVertices = [...alertsPolygonVertices];
   document.getElementById("polygon-picker-overlay").hidden = false;
+  pushNavLayer("polygon-picker", () => {
+    document.getElementById("polygon-picker-overlay").hidden = true;
+  });
 
   if (!polygonPickerMap) {
     polygonPickerMap = L.map("polygon-picker-map").setView(ALERTS_DEFAULT_CENTER, ALERTS_DEFAULT_ZOOM);

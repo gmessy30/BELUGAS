@@ -20,6 +20,10 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
         integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw=="
         crossorigin="anonymous" referrerpolicy="no-referrer">
+  <!-- Clustering (SightingsMapScreen.kt's orange cluster-count circles) -- Leaflet has no
+       built-in clustering, unlike native's MapLibre GeoJsonOptions(cluster = true). -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -245,6 +249,20 @@
     </div>
   </div>
 
+  <!-- SightingsMapScreen.kt's samePointSightings ModalBottomSheet -- shown when a tapped cluster's
+       pins all share one exact coordinate (common for a fixed vantage point's manual reports), in
+       place of the usual zoom-in-on-cluster-tap behavior since zooming further wouldn't separate
+       them. -->
+  <div id="same-point-sheet" class="modal-backdrop" hidden>
+    <div class="modal-card">
+      <h2>Sightings Here</h2>
+      <div id="same-point-list" class="same-point-list"></div>
+      <div class="modal-actions">
+        <button id="same-point-close-btn" class="secondary" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Ports SubscriptionsScreen.kt. Three subscription kinds writing to the same public.
        subscriptions table native uses, keyed by this browser's own subscriber_id -- see
        subscriptions.js's own header comment for the confidence-filter correction (native's
@@ -405,6 +423,44 @@
   <main>
     <section id="map-view" class="view">
       <button id="map-verified-toggle-btn" class="verified-toggle-btn map-verified-toggle-btn">VERIFIED ONLY</button>
+
+      <!-- SightingsMapScreen.kt's bottom-right time-lapse FAB, opens the panel below. -->
+      <button id="playback-fab-btn" class="playback-fab-btn" aria-label="Time-lapse playback" type="button">⏱</button>
+
+      <!-- Ports the playback Surface/Column verbatim as one panel (native has no separate sheet
+           wrapper either): date-range quick-picks, a fade-window control, speed, and the scrub
+           slider itself. Auto-minimizes to just its header+slider while playing, matching
+           native's own behavior -- see map-view.js's updatePlaybackPanelUi. -->
+      <div id="playback-panel" class="playback-panel" hidden>
+        <div class="playback-panel-header">
+          <span class="playback-panel-title">TIME-LAPSE</span>
+          <div class="playback-panel-header-actions">
+            <button id="playback-minimize-btn" class="playback-icon-btn" aria-label="Minimize" type="button">⌄</button>
+            <button id="playback-close-btn" class="playback-icon-btn" aria-label="Close" type="button">✕</button>
+          </div>
+        </div>
+
+        <div id="playback-full-controls">
+          <div class="step-label">Date Range</div>
+          <div class="chip-row" id="date-range-chips"></div>
+          <div id="date-range-custom" class="date-range-custom" hidden>
+            <label>From <input type="date" id="date-range-from-input"></label>
+            <label>To <input type="date" id="date-range-to-input"></label>
+          </div>
+
+          <div class="step-label">Fade Window</div>
+          <div class="chip-row" id="fade-window-chips"></div>
+
+          <div class="step-label">Speed</div>
+          <div class="chip-row" id="playback-speed-chips"></div>
+        </div>
+
+        <div class="playback-scrub-row">
+          <button id="playback-play-btn" class="playback-icon-btn playback-play-btn" aria-label="Play" type="button">▶</button>
+          <input type="range" id="playback-slider" class="playback-slider" min="0" max="0" value="0">
+        </div>
+        <div id="playback-time-label" class="playback-time-label"></div>
+      </div>
     </section>
 
     <section id="list-view" class="view mae-background" hidden>
@@ -553,9 +609,11 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"
           integrity="sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg=="
           crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
   <script src="js/config.js"></script>
+  <script src="js/nav-stack.js"></script>
   <script src="js/install-prompt.js"></script>
   <script src="js/db.js"></script>
   <script src="js/geofence.js"></script>

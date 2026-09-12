@@ -78,6 +78,10 @@ function onWhaleNoseTap() {
     hiddenGestureTapCount = 0;
     document.getElementById("about-page").hidden = true;
     openTierCodeModal();
+    pushNavLayer("tier-code-modal", () => {
+      document.getElementById("tier-code-modal").hidden = true;
+      document.getElementById("about-page").hidden = false;
+    });
   }
 }
 
@@ -95,7 +99,7 @@ function setAboutTextVisible(visible) {
 
 function initAboutPage() {
   document.getElementById("about-back-btn").addEventListener("click", () => {
-    document.getElementById("about-page").hidden = true;
+    navigateBack();
   });
 
   document.getElementById("about-toggle-text-btn").addEventListener("click", () => {

@@ -17,6 +17,11 @@
 // (Android back/gesture nav dismisses MainMenuDrawer natively); styled after AboutScreen.kt's own
 // "← BACK" convention (yellow, bold) since that's the app's real dismiss-this-screen idiom, just
 // reused here.
+// Every transition below pushes its own nav-stack layer (see nav-stack.js) so the Android/PWA
+// back gesture and hardware back button undo it exactly like the equivalent in-app button would --
+// including the menu itself: selecting a destination hides the menu but does NOT pop its layer, so
+// backing out of that destination re-reveals the menu rather than jumping straight past it, matching
+// what actually happened onscreen (the menu is still "open" underneath, just visually covered).
 function initMainMenu() {
   const menu = document.getElementById("main-menu");
 
@@ -27,11 +32,14 @@ function initMainMenu() {
   document.querySelectorAll(".menu-trigger-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       menu.hidden = false;
+      pushNavLayer("menu", () => {
+        menu.hidden = true;
+      });
     });
   });
 
   document.getElementById("menu-close-item").addEventListener("click", () => {
-    menu.hidden = true;
+    navigateBack();
   });
 
   // "About" shares the .menu-nav-item class for its text styling but isn't a switchTab()
@@ -39,33 +47,65 @@ function initMainMenu() {
   // specifically so it doesn't also pick up this generic handler.
   document.querySelectorAll(".menu-nav-item[data-nav]").forEach((item) => {
     item.addEventListener("click", () => {
-      switchTab(item.dataset.nav);
+      const previousTab = getActiveTabName();
       menu.hidden = true;
+      switchTab(item.dataset.nav);
+      pushNavLayer("tab:" + item.dataset.nav, () => {
+        switchTab(previousTab);
+        menu.hidden = false;
+      });
     });
   });
 
   document.getElementById("menu-report-manually-item").addEventListener("click", () => {
+    const previousTab = getActiveTabName();
     menu.hidden = true;
     openManualReportFlow();
+    // No separate nested layer for the manual review step itself (contrast goToReviewStep's own
+    // push in submit-view.js) -- manual mode skips the camera step entirely, so this IS the
+    // submit tab's own resting layer, just starting on review-step instead of camera-step.
+    // goToCameraStep as the teardown matches LoggingScreen's/ManualLoggingScreen's shared
+    // onDoneClick (both return to Screen.CAPTURE) -- see resetSubmitForm's own comment.
+    pushNavLayer("manual-report", () => {
+      goToCameraStep();
+      switchTab(previousTab);
+      menu.hidden = false;
+    });
   });
 
   document.getElementById("menu-news-feed-item").addEventListener("click", () => {
     menu.hidden = true;
     openNewsFeedPage();
+    pushNavLayer("news-feed-page", () => {
+      document.getElementById("news-feed-page").hidden = true;
+      menu.hidden = false;
+    });
   });
 
   document.getElementById("menu-resources-item").addEventListener("click", () => {
     menu.hidden = true;
     openResourcesPage();
+    pushNavLayer("resources-page", () => {
+      document.getElementById("resources-page").hidden = true;
+      menu.hidden = false;
+    });
   });
 
   document.getElementById("menu-about-item").addEventListener("click", () => {
     menu.hidden = true;
     openAboutPage();
+    pushNavLayer("about-page", () => {
+      document.getElementById("about-page").hidden = true;
+      menu.hidden = false;
+    });
   });
 
   document.getElementById("menu-alerts-item").addEventListener("click", () => {
     menu.hidden = true;
     openAlertsPage();
+    pushNavLayer("alerts-page", () => {
+      document.getElementById("alerts-page").hidden = true;
+      menu.hidden = false;
+    });
   });
 }

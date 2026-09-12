@@ -667,7 +667,8 @@ main {
 #alerts-page .chip-toggle,
 #point-picker-overlay .chip-toggle,
 #polygon-picker-overlay .chip-toggle,
-#review-step .chip-toggle {
+#review-step .chip-toggle,
+#playback-panel .chip-toggle {
   background: rgba(255, 255, 255, 0.1);
   border: none;
   color: #ffffff;
@@ -677,7 +678,8 @@ main {
 #alerts-page .chip-toggle.active,
 #point-picker-overlay .chip-toggle.active,
 #polygon-picker-overlay .chip-toggle.active,
-#review-step .chip-toggle.active {
+#review-step .chip-toggle.active,
+#playback-panel .chip-toggle.active {
   background: var(--brand-yellow);
   color: #000000;
 }
@@ -1287,6 +1289,141 @@ button.secondary {
 
 .sighting-label::before {
   display: none;
+}
+
+/* Cluster badge -- matches SightingsMapScreen's cluster CircleLayer exactly: solid orange
+   (0xFFFF6D00), black 2dp stroke, white count text. Leaflet.markercluster's default icon is
+   overridden entirely via iconCreateFunction (map-view.js) rather than styled through its own
+   size-tiered classes, since native has just the one fixed look regardless of cluster size. */
+.sighting-cluster-icon {
+  background: transparent;
+  border: none;
+}
+
+.sighting-cluster-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #FF6D00;
+  border: 2px solid #000000;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+/* --- Playback / time-lapse + date-range (SightingsMapScreen.kt's own scrub slider + quick-range
+   chips, one Surface/Column natively -- ported as one panel here too, see map-view.js). --- */
+.playback-fab-btn {
+  position: absolute;
+  right: 16px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  z-index: 500;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: var(--brand-teal-2);
+  color: #ffffff;
+  font-size: 22px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.playback-panel {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  z-index: 500;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: rgba(20, 30, 30, 0.92);
+  border-radius: 14px;
+  padding: 12px 14px;
+  color: #ffffff;
+}
+
+.playback-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.playback-panel-title {
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  font-size: 0.85rem;
+}
+
+.playback-panel-header-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.playback-icon-btn {
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  color: #ffffff;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.playback-scrub-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.playback-play-btn {
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.playback-slider {
+  flex: 1;
+  min-width: 0;
+}
+
+.playback-time-label {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.75);
+  text-align: center;
+}
+
+.date-range-custom {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 0.8rem;
+}
+
+.date-range-custom input[type="date"] {
+  display: block;
+  margin-top: 2px;
+}
+
+.same-point-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.same-point-item {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.same-point-item:last-child {
+  border-bottom: none;
 }
 
 /* --- Rotate-device overlay (orientation-lock.js) --- */

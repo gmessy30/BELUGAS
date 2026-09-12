@@ -20,6 +20,14 @@ async function renderAllSightings() {
   renderSightingsList(queued, latestRemoteSightings);
 }
 
+// Which .view is currently on screen -- used by main-menu.js's nav-stack layers to remember what
+// to switch back to on a back gesture, without hardcoding "map" as if it were always the tab
+// underneath (the menu can be opened from any tab, not just Map).
+function getActiveTabName() {
+  const el = document.querySelector(".view:not([hidden])");
+  return el ? el.id.replace("-view", "") : "map";
+}
+
 function switchTab(tabName) {
   document.querySelectorAll(".view").forEach((el) => (el.hidden = el.id !== `${tabName}-view`));
 
@@ -48,6 +56,12 @@ function switchTab(tabName) {
 
   if (tabName === "map") {
     invalidateMapSize();
+  } else if (playbackIsPlaying) {
+    // No native equivalent to defer to here (SightingsMapScreen's own playback state is torn down
+    // whenever you navigate off that screen) -- pausing rather than fully resetting on a tab
+    // switch keeps this web app's persistent Map view's scrub position intact for when the user
+    // comes back, while not leaving a timer silently ticking against a hidden tab.
+    togglePlayback();
   }
 }
 
@@ -65,6 +79,7 @@ function hideSplash() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  initNavStack();
   initMap();
   initListView();
   initSubmitView();

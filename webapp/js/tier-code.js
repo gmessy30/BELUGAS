@@ -8,13 +8,13 @@ function initTierCodeModal() {
   const input = document.getElementById("tier-code-input");
 
   closeBtn.addEventListener("click", () => {
-    modal.hidden = true;
+    navigateBack();
   });
 
   // Tapping the dimmed backdrop (not the dialog card itself) closes it, same convention as
   // the location/camera steps' plain-button dismissal elsewhere in this app.
   modal.addEventListener("click", (event) => {
-    if (event.target === modal) modal.hidden = true;
+    if (event.target === modal) navigateBack();
   });
 
   submitBtn.addEventListener("click", submitTierCode);

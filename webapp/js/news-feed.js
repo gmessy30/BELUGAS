@@ -10,7 +10,7 @@ let suggestArticleType = "news";
 
 function initNewsFeedPage() {
   document.getElementById("news-back-btn").addEventListener("click", () => {
-    document.getElementById("news-feed-page").hidden = true;
+    navigateBack();
   });
 
   document.getElementById("news-filter-news").addEventListener("click", () => setArticleType("news"));
@@ -93,10 +93,16 @@ function openSuggestArticleModal() {
   const statusEl = document.getElementById("suggest-status");
   statusEl.textContent = "";
   document.getElementById("suggest-article-modal").hidden = false;
+  pushNavLayer("suggest-article-modal", () => {
+    document.getElementById("suggest-article-modal").hidden = true;
+  });
 }
 
+// Bound to the cancel button AND called after a successful submit (via setTimeout below) -- both
+// just pop the layer pushed in openSuggestArticleModal, whose onPop does the actual hiding, same
+// as every other in-app "close" action (see nav-stack.js).
 function closeSuggestArticleModal() {
-  document.getElementById("suggest-article-modal").hidden = true;
+  navigateBack();
 }
 
 // Submitted items land as pending_review and won't show up here until approved -- same as
