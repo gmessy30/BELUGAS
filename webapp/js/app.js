@@ -1,12 +1,23 @@
 // Tab switching + top-level init/refresh. Kept deliberately dumb -- three plain views toggled
 // by hiding/showing, no router/framework, matching the "framework-free, fast to build and debug
 // this weekend" brief.
-let latestSightings = [];
+let latestRemoteSightings = [];
 
 async function refreshSightings() {
-  latestSightings = await fetchRecentSightings();
-  renderSightingsOnMap(latestSightings);
-  renderSightingsList(latestSightings);
+  latestRemoteSightings = await fetchRecentSightings();
+  await renderAllSightings();
+}
+
+// Combines this device's own offline queue with the last remote fetch and pushes the result to
+// both views -- matches OfflineSightingsList's own "QUEUED FOR SYNC" + "REMOTE DATABASE" split
+// (App.kt), shown together rather than the queue being invisible until it syncs. Called after
+// every remote refresh AND, from offline-queue.js, whenever the queue itself changes (a new
+// sighting gets queued, or a queued item's photo finishes uploading) -- those don't need a
+// network round trip, just a re-render of already-known data.
+async function renderAllSightings() {
+  const queued = await getQueuedSightingsAsRecords();
+  renderSightingsOnMap([...queued, ...latestRemoteSightings]);
+  renderSightingsList(queued, latestRemoteSightings);
 }
 
 function switchTab(tabName) {
@@ -39,6 +50,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   initMap();
+  initListView();
   initSubmitView();
   initTierCodeModal();
   initOfflineQueue();

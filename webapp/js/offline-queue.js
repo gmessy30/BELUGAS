@@ -90,6 +90,10 @@ async function submitOrQueueSighting(record, photoBlob) {
       createdAt: Date.now()
     });
     await refreshQueueBadge();
+    // Shows the newly-queued sighting on the map/list immediately (native's own "QUEUED FOR
+    // SYNC" section doesn't wait for a sync attempt to appear either) rather than only once a
+    // later drain/refresh happens to run.
+    await renderAllSightings();
     return { ok: false, queued: true };
   }
 
@@ -123,7 +127,40 @@ async function drainOfflineQueue() {
   }
 
   await refreshQueueBadge();
-  if (anySucceeded) await refreshSightings();
+  // A success means a remote row now exists that didn't before -- worth a full remote refetch.
+  // Otherwise (nothing succeeded, or a queued photo just got its real URL) just re-render with
+  // the queue's current state -- no network call needed for that.
+  if (anySucceeded) {
+    await refreshSightings();
+  } else {
+    await renderAllSightings();
+  }
+}
+
+/**
+ * Queued entries reshaped to look like a fetched sighting row, so the map/list views can render
+ * them alongside remote ones -- matching OfflineSightingsList's own "QUEUED FOR SYNC" section in
+ * App.kt, which shows this device's unsynced local queue mixed into the same list/map rather
+ * than hidden until it syncs. `is_local: true` is the marker both views key their queued-specific
+ * treatment off (gray map dot, "(QUEUED)" list suffix), mirroring SightingRecord.isLocal there.
+ *
+ * A queued photo not yet uploaded has no real photo_url yet -- object-URL'd from the blob still
+ * held locally so its thumbnail shows immediately instead of blank until it syncs.
+ */
+async function getQueuedSightingsAsRecords() {
+  const items = await getQueuedSightings();
+  return items.map((item) => ({
+    id: item.id,
+    whale_lat: item.record.whale_lat,
+    whale_lng: item.record.whale_lng,
+    count_whites: item.record.count_whites,
+    count_greys: item.record.count_greys,
+    count_calves: item.record.count_calves,
+    count_unknown: item.record.count_unknown,
+    observed_at_epoch_ms: item.record.observed_at_epoch_ms,
+    photo_url: item.record.photo_url || (item.photoBlob ? URL.createObjectURL(item.photoBlob) : null),
+    is_local: true
+  }));
 }
 
 async function refreshQueueBadge() {

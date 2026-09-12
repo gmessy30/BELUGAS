@@ -16,6 +16,17 @@ const SIGHTING_LIST_COLUMNS = [
   "travel_bearing_degrees", "travel_bearing_source", "position_source", "observer_tier"
 ].join(",");
 
+// Matches SightingRecord.isHighConfidence in shared/src/commonMain/kotlin/com/cookinlet/belugas/
+// SightingRecord.kt exactly: a photo is direct evidence regardless of who logged it; absent
+// that, tier 1/2 (credentialed observer) is next-best. Used by both the map and list "VERIFIED
+// ONLY" toggles (SightingsMapScreen.kt / OfflineSightingsList in App.kt each have their own
+// independent copy of this same toggle natively) -- never applied to this device's own queued-
+// but-not-yet-synced sightings, same as native (a local sighting has no observer_tier yet at all,
+// server-computed only on insert).
+function isHighConfidence(sighting) {
+  return sighting.photo_url != null || sighting.observer_tier === 1 || sighting.observer_tier === 2;
+}
+
 /**
  * Fetches recent sightings, newest first. Returns [] on failure -- callers show an inline error
  * separately rather than crash the map/list view.
