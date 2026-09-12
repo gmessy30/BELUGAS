@@ -38,16 +38,24 @@ function switchTab(tabName) {
   // ACKNOWLEDGEMENT_GATE) -- this tab covers the camera+logging equivalent.
   setPresenceBannerReportTabActive(isReportTab);
 
+  // Matches App.kt's wantsLandscape -- forced landscape for the whole Report tab (camera step +
+  // review step, either mode), released for every other tab.
+  if (isReportTab) {
+    lockLandscapeForReportTab();
+  } else {
+    unlockOrientationForOtherTabs();
+  }
+
   if (tabName === "map") {
     invalidateMapSize();
   }
 }
 
-// Matches SPLASH_ICON_ONLY_DURATION_MS in App.kt -- the native splash's fixed minimum hold
-// before the background artwork fades in/the app becomes interactive. Kept as a MINIMUM here
-// (raced against the initial sightings fetch below), not an added-on-top delay, so a slow
-// network doesn't extend the wait further than it already has to.
-const SPLASH_MIN_DISPLAY_MS = 1200;
+// Raised past SPLASH_ICON_ONLY_DURATION_MS's native 1200ms on request -- long enough for the
+// icon/wordmark to actually register before the app appears. Still a MINIMUM (raced against the
+// initial sightings fetch below), not an added-on-top delay, so a slow network doesn't extend
+// the wait further than it already has to.
+const SPLASH_MIN_DISPLAY_MS = 2500;
 
 function hideSplash() {
   const splash = document.getElementById("splash-screen");
@@ -66,6 +74,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   initNewsFeedPage();
   initAlertsPage();
   initPresenceBanner();
+  initInstallPrompt();
+  initOrientationLock();
   initMainMenu();
   initOfflineQueue();
   initPresenceState();

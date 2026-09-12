@@ -34,6 +34,17 @@
     </div>
   </div>
 
+  <!-- Ports App.kt's LockLandscapeOrientation for the web: stands in for the lock on platforms/
+       contexts where screen.orientation.lock() isn't available or hasn't taken effect yet (iOS
+       Safari always; a non-installed Android Chrome tab often) -- see orientation-lock.js. -->
+  <div id="rotate-device-overlay" class="rotate-device-overlay" hidden>
+    <svg class="rotate-device-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="6" y="3" width="12" height="18" rx="2"/>
+      <line x1="6" y1="18" x2="18" y2="18"/>
+    </svg>
+    <p class="rotate-device-text">Rotate your device to continue</p>
+  </div>
+
   <header>
     <h1><img src="icons/icon-192.png" alt="" class="header-icon">BELUGAS</h1>
     <button class="menu-open-btn menu-trigger-btn">≡ MENU</button>
@@ -69,6 +80,10 @@
     <button id="menu-resources-item" class="menu-nav-item">Resources</button>
     <button id="menu-about-item" class="menu-nav-item">About</button>
     <button id="menu-alerts-item" class="menu-nav-item">Alerts</button>
+    <!-- No native equivalent at all -- native is installed via the app stores, no in-app
+         install-prompt concept exists there. Web-only, hidden by default; install-prompt.js
+         reveals it once installing is actually possible (see that file's own header comment). -->
+    <button id="menu-install-item" class="menu-nav-item" hidden>Install App</button>
     <button id="menu-close-item" class="menu-close-item">← Close</button>
   </div>
 
@@ -351,6 +366,25 @@
     </div>
   </div>
 
+  <!-- iOS Safari has no install API at all (no beforeinstallprompt) -- the only path onto the
+       Home Screen there is the user doing it manually via the Share sheet, so this is
+       instructions, not a trigger. -->
+  <div id="ios-install-modal" class="modal-backdrop" hidden>
+    <div class="modal-card">
+      <h2>Install BELUGAS</h2>
+      <div class="ios-install-icon-row">
+        <img src="icons/icon-192.png" alt="" class="ios-install-icon">
+      </div>
+      <p class="modal-description">
+        Tap the <strong>Share</strong> button (the square with an arrow pointing up) in Safari's
+        toolbar, then scroll down and tap <strong>"Add to Home Screen."</strong>
+      </p>
+      <div class="modal-actions">
+        <button id="ios-install-close-btn" class="primary" type="button">Got It</button>
+      </div>
+    </div>
+  </div>
+
   <div id="tier-code-modal" class="modal-backdrop" hidden>
     <div class="modal-card">
       <h2>Enter Observer Code</h2>
@@ -451,6 +485,29 @@
           <p id="location-status" class="status-info"></p>
           <div id="location-map" hidden></div>
 
+          <!-- LoggingScreen.kt's AWAY/LEFT/RIGHT arrows resolve a RELATIVE direction against a
+               live compass bearing to the whale (HeadingEstimate) -- a magnetometer reading this
+               app never takes (see submit-view.js's header comment on the GPS+pin approach). So
+               this is an absolute compass-rose picker instead: choosing a point stores that exact
+               degree value straight into travel_bearing_degrees (0=N, 45=NE, ... 315=NW, matching
+               SightingRecord's true/magnetic-north convention and the same 8-point resolution
+               SightingsMapScreen.kt's own arrow rendering snaps to via snapToNearestCompass8Degrees),
+               with travel_bearing_source always "MANUAL" -- this app has no SENSOR source to report.
+               Center tile is the explicit "unknown" case (PodDirection.NONE's equivalent), selected
+               by default, which leaves travel_bearing_degrees/source both null. -->
+          <div class="step-label">Travel Direction</div>
+          <div class="direction-rose" role="group" aria-label="Travel direction">
+            <button type="button" class="chip-toggle direction-chip" data-bearing="315">NW</button>
+            <button type="button" class="chip-toggle direction-chip" data-bearing="0">N</button>
+            <button type="button" class="chip-toggle direction-chip" data-bearing="45">NE</button>
+            <button type="button" class="chip-toggle direction-chip" data-bearing="270">W</button>
+            <button type="button" class="chip-toggle direction-chip direction-chip-unknown active" data-bearing="">Unknown</button>
+            <button type="button" class="chip-toggle direction-chip" data-bearing="90">E</button>
+            <button type="button" class="chip-toggle direction-chip" data-bearing="225">SW</button>
+            <button type="button" class="chip-toggle direction-chip" data-bearing="180">S</button>
+            <button type="button" class="chip-toggle direction-chip" data-bearing="135">SE</button>
+          </div>
+
           <div class="step-label">Whale Count</div>
           <div class="whale-count-row">
             <div class="whale-count-col" data-count="unknown">
@@ -499,6 +556,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
   <script src="js/config.js"></script>
+  <script src="js/install-prompt.js"></script>
   <script src="js/db.js"></script>
   <script src="js/geofence.js"></script>
   <script src="js/presence.js"></script>
@@ -511,6 +569,7 @@
   <script src="js/subscriptions.js"></script>
   <script src="js/presence-banner.js"></script>
   <script src="js/main-menu.js"></script>
+  <script src="js/orientation-lock.js"></script>
   <script src="js/map-view.js"></script>
   <script src="js/list-view.js"></script>
   <script src="js/submit-view.js"></script>

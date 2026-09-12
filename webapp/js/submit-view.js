@@ -24,6 +24,10 @@ let confirmedLng = null;
 let locationMarker = null;
 let locationMapInstance = null;
 let isManualReportMode = false;
+// Null = unknown direction (HeadingDistance.kt's PodDirection.NONE equivalent) -- see the
+// direction-rose markup's own comment in index.html for why this is an absolute compass-rose
+// pick rather than native's relative AWAY/LEFT/RIGHT-against-a-compass-bearing scheme.
+let travelBearingDegrees = null;
 
 const counts = { whites: 0, greys: 0, calves: 0, unknown: 0 };
 
@@ -43,6 +47,14 @@ function initSubmitView() {
   document.getElementById("geofence-warning-save-btn").addEventListener("click", () => {
     document.getElementById("geofence-warning-modal").hidden = true;
     finishSubmit(false); // SAVE ANYWAY -- not geofence-verified
+  });
+
+  document.querySelectorAll(".direction-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".direction-chip").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      travelBearingDegrees = btn.dataset.bearing === "" ? null : Number(btn.dataset.bearing);
+    });
   });
 
   document.querySelectorAll(".whale-count-col").forEach((col) => {
@@ -82,6 +94,7 @@ function openManualReportFlow() {
 // affordance at all (nothing to retake -- there was never a photo).
 function updateReviewStepModeUi() {
   document.getElementById("review-photo").hidden = true;
+  document.getElementById("review-step").classList.toggle("no-photo", true);
   document.getElementById("done-btn").textContent = isManualReportMode ? "← SUBMIT" : "← DONE";
   document.getElementById("retake-btn").hidden = isManualReportMode;
 }
@@ -163,8 +176,9 @@ function goToReviewStep() {
     photoEl.src = reviewPhotoObjectUrl;
     photoEl.hidden = false;
   } else {
-    photoEl.hidden = true; // no photo (camera unavailable, user chose to skip) -- plain black background
+    photoEl.hidden = true; // no photo (camera unavailable, user chose to skip)
   }
+  document.getElementById("review-step").classList.toggle("no-photo", !capturedPhotoBlob);
   document.getElementById("done-btn").textContent = "← DONE";
   document.getElementById("retake-btn").hidden = false;
 
@@ -273,6 +287,8 @@ function buildSightingRecord(isGeofenceVerified) {
     count_greys: counts.greys,
     count_calves: counts.calves,
     count_unknown: counts.unknown,
+    travel_bearing_degrees: travelBearingDegrees,
+    travel_bearing_source: travelBearingDegrees != null ? "MANUAL" : null,
     observed_at_epoch_ms: Date.now(),
     observer_type: "SELF",
     is_geofence_verified: isGeofenceVerified,
@@ -370,6 +386,10 @@ function resetSubmitForm() {
   confirmedLng = null;
   Object.keys(counts).forEach((key) => (counts[key] = 0));
   document.querySelectorAll(".whale-count-value").forEach((el) => (el.textContent = "0"));
+  travelBearingDegrees = null;
+  document.querySelectorAll(".direction-chip").forEach((b) => {
+    b.classList.toggle("active", b.classList.contains("direction-chip-unknown"));
+  });
   document.getElementById("location-status").textContent = "";
   document.getElementById("location-map").hidden = true;
   goToCameraStep();
