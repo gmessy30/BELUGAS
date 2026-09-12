@@ -553,11 +553,11 @@
       </div>
 
       <!-- Step 2 -- LoggingScreen.kt: the captured photo itself as the full-bleed background
-           (not a small inline thumbnail), "← DONE"/"RETAKE ↻" top row. Native's own bottom
-           panel here is a heading/distance compass picker + direction arrows -- NOT ported (see
-           submit-view.js's header comment for why) -- replaced with this app's existing GPS+pin
-           location step and the whale-count row below, now using the real per-tier breaching-
-           whale artwork (WhaleCountControls.kt) instead of a plain count stepper. -->
+           (not a small inline thumbnail), "← DONE"/"RETAKE ↻" top row, 3 relative direction
+           arrows overlaid on the photo, a heading+distance trigger button, and the whale-count
+           row. CAMERA-PATH ONLY -- ManualLoggingScreen is a structurally different screen
+           natively (map-backed, no heading/distance concept at all), ported separately below as
+           #manual-log-step, not shared with this one. -->
       <div id="review-step" class="review-screen" hidden>
         <img id="review-photo" class="review-photo" alt="Captured sighting photo">
         <div class="review-vignette"></div>
@@ -567,22 +567,129 @@
           <button id="retake-btn" class="review-retake-btn" type="button">RETAKE ↻</button>
         </div>
 
-        <div class="review-bottom-panel">
-          <div class="step-label">Location</div>
-          <button id="locate-btn" class="secondary">Get My Location</button>
-          <p id="location-status" class="status-info"></p>
-          <div id="location-map" hidden></div>
+        <!-- LoggingScreen.kt's 3 DirectionArrowButtons, overlaid directly on the photo -- RELATIVE
+             to the observer (pod moving away/left/right), resolved against the heading below into
+             the absolute travel_bearing_degrees actually stored (see heading-distance.js's
+             podDirectionToAbsoluteTravelBearingDegrees). Outlined until tapped, solid yellow once
+             selected, matching DirectionArrowButton's own isSelected fill swap. -->
+        <div class="direction-arrows-overlay">
+          <button type="button" class="direction-arrow-btn direction-arrow-away" data-pod-direction="AWAY" aria-label="Pod moving away from you">
+            <svg viewBox="0 0 1 1" preserveAspectRatio="none"><path class="arrow-path" d="M0.5,0 L1,0.5 L0.7,0.5 L0.7,1 L0.3,1 L0.3,0.5 L0,0.5 Z"/></svg>
+          </button>
+          <button type="button" class="direction-arrow-btn direction-arrow-left" data-pod-direction="LEFT" aria-label="Pod moving left">
+            <svg viewBox="0 0 1 1" preserveAspectRatio="none"><path class="arrow-path" d="M0,0.5 L0.5,0 L0.5,0.3 L1,0.3 L1,0.7 L0.5,0.7 L0.5,1 Z"/></svg>
+          </button>
+          <button type="button" class="direction-arrow-btn direction-arrow-right" data-pod-direction="RIGHT" aria-label="Pod moving right">
+            <svg viewBox="0 0 1 1" preserveAspectRatio="none"><path class="arrow-path" d="M1,0.5 L0.5,0 L0.5,0.3 L0,0.3 L0,0.7 L0.5,0.7 L0.5,1 Z"/></svg>
+          </button>
+        </div>
 
-          <!-- LoggingScreen.kt's AWAY/LEFT/RIGHT arrows resolve a RELATIVE direction against a
-               live compass bearing to the whale (HeadingEstimate) -- a magnetometer reading this
-               app never takes (see submit-view.js's header comment on the GPS+pin approach). So
-               this is an absolute compass-rose picker instead: choosing a point stores that exact
-               degree value straight into travel_bearing_degrees (0=N, 45=NE, ... 315=NW, matching
-               SightingRecord's true/magnetic-north convention and the same 8-point resolution
-               SightingsMapScreen.kt's own arrow rendering snaps to via snapToNearestCompass8Degrees),
-               with travel_bearing_source always "MANUAL" -- this app has no SENSOR source to report.
-               Center tile is the explicit "unknown" case (PodDirection.NONE's equivalent), selected
-               by default, which leaves travel_bearing_degrees/source both null. -->
+        <div class="review-bottom-panel">
+          <!-- HeadingDistanceButton.kt: compact trigger, opens #heading-distance-modal below.
+               No live compass sensor attempt here (cross-browser magnetometer access is
+               inconsistent, gated behind extra permission prompts on iOS Safari in particular) --
+               always the manual-entry path HeadingDistanceDialog itself falls back to when its
+               own sensor read comes back null, not an invented simplification. -->
+          <button id="heading-distance-btn" class="secondary heading-distance-btn" type="button">🧭 SET HEADING &amp; DISTANCE</button>
+
+          <div class="step-label">Whale Count</div>
+          <div class="whale-count-row">
+            <div class="whale-count-col" data-count="unknown">
+              <button class="whale-count-inc outlined-text" type="button">+</button>
+              <div class="whale-count-art">
+                <img src="img/Unknownbreaching.png" alt="Silvertine (unknown color) whale count">
+                <span class="whale-count-value outlined-text">0</span>
+              </div>
+              <button class="whale-count-dec outlined-text" type="button">−</button>
+            </div>
+            <div class="whale-count-col" data-count="greys">
+              <button class="whale-count-inc outlined-text" type="button">+</button>
+              <div class="whale-count-art">
+                <img src="img/Greybreaching.png" alt="Grey whale count">
+                <span class="whale-count-value outlined-text">0</span>
+              </div>
+              <button class="whale-count-dec outlined-text" type="button">−</button>
+            </div>
+            <div class="whale-count-col" data-count="calves">
+              <button class="whale-count-inc outlined-text" type="button">+</button>
+              <div class="whale-count-art">
+                <img src="img/Calfbreaching.png" alt="Calf count">
+                <span class="whale-count-value outlined-text">0</span>
+              </div>
+              <button class="whale-count-dec outlined-text" type="button">−</button>
+            </div>
+            <div class="whale-count-col" data-count="whites">
+              <button class="whale-count-inc outlined-text" type="button">+</button>
+              <div class="whale-count-art">
+                <img src="img/Whitebreaching.png" alt="White whale count">
+                <span class="whale-count-value outlined-text">0</span>
+              </div>
+              <button class="whale-count-dec outlined-text" type="button">−</button>
+            </div>
+          </div>
+
+          <p id="submit-status" class="status-info"></p>
+        </div>
+      </div>
+
+      <!-- HeadingDistanceDialog.kt, manual-entry branch only (see the trigger button's own
+           comment above). 8-point compass chips + a fine-tune slider for heading, 3 distance
+           chips for CLOSE/MEDIUM/FAR (heading-distance.js). -->
+      <div id="heading-distance-modal" class="modal-backdrop" hidden>
+        <div class="modal-card">
+          <h2>Heading &amp; Distance</h2>
+          <p class="modal-description">
+            Which way was the whale from you, and about how far away?
+          </p>
+          <div class="step-label-dark">Heading</div>
+          <div class="chip-row" id="heading-compass-chips"></div>
+          <input type="range" id="heading-slider" min="0" max="359" value="0">
+          <div id="heading-slider-value" class="heading-slider-value">0°</div>
+
+          <div class="step-label-dark">Distance</div>
+          <div class="chip-row" id="heading-distance-chips"></div>
+
+          <div class="modal-actions">
+            <button id="heading-distance-cancel-btn" class="secondary" type="button">Cancel</button>
+            <button id="heading-distance-confirm-btn" class="primary" type="button">Use This</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ManualLoggingScreen.kt: a real interactive map with a fixed center crosshair (the pin
+           IS whatever the map is centered on when SUBMIT is tapped -- no heading/distance
+           projection, no photo). SELF/OTHER toggle ("MY SIGHTING"/"REPORTED BY OTHER"), the same
+           whale-count row, SET DATE/TIME is NOT ported (out of scope for this pass), RECENTER
+           resets to the region's own default center (no GPS refetch, matching native exactly).
+           GPS is NOT auto-fetched on entry here -- a DELIBERATE web-only deviation from native's
+           own LaunchedEffect(Unit) { recenterOnGps() }, confirmed against source and overridden
+           on purpose (not an oversight): manual reporting is meant to be explicitly NOT "where I
+           am now". The existing "Get My Location" button below is a web-only affordance (native
+           has none at all here) so panning a world map to find Cook Inlet by hand isn't the only
+           option -- it's user-initiated only, never automatic. -->
+      <div id="manual-log-step" class="review-screen" hidden>
+        <div id="manual-map" class="manual-map"></div>
+        <div class="manual-center-crosshair" aria-hidden="true"></div>
+
+        <div class="review-top-row">
+          <button id="manual-submit-btn" class="review-done-btn" type="button">← SUBMIT</button>
+          <button class="menu-open-btn menu-trigger-btn manual-menu-btn" type="button">☰ MENU</button>
+        </div>
+
+        <button id="manual-locate-btn" class="secondary manual-locate-btn" type="button">📍 Get My Location</button>
+        <button id="manual-recenter-btn" class="secondary manual-recenter-btn" type="button">📍 RECENTER</button>
+
+        <div class="review-bottom-panel">
+          <div class="chip-row">
+            <button type="button" id="manual-observer-self-btn" class="chip-toggle active" data-observer-type="SELF">My Sighting</button>
+            <button type="button" id="manual-observer-other-btn" class="chip-toggle" data-observer-type="OTHER">Reported By Other</button>
+          </div>
+
+          <!-- BearingDial.kt's fused position-marker + travel-direction control, simplified here
+               as discrete 8-point chips (matching SightingsMapScreen's own 8-point arrow display
+               resolution) rather than rebuilding its continuous-drag/16-point-snap interaction --
+               same eventual travel_bearing_degrees, a smaller web-feasible version of the same
+               capability. -->
           <div class="step-label">Travel Direction</div>
           <div class="direction-rose" role="group" aria-label="Travel direction">
             <button type="button" class="chip-toggle direction-chip" data-bearing="315">NW</button>
@@ -632,7 +739,27 @@
             </div>
           </div>
 
-          <p id="submit-status" class="status-info"></p>
+          <p id="manual-location-status" class="status-info"></p>
+          <p id="manual-submit-status" class="status-info"></p>
+        </div>
+      </div>
+
+      <!-- Native's real dialog, shown when the camera path has no heading set (see submit-
+           view.js's submitCameraSighting) -- CoastlineGeometry's offshore-guess FALLBACK path
+           (used when native has no heading either) is NOT ported here (a substantial raycasting
+           port on its own), so this is shown whenever no heading was given at all, not only once
+           a fallback guess also fails as it is natively. Flagged, not silently narrowed. -->
+      <div id="cannot-place-modal" class="modal-backdrop" hidden>
+        <div class="modal-card">
+          <h2>Can't Place This Sighting</h2>
+          <p class="modal-description">
+            No direction/distance was given, so there's no way to estimate the whale's position.
+            Use Report Manually to drop a pin at the sighting location instead.
+          </p>
+          <div class="modal-actions">
+            <button id="cannot-place-cancel-btn" class="secondary" type="button">Cancel</button>
+            <button id="cannot-place-goto-manual-btn" class="primary" type="button">Go To Manual Logging</button>
+          </div>
         </div>
       </div>
     </section>
@@ -655,6 +782,7 @@
   <script src="js/db.js"></script>
   <script src="js/push-notifications.js"></script>
   <script src="js/geofence.js"></script>
+  <script src="js/heading-distance.js"></script>
   <script src="js/presence.js"></script>
   <script src="js/presence-state.js"></script>
   <script src="js/offline-queue.js"></script>

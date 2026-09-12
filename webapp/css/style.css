@@ -1008,10 +1008,19 @@ button.camera-status.secondary {
 }
 
 .capture-shutter-label {
+  /* BUG FIX: this used to span calc(100% - 12px) with text-align:center, which -- because that
+     span is nearly the button's full width, symmetric 6px either side -- rendered the letters
+     roughly centered in the button. Native's real Column has NO explicit width at all: it's only
+     as wide as its own content (one stacked letter), anchored via Modifier.align(TopStart)
+     .padding(start=6dp, top=70dp) -- a narrow, LEFT-anchored block, not a centered one. width:
+     fit-content reproduces that (intrinsic content width, not stretched), so text-align:center
+     now only centers each letter within that narrow column, matching CenterHorizontally on a
+     column that small -- the whole block still sits off to the left, in the artwork's own
+     negative-space corridor, same as native. */
   position: absolute;
   left: 6px;
   top: 70px;
-  width: calc(100% - 12px);
+  width: fit-content;
   color: #000000;
   font-size: 12px;
   line-height: 12px;
@@ -1116,16 +1125,180 @@ button.camera-status.secondary {
   margin-top: 0;
 }
 
-#location-map {
-  height: 220px;
-  border-radius: 10px;
+/* --- Camera path (LoggingScreen.kt): direction arrows overlaid on the photo + heading/distance
+   trigger --- */
+
+/* Box(Modifier.fillMaxSize().padding(top=60dp, bottom=140dp)) -- the arrows align WITHIN this
+   padded box, not the raw full-bleed photo, so the padding has to live here too rather than on
+   the individual buttons. pointer-events:none so the empty padded area doesn't block taps on the
+   photo/vignette underneath it; the buttons themselves re-enable it. */
+.direction-arrows-overlay {
+  position: absolute;
+  inset: 0;
+  padding: 60px 0 140px;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.direction-arrow-btn {
+  position: absolute;
+  background: none;
+  border: none;
+  padding: 0;
+  pointer-events: auto;
+}
+
+.direction-arrow-btn svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Outlined until tapped, solid yellow once selected -- DirectionArrowButton's own isSelected
+   fill swap. Stroke widths are fractions of the 0..1 viewBox (not px) so they scale with
+   whatever size each arrow renders at, matching native's fixed 5dp/3dp Compose Stroke widths
+   scaling proportionally too. */
+.arrow-path {
+  fill: none;
+  stroke: var(--brand-yellow);
+  stroke-width: 0.045;
+}
+
+.direction-arrow-btn.selected .arrow-path {
+  fill: var(--brand-yellow);
+  stroke: #000000;
+  stroke-width: 0.03;
+}
+
+.direction-arrow-away {
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 90px;
+}
+
+.direction-arrow-left {
+  top: 50%;
+  left: 24px;
+  transform: translateY(-50%);
+  width: 110px;
+  height: 110px;
+}
+
+.direction-arrow-right {
+  top: 50%;
+  right: 24px;
+  transform: translateY(-50%);
+  width: 110px;
+  height: 110px;
+}
+
+.heading-distance-btn {
+  display: block;
+  width: fit-content;
+  margin: 0 auto;
+}
+
+/* Text/labels inside #heading-distance-modal sit on the light .modal-card surface (see
+   .modal-card button.secondary's own comment on this exact light/dark split) -- .step-label
+   itself assumes a dark backdrop (yellow-on-dark), so this is its light-card equivalent. */
+.step-label-dark {
+  margin: 16px 0 6px;
+  font-weight: 900;
+  font-size: 0.8rem;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+#heading-distance-modal .step-label-dark:first-of-type {
+  margin-top: 4px;
+}
+
+.heading-slider-value {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+#heading-slider {
+  width: 100%;
   margin-top: 8px;
+}
+
+/* --- Manual path (ManualLoggingScreen.kt): full-screen map + fixed center crosshair --- */
+
+.manual-map {
+  position: absolute;
+  inset: 0;
+}
+
+/* BearingDial's ring sits at screen-center in native; this app's map-pans-under-a-fixed-point
+   mechanism (a plain Leaflet map, panned by the user, rather than native's MapLibre camera +
+   drag-anywhere BearingDial) needs the same fixed visual anchor -- a simple crosshair here,
+   the compass-rose below standing in for BearingDial's fused drag-to-set-bearing behavior
+   (see the HTML's own comment on that simplification). pointer-events:none so it never
+   intercepts the map's own pan/zoom gestures underneath it. */
+.manual-center-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 36px;
+  height: 36px;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.manual-center-crosshair::before,
+.manual-center-crosshair::after {
+  content: "";
+  position: absolute;
+  background: var(--brand-yellow);
+  border: 1px solid #000000;
+}
+
+.manual-center-crosshair::before {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.manual-center-crosshair::after {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  transform: translateX(-50%);
+}
+
+.manual-menu-btn {
+  background: rgba(255, 152, 0, 0.9);
+  color: #000000;
+}
+
+.manual-locate-btn {
+  position: absolute;
+  left: 16px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  z-index: 5;
+}
+
+.manual-recenter-btn {
+  position: absolute;
+  right: 16px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  z-index: 5;
 }
 
 /* 3x3 grid stands in for a compass rose: the 8 outer tiles are the compass points (NW/N/NE on
    top row through SW/S/SE on bottom), center tile is the explicit "unknown direction" option --
-   see the HTML comment above this markup for why an absolute picker replaces native's relative
-   AWAY/LEFT/RIGHT arrows here. */
+   see the HTML comment above this markup for why an absolute picker replaces BearingDial's
+   continuous drag here. */
 .direction-rose {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1140,22 +1313,20 @@ button.camera-status.secondary {
   text-align: center;
 }
 
-/* Landscape (the Report tab is forced into this orientation, see orientation-lock.js): native's
-   own LoggingScreen/ManualLoggingScreen bottom Column is compact enough (one heading/distance
-   button + one count row) to never fight for vertical space even in a short landscape viewport --
-   this app's stand-in content (GPS status + an embedded map + the count row) is taller, so a
-   bottom-anchored sheet at native's own portrait-tuned sizing would eat most of a ~375-430px-tall
-   landscape screen. Repositioned as a right-side panel instead, trading the width landscape
-   actually has plenty of for the height it doesn't -- a genuine layout difference from native
-   (whose real screens are landscape-only by construction and were never designed with a portrait
-   alternative to diverge from), not a cosmetic tweak. */
+/* Landscape (the Report tab is forced into this orientation, see orientation-lock.js) -- native's
+   CaptureScreen/LoggingScreen/ManualLoggingScreen are landscape-ONLY by construction (every dp
+   value in their source is already a landscape-space coordinate; they have no portrait layout to
+   diverge from at all). This app additionally supports a brief portrait window before the lock
+   engages (or on a browser that can't lock at all -- see orientation-lock.js's rotate-overlay
+   fallback), so landscape is treated as the real, native-matching layout and portrait as the
+   secondary/adapted one -- the opposite of a mobile-first "landscape override" media query. */
 @media (orientation: landscape) {
   .review-bottom-panel {
     left: auto;
     top: 0;
     bottom: 0;
     right: 0;
-    width: min(300px, 42vw);
+    width: min(280px, 40vw);
     max-height: none;
     border-radius: 0;
     border-top-left-radius: 16px;
@@ -1164,19 +1335,35 @@ button.camera-status.secondary {
     padding-right: calc(env(safe-area-inset-right, 0px) + 16px);
   }
 
-  #location-map {
-    height: 110px;
-  }
-
   .step-label {
     margin-top: 8px;
   }
 
-  /* In landscape a notch/home-indicator safe area sits on the SIDES, not the top -- these two
+  /* In landscape a notch/home-indicator safe area sits on the SIDES, not the top -- these
      right-anchored elements need that inset directly (padding wouldn't move a fixed `right`
      offset); .capture-top-row only ever anchors via `left`, so it needs no equivalent change. */
   .review-top-row, .capture-shutter-btn {
     right: calc(env(safe-area-inset-right, 0px) + 16px);
+  }
+
+  /* The review-bottom-panel becoming a right-side rail (above) leaves the direction arrows'
+     own padding-bottom=140px reserved for a BOTTOM panel that no longer renders there in
+     landscape -- narrowed so LEFT/RIGHT don't end up squeezed into a short vertical strip
+     above a now-empty gap, and widened on the right so RIGHT clears the rail itself. */
+  .direction-arrows-overlay {
+    padding: 48px min(280px, 40vw) 24px 0;
+  }
+
+  .manual-locate-btn {
+    left: calc(env(safe-area-inset-left, 0px) + 16px);
+  }
+
+  /* The bottom panel occupies the right-side rail in landscape (see .review-bottom-panel
+     above), so RECENTER moves to the left side, clear of it, rather than being covered by it. */
+  .manual-recenter-btn {
+    right: auto;
+    left: calc(env(safe-area-inset-left, 0px) + 16px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);
   }
 }
 
