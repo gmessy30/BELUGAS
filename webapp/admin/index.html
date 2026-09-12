@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>BELUGAS Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Not linked from the main app's menu -- reachable only by URL. This just keeps it out of
+       search results; the real access control is server-side (Supabase Auth + tier_admins), see
+       the migration's own header comment, not this tag. -->
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<!-- .mae-background/.subpage-* below are the exact same dark-teal-backdrop components every
+     other full-screen page in the app (About/Resources/News Feed/Alerts) already uses -- this
+     page reuses them directly rather than inventing a separate light theme just for admin use. -->
+<body class="admin-screen mae-background">
+  <div class="subpage-top-row">
+    <h1 class="subpage-title">TIER CODES</h1>
+    <button id="admin-logout-btn" class="subpage-back-btn" hidden>Sign Out</button>
+  </div>
+
+  <main class="subpage-content">
+    <section id="admin-login-section">
+      <div class="subpage-section">
+        <div class="section-title">SIGN IN</div>
+        <input id="admin-email-input" class="suggest-input" type="email" placeholder="Email" autocomplete="username" style="margin-top: 0;">
+        <input id="admin-password-input" class="suggest-input" type="password" placeholder="Password" autocomplete="current-password">
+        <button id="admin-login-btn" class="primary" type="button" style="margin-top: 12px;">Sign In</button>
+        <p id="admin-login-status" class="status-info"></p>
+      </div>
+    </section>
+
+    <section id="admin-content-section" hidden>
+      <div class="subpage-section">
+        <div class="section-title">ISSUE A NEW CODE</div>
+        <input id="issue-name-input" class="suggest-input" type="text" placeholder="Name" style="margin-top: 0;">
+        <input id="issue-contact-input" class="suggest-input" type="text" placeholder="Contact (email or phone, optional)">
+        <input id="issue-device-input" class="suggest-input" type="text" placeholder="Device (e.g. iPhone, work tablet)">
+        <div class="modal-actions" style="justify-content: flex-start; margin-top: 12px;">
+          <button id="issue-tier-1-btn" class="chip-toggle active" data-tier="1" type="button">Tier 1</button>
+          <button id="issue-tier-2-btn" class="chip-toggle" data-tier="2" type="button">Tier 2</button>
+        </div>
+        <button id="issue-submit-btn" class="primary" type="button" style="margin-top: 12px;">Issue Code</button>
+        <p id="issue-status" class="status-info"></p>
+
+        <div id="issued-code-result" class="issued-code-result" hidden>
+          <div id="issued-code-value" class="issued-code-value"></div>
+          <div class="modal-actions" style="justify-content: center;">
+            <button id="issued-code-copy-btn" class="secondary" type="button">Copy</button>
+            <a id="issued-code-sms-btn" class="secondary admin-sms-link" href="#">Send via Text</a>
+          </div>
+        </div>
+      </div>
+      <hr class="section-divider">
+
+      <div class="subpage-section">
+        <div class="section-title">ISSUED CODES</div>
+        <div id="tier-codes-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="../js/config.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

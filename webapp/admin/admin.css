@@ -1,0 +1,120 @@
+/* Admin-only additions on top of ../css/style.css -- this page reuses that stylesheet's
+   .mae-background/.subpage-*/.chip-toggle/.suggest-input/.primary/.secondary components
+   directly (see index.html's own comment), so only what's genuinely new to this page lives
+   here: the full-page flex shell, the issued-code display, the issued-codes list rows, and the
+   light-on-dark status-text override this page's own status paragraphs need (matching the
+   identical override style.css already has for #location-status/#submit-status). */
+
+.admin-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* .chip-toggle's base rule (style.css) is light-card-styled (dark text, near-transparent chip) --
+   fine inside the News Feed's light suggest-article modal, illegible here against the same
+   dark-teal backdrop review-step/playback-panel/alerts-page already override this same way. */
+.chip-toggle {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.chip-toggle.active {
+  background: var(--brand-yellow);
+  color: #000000;
+}
+
+#admin-login-status.status-info,
+#issue-status.status-info {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+#admin-login-status.status-error,
+#issue-status.status-error {
+  color: #ffdada;
+}
+
+.issued-code-result {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  text-align: center;
+}
+
+.issued-code-value {
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: var(--brand-yellow);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  margin-bottom: 10px;
+  word-break: break-all;
+}
+
+/* .secondary's real styling is scoped to `button.secondary` (see style.css) -- this is an <a>
+   (an sms: link, not a button), so it needs its own copy of that same look rather than picking
+   up the rule automatically. */
+.admin-sms-link {
+  display: inline-block;
+  background: rgba(0, 0, 0, 0.3);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-decoration: none;
+}
+
+.tier-code-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.tier-code-row:last-child {
+  border-bottom: none;
+}
+
+.tier-code-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.tier-code-name {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.tier-code-meta {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.tier-code-code {
+  font-family: monospace;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--brand-cyan);
+}
+
+.tier-code-status-used {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.tier-code-status-active {
+  color: var(--brand-yellow);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
