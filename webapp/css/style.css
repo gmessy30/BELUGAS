@@ -1246,6 +1246,53 @@ button.text-link {
   margin: 0;
 }
 
+/* Item 55: matches CameraPreviewHost.android.kt's zoom overlay -- CenterStart + 16dp left inset,
+   translucent black rounded box, yellow label over a vertical slider. Compose rotates the real
+   Slider element itself (rotationZ) and manually re-lays-out its own parent to the rotated
+   footprint; CSS has no equivalent manual layout step, so this uses a wrapper sized to that same
+   rotated footprint (40px wide x 150px tall) with the actual <input type=range> centered inside
+   it via flexbox at its OWN pre-rotation size (150x40) -- flexbox's centering absorbs the offset
+   rotate() would otherwise introduce, without needing Compose's explicit placement math. */
+.camera-zoom-control {
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  transform: translateY(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.camera-zoom-label {
+  color: var(--brand-yellow);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.camera-zoom-slider-wrap {
+  width: 40px;
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* rotate(-90deg): the slider's right/max end swings to the top, left/min end to the bottom --
+   "slide up to zoom in," the intuitive direction regardless of which backing implementation
+   (hardware zoom or the CSS-scale fallback) is actually driving it. */
+.camera-zoom-slider {
+  width: 150px;
+  height: 40px;
+  margin: 0;
+  accent-color: var(--brand-cyan);
+  transform: rotate(-90deg);
+}
+
 .camera-status {
   position: absolute;
   top: 64px;

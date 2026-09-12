@@ -26,6 +26,21 @@ let cameraStream = null;
 let capturedPhotoBlob = null;
 let reviewPhotoObjectUrl = null;
 
+// --- Item 55: camera zoom (CameraPreviewHost.android.kt's zoom slider) ---
+// Native always shows this slider (CameraX exposes zoom on every device it targets); the web
+// Media Capture API doesn't make the same guarantee (MediaStreamTrack.getCapabilities().zoom is
+// unsupported on plenty of devices, notably iOS Safari as of this writing). Slider is still
+// always shown once a camera track exists, matching native's placement/styling -- the BACKING
+// mechanism is what switches: real track.applyConstraints({advanced:[{zoom}]}) when the device
+// reports capability (the captured frame already reflects it, same as native's real hardware
+// zoom), otherwise a CSS scale() of the <video> preview (cosmetic only -- capturePhoto() below
+// crops the source rectangle to match, so the saved photo agrees with what was framed on screen).
+let cameraZoomTrack = null;
+let cameraZoomUsesHardware = false;
+let cameraCssZoomLevel = 1;
+const CAMERA_ZOOM_MIN = 1;
+const CAMERA_ZOOM_MAX = 5; // matches native's own 1f..5f range, used only by the CSS fallback
+
 const cameraCounts = { whites: 0, greys: 0, calves: 0, unknown: 0 };
 const manualCounts = { whites: 0, greys: 0, calves: 0, unknown: 0 };
 
@@ -95,6 +110,7 @@ function showSubmitConfirmModal(countsText, directionText, timeText, onConfirm) 
 
 function initSubmitView() {
   document.getElementById("capture-btn").addEventListener("click", capturePhoto);
+  document.getElementById("camera-zoom-slider").addEventListener("input", handleCameraZoomInput);
   document.getElementById("skip-camera-btn").addEventListener("click", () => goToReviewStep());
   document.getElementById("retake-btn").addEventListener("click", retakePhoto);
   document.getElementById("done-btn").addEventListener("click", submitCameraSighting);
@@ -164,6 +180,7 @@ async function startCamera() {
   const skipBtn = document.getElementById("skip-camera-btn");
   cameraStatus.hidden = true;
   skipBtn.hidden = true;
+  resetCameraZoomUi();
 
   try {
     cameraStream = await navigator.mediaDevices.getUserMedia({
@@ -171,6 +188,7 @@ async function startCamera() {
       audio: false
     });
     video.srcObject = cameraStream;
+    initCameraZoomControl();
   } catch (e) {
     // Native always has a working camera to trigger LoggingScreen from -- a browser can't
     // guarantee that, so this is the one deliberate departure from native's flow: a way to
@@ -187,6 +205,69 @@ function stopCamera() {
     cameraStream.getTracks().forEach((track) => track.stop());
     cameraStream = null;
   }
+  resetCameraZoomUi();
+}
+
+// Fresh per camera stream -- a retake or a return trip through Report Manually tears down and
+// re-requests getUserMedia, and a new MediaStreamTrack needs its own capability check (a
+// previous track's zoom constraint doesn't carry over) rather than trusting stale state.
+function resetCameraZoomUi() {
+  cameraZoomTrack = null;
+  cameraZoomUsesHardware = false;
+  cameraCssZoomLevel = 1;
+  document.getElementById("camera-preview").style.transform = "";
+  document.getElementById("camera-zoom-control").hidden = true;
+  document.getElementById("camera-zoom-slider").value = "1";
+  document.getElementById("camera-zoom-label").textContent = "1.0x";
+}
+
+function initCameraZoomControl() {
+  const track = cameraStream && cameraStream.getVideoTracks()[0];
+  const control = document.getElementById("camera-zoom-control");
+  const slider = document.getElementById("camera-zoom-slider");
+  const label = document.getElementById("camera-zoom-label");
+  if (!track) {
+    control.hidden = true;
+    return;
+  }
+
+  const caps = typeof track.getCapabilities === "function" ? track.getCapabilities() : {};
+  if (caps && caps.zoom && caps.zoom.max > caps.zoom.min) {
+    cameraZoomTrack = track;
+    cameraZoomUsesHardware = true;
+    slider.min = caps.zoom.min;
+    slider.max = caps.zoom.max;
+    slider.step = caps.zoom.step || 0.1;
+    slider.value = caps.zoom.min;
+    label.textContent = `${Number(caps.zoom.min).toFixed(1)}x`;
+    control.hidden = false;
+    return;
+  }
+
+  // No hardware zoom capability reported (common on iOS Safari, some desktop webcams) -- CSS
+  // scale() fallback instead, same 1x-5x range native's own slider covers.
+  cameraZoomUsesHardware = false;
+  slider.min = CAMERA_ZOOM_MIN;
+  slider.max = CAMERA_ZOOM_MAX;
+  slider.step = "0.1";
+  slider.value = "1";
+  label.textContent = "1.0x";
+  control.hidden = false;
+}
+
+function handleCameraZoomInput(event) {
+  const value = parseFloat(event.target.value);
+  document.getElementById("camera-zoom-label").textContent = `${value.toFixed(1)}x`;
+
+  if (cameraZoomUsesHardware && cameraZoomTrack) {
+    cameraZoomTrack.applyConstraints({ advanced: [{ zoom: value }] }).catch((e) => {
+      console.error("CAMERA_ZOOM_CONSTRAINT_ERROR", e);
+    });
+    return;
+  }
+
+  cameraCssZoomLevel = value;
+  document.getElementById("camera-preview").style.transform = `scale(${value})`;
 }
 
 function setCaptureLabel(text) {
@@ -204,7 +285,23 @@ function capturePhoto() {
   const scale = Math.min(1, MAX_EDGE / Math.max(video.videoWidth, video.videoHeight));
   canvas.width = video.videoWidth * scale;
   canvas.height = video.videoHeight * scale;
-  canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  // Item 55: CSS scale() on the preview is a display-only illusion -- it never changes what the
+  // camera actually delivers, so drawImage would otherwise still capture the un-zoomed full
+  // frame. Crop the SOURCE rectangle down to the same centered fraction of the frame the on-
+  // screen scale implies, then draw that into the full canvas size, so the saved photo matches
+  // what was framed on screen. Real hardware zoom (cameraZoomUsesHardware) already changes the
+  // frame at the source -- cameraCssZoomLevel only ever moves off 1 via the CSS-fallback path
+  // (handleCameraZoomInput), so this stays a no-op crop (the untouched full frame) in that case.
+  const cropWidth = video.videoWidth / cameraCssZoomLevel;
+  const cropHeight = video.videoHeight / cameraCssZoomLevel;
+  const cropX = (video.videoWidth - cropWidth) / 2;
+  const cropY = (video.videoHeight - cropHeight) / 2;
+  canvas.getContext("2d").drawImage(
+    video,
+    cropX, cropY, cropWidth, cropHeight,
+    0, 0, canvas.width, canvas.height
+  );
 
   canvas.toBlob(
     (blob) => {
