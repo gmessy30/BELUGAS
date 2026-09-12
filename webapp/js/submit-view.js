@@ -775,19 +775,55 @@ function snapToNearest16Point(degrees) {
   return (Math.round(degrees / 22.5) * 22.5) % 360;
 }
 
-// Item 37: temporary diagnostics -- dumps the needle's actual live SVG state (hidden attribute,
-// computed display, line coordinates/stroke) to the console every time this runs, so a report of
-// "the needle isn't visible" can be checked against real rendered values instead of source
-// reasoning. Remove once item 37 is confirmed fixed.
+// Item 39: same diagnostics as item 37, now ALSO rendered on-screen (not just console.log) --
+// a phone has no devtools console to read. Query-param gated (?debug=1) so it never shows for a
+// normal user; off by default. Remove this whole block, its call sites, and the overlay element/
+// CSS once item 37/39 are confirmed fixed.
+const BEARING_DIAL_DEBUG_ENABLED = new URLSearchParams(window.location.search).get("debug") === "1";
+const bearingDialDebugState = {
+  pointerdownCount: 0,
+  lastPointerdown: null, // { pointerType, x, y }
+  liveDegrees: null,
+  committedDegrees: null,
+  commitSkippedCount: 0,
+  needle: null // filled in by logBearingDialNeedleDiagnostics
+};
+
+function renderBearingDialDebugOverlay() {
+  if (!BEARING_DIAL_DEBUG_ENABLED) return;
+  const el = document.getElementById("bearing-dial-debug-overlay");
+  if (!el) return;
+  const s = bearingDialDebugState;
+  const n = s.needle;
+  const fmt = (v) => (v == null ? "—" : typeof v === "number" ? v.toFixed(1) : String(v));
+  el.textContent = [
+    `pointerdown: ${s.pointerdownCount}x` + (s.lastPointerdown
+      ? ` (last: ${s.lastPointerdown.pointerType} @ ${fmt(s.lastPointerdown.x)},${fmt(s.lastPointerdown.y)})`
+      : " (none yet)"),
+    `live drag degrees: ${fmt(s.liveDegrees)}`,
+    `committed degrees: ${fmt(s.committedDegrees)}`,
+    `commit-skipped (no live degrees): ${s.commitSkippedCount}x`,
+    "--- needle ---",
+    n ? `hidden attr present: ${n.hiddenAttrPresent}` : "(not updated yet)",
+    n ? `computed display: ${n.computedDisplay}` : "",
+    n ? `outline: (${n.outline.x1},${n.outline.y1}) -> (${n.outline.x2},${n.outline.y2}) stroke=${n.outline.stroke} width=${n.outline.strokeWidth}` : "",
+    n ? `line: (${n.line.x1},${n.line.y1}) -> (${n.line.x2},${n.line.y2}) stroke=${n.line.stroke} width=${n.line.strokeWidth}` : "",
+    n ? `svg viewBox=${n.svgViewBox} rect=${Math.round(n.svgClientRect.x)},${Math.round(n.svgClientRect.y)} ${Math.round(n.svgClientRect.width)}x${Math.round(n.svgClientRect.height)}` : ""
+  ].filter((line) => line !== "").join("\n");
+}
+
+// Item 37: dumps the needle's actual live SVG state (hidden attribute, computed display, line
+// coordinates/stroke) every time this runs, so a report of "the needle isn't visible" can be
+// checked against real rendered values instead of source reasoning.
 function logBearingDialNeedleDiagnostics(degrees) {
   const needle = document.getElementById("bearing-dial-needle");
   const outline = document.getElementById("bearing-dial-needle-outline");
   const line = document.getElementById("bearing-dial-needle-line");
   const svg = needle.closest("svg");
-  console.log("BEARING_DIAL_NEEDLE_STATE", {
+  const state = {
     degrees,
     hiddenAttrPresent: needle.hasAttribute("hidden"),
-    needleComputedDisplay: getComputedStyle(needle).display,
+    computedDisplay: getComputedStyle(needle).display,
     outline: {
       x1: outline.getAttribute("x1"), y1: outline.getAttribute("y1"),
       x2: outline.getAttribute("x2"), y2: outline.getAttribute("y2"),
@@ -802,7 +838,10 @@ function logBearingDialNeedleDiagnostics(degrees) {
     },
     svgViewBox: svg.getAttribute("viewBox"),
     svgClientRect: svg.getBoundingClientRect()
-  });
+  };
+  console.log("BEARING_DIAL_NEEDLE_STATE", state);
+  bearingDialDebugState.needle = state;
+  renderBearingDialDebugOverlay();
 }
 
 function updateBearingDialNeedle(degrees) {
@@ -832,10 +871,18 @@ function updateBearingDialNeedle(degrees) {
 function initBearingDial() {
   const dial = document.getElementById("bearing-dial");
 
+  if (BEARING_DIAL_DEBUG_ENABLED) {
+    document.getElementById("bearing-dial-debug-overlay").hidden = false;
+    renderBearingDialDebugOverlay();
+  }
+
   dial.addEventListener("pointerdown", (event) => {
-    // Item 37a: if this never prints, the gesture isn't reaching the dial at all (something
+    // Item 37a: if this never fires, the gesture isn't reaching the dial at all (something
     // upstream -- another element, the browser's own touch handling -- is swallowing it first).
     console.log("BEARING_DIAL_POINTERDOWN", event.pointerType, event.clientX, event.clientY);
+    bearingDialDebugState.pointerdownCount++;
+    bearingDialDebugState.lastPointerdown = { pointerType: event.pointerType, x: event.clientX, y: event.clientY };
+    renderBearingDialDebugOverlay();
     dial.setPointerCapture(event.pointerId);
     bearingDialLiveDegrees = bearingFromPointerEvent(event, dial);
     updateBearingDialNeedle(bearingDialLiveDegrees);
@@ -845,20 +892,26 @@ function initBearingDial() {
   dial.addEventListener("pointermove", (event) => {
     if (bearingDialLiveDegrees == null) return;
     bearingDialLiveDegrees = bearingFromPointerEvent(event, dial);
+    bearingDialDebugState.liveDegrees = bearingDialLiveDegrees;
+    renderBearingDialDebugOverlay();
     updateBearingDialNeedle(bearingDialLiveDegrees);
   });
 
   const commitDrag = () => {
     // Item 37a: the direct answer to "is a bearing actually being committed on drag" -- if
-    // bearingDialLiveDegrees was null here, this whole block is skipped and NOTHING is logged,
-    // which is itself the answer (the drag never registered a live angle to commit).
+    // bearingDialLiveDegrees was null here, this whole block is skipped and the skip counter
+    // above (rather than a committed value) is what changes.
     if (bearingDialLiveDegrees == null) {
       console.log("BEARING_DIAL_COMMIT_SKIPPED_NO_LIVE_DEGREES");
+      bearingDialDebugState.commitSkippedCount++;
+      renderBearingDialDebugOverlay();
       return;
     }
     manualTravelBearingDegrees = snapToNearest16Point(bearingDialLiveDegrees);
     console.log("BEARING_DIAL_COMMITTED_DEGREES", manualTravelBearingDegrees);
+    bearingDialDebugState.committedDegrees = manualTravelBearingDegrees;
     bearingDialLiveDegrees = null;
+    renderBearingDialDebugOverlay();
     updateBearingDialNeedle(manualTravelBearingDegrees);
   };
   dial.addEventListener("pointerup", commitDrag);

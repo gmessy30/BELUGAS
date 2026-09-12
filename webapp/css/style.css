@@ -1491,6 +1491,31 @@ button.camera-status.secondary {
   pointer-events: none;
 }
 
+/* Item 39: on-screen counterpart to item 37's console.log diagnostics, for testing on a phone
+   with no devtools console -- hidden by default, only shown when submit-view.js's
+   BEARING_DIAL_DEBUG_ENABLED (?debug=1) un-hides it. Plain monospace dump, no styling effort
+   beyond staying readable over the map -- pointer-events:none so it never blocks the dial/
+   buttons underneath it, z-index above the dial (6) so it's never itself covered. */
+.bearing-dial-debug-overlay {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 110px);
+  left: 8px;
+  right: 8px;
+  z-index: 7;
+  margin: 0;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #00ff00;
+  font-family: monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+  max-height: 40vh;
+  overflow: auto;
+}
+
 /* Directly under the top bar, not floating at the bottom edge -- .review-bottom-panel is tall
    enough (SELF/OTHER + date/time + whale count) to fully cover anything anchored to the bottom
    of the screen instead, in either orientation. Only RECENTER now -- "Get My Location" was
@@ -2066,6 +2091,52 @@ button.secondary {
   font-size: 1rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+/* Item 40: TierClaimScreen.kt's departure section assumes a permanently dark backdrop (white
+   text at various alphas) -- this modal's own .modal-card is a LIGHT surface (var(--surface),
+   same light/dark-mode-aware token every other modal-card text already uses), so var(--muted)
+   replaces native's white-at-60% here, same adaptation .modal-card button.secondary already
+   makes for the same light-card reason. The red button itself needs no such adaptation -- an
+   opaque fill reads the same regardless of what's behind it. */
+.tier-code-departure-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.departure-label {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.departure-description {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 4px 0 12px;
+}
+
+/* Native's own Color(0xFFFF5252) -- kept as the same literal red rather than reusing var(--error),
+   which is a darker "error text on a light background" shade, not this button's own brighter
+   "destructive action" fill. */
+.departure-btn {
+  display: block;
+  width: 100%;
+  background: #ff5252;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.departure-btn:disabled {
+  opacity: 0.6;
 }
 
 .modal-actions {

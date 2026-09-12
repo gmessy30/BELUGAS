@@ -465,3 +465,41 @@ async function isPointWithinCoastlineChannel(lat, lng) {
   }
   return data;
 }
+
+/**
+ * Item 40: matches SupabaseApi.isKenaiDepartureReporter exactly -- purely a visibility signal
+ * for the departure-report section (tier-code.js), narrower than exposing get_observer_tier's
+ * actual tier number to anon. report_kenai_departure re-checks tier itself server-side
+ * regardless of what this returns, so nothing here is ever trusted for enforcement. Fails closed
+ * (false) on any error -- a network failure should hide the button, not show it and then fail
+ * confusingly on submit.
+ */
+async function isKenaiDepartureReporter(subscriberId) {
+  const { data, error } = await supabaseClient.rpc("is_kenai_departure_reporter", { p_subscriber_id: subscriberId });
+  if (error) {
+    console.error("DEPARTURE_TIER_CHECK_ERROR", error);
+    return false;
+  }
+  return data === true;
+}
+
+/**
+ * Item 40: matches SupabaseApi.reportKenaiDeparture exactly -- files a departure report at the
+ * caller's current lat/lng. Returns whether the server actually accepted it; false covers every
+ * rejection reason uniformly (not tier-1, outside the viewing polygon, phase isn't RED right
+ * now), matching report_kenai_departure's own single-boolean design
+ * (supabase/migrations/20260913000000_add_kenai_departure_report.sql) -- the client's own tier/
+ * polygon checks already cover the ordinary "why is this button even showing" cases.
+ */
+async function reportKenaiDeparture(subscriberId, lat, lng) {
+  const { data, error } = await supabaseClient.rpc("report_kenai_departure", {
+    p_subscriber_id: subscriberId,
+    p_lat: lat,
+    p_lng: lng
+  });
+  if (error) {
+    console.error("DEPARTURE_REPORT_ERROR", error);
+    return false;
+  }
+  return data === true;
+}

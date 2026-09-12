@@ -498,6 +498,30 @@
         <button id="tier-code-submit-btn" class="primary">Submit</button>
       </div>
       <p id="tier-code-status" class="status-info"></p>
+
+      <!-- Item 40: TierClaimScreen.kt's "WHALES LEFT?" departure de-escalation, ported to this
+           same hidden-gesture modal (tier-code.js). Visibility-only gating (both checks re-
+           verified server-side by report_kenai_departure regardless): a claimed tier-1 device,
+           physically standing inside the real viewing polygon right now. Checked once when this
+           modal opens (tier-code.js's checkDepartureEligibility), matching native's own
+           LaunchedEffect(Unit) -- not re-checked after a code redemption in the same visit;
+           closing and reopening the hidden gesture re-runs it, same as native re-entering the
+           screen.
+
+           Description text is native's own line PLUS two clauses native only explains in code
+           comments (the 3h self-expiry, no undo) -- explicitly requested for the web port
+           (item 40) even though native's own displayed string doesn't include them. Deliberate
+           addition, not a wording mismatch. -->
+      <p id="tier-code-departure-checking" class="status-info" hidden>Checking eligibility…</p>
+      <div id="tier-code-departure-section" class="tier-code-departure-section" hidden>
+        <div class="departure-label">Whales Left?</div>
+        <p class="departure-description">
+          Only use this if you watched them go -- it steps the alert down, not all the way to
+          clear. Expires after 3 hours on its own, and can't be undone.
+        </p>
+        <button id="tier-code-departure-btn" class="departure-btn" type="button">Report Departure</button>
+        <p id="tier-code-departure-status" class="status-info"></p>
+      </div>
     </div>
   </div>
 
@@ -775,6 +799,12 @@
           </div>
           <button id="bearing-dial-unknown-btn" class="secondary bearing-dial-unknown-btn" type="button">Unknown Direction</button>
         </div>
+
+        <!-- Item 39: on-screen counterpart to item 37's console.log diagnostics -- a phone has no
+             devtools console to read them in. Query-param gated (?debug=1 in the URL, checked by
+             submit-view.js's BEARING_DIAL_DEBUG_ENABLED), off/hidden by default so it never shows
+             for a normal user. Remove alongside that JS once item 37/39 are confirmed fixed. -->
+        <pre id="bearing-dial-debug-overlay" class="bearing-dial-debug-overlay" hidden></pre>
 
         <div class="review-top-row">
           <button id="manual-submit-btn" class="review-done-btn" type="button">← SUBMIT</button>
