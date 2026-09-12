@@ -87,3 +87,8 @@ project (via `supabase db query --linked --file <path>`) — don't tell the user
   and navigates straight to the Sightings Map (webapp/js/presence-banner.js's
   `handlePresenceBannerTap`) — a field suggestion implemented web-only so far. `PresenceBanner.kt`/
   `BelugaPresenceBannerCarousel` don't have this yet; worth adding there too for parity.
+- **Native-side parity item**: the PWA's Kenai RED banner label now appends " · NEXT WINDOW
+  ~{time}" using `gate_time_possible_epoch_ms` (`webapp/js/presence.js`'s `kenaiBannerLabel`) —
+  native's own `kenaiBannerLabel` (PresenceBanner.kt) only ever surfaces that field in the BLUE
+  branch today ("NOT EXPECTED IN THE RIVER BEFORE {time}"), never during RED. Worth adding the
+  same RED-branch addition natively for parity.

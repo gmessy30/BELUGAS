@@ -26,7 +26,11 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -167,6 +171,32 @@ fun AboutScreen(onBack: () -> Unit, onNavigateToTierClaim: () -> Unit) {
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
+                    // Item 49: what the app's own name stands for -- same AboutSection shape as
+                    // every section below, so it fits without any special-casing. Ported to the
+                    // web app identically (webapp/index.html's "ABOUT BELUGAS" section,
+                    // .acronym-letter in style.css) -- keep both in sync if this expansion or the
+                    // set-apart-letters treatment ever changes.
+                    AboutSection(title = "ABOUT BELUGAS") {
+                        Text(
+                            text = buildAnnotatedString {
+                                appendAcronymWord("B", "eluga")
+                                append(" ")
+                                appendAcronymWord("E", "nvironmental")
+                                append(" ")
+                                appendAcronymWord("L", "ogging")
+                                append(" ")
+                                appendAcronymWord("U", "sing")
+                                append(" ")
+                                appendAcronymWord("G", "PS")
+                                append(" ")
+                                appendAcronymWord("A", "nd")
+                                append(" ")
+                                appendAcronymWord("S", "martphones")
+                            },
+                            fontSize = 13.sp
+                        )
+                    }
+
                     AboutSection(title = "DEVELOPMENT") {
                         Text(
                             "BELUGAS is developed by Ryan Messimer.",
@@ -278,4 +308,20 @@ private fun AboutSection(title: String, content: @Composable ColumnScope.() -> U
         content()
     }
     HorizontalDivider(color = Color.White.copy(alpha = 0.15f), thickness = 1.dp)
+}
+
+// Item 49: appends one word of the "ABOUT BELUGAS" acronym expansion -- its own first letter set
+// apart (yellow, heavier, slightly larger, matching webapp's .acronym-letter) so B-E-L-U-G-A-S
+// reads out of the full phrase at a glance, then the rest of the word in the section's normal
+// white-at-85%-alpha body style. [firstLetter] is passed separately from [rest] rather than
+// derived by slicing the word here, so a word like "GPS" (an abbreviation whose own first letter
+// IS the acronym letter, not a coincidence of capitalization) reads no differently from any
+// other word -- the caller decides the split, this just styles it.
+private fun AnnotatedString.Builder.appendAcronymWord(firstLetter: String, rest: String) {
+    withStyle(SpanStyle(color = Color.Yellow, fontWeight = FontWeight.Black, fontSize = 15.sp)) {
+        append(firstLetter)
+    }
+    withStyle(SpanStyle(color = Color.White.copy(alpha = 0.85f))) {
+        append(rest)
+    }
 }

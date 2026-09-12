@@ -152,6 +152,26 @@
     </div>
 
     <div id="about-text-content" class="subpage-content">
+      <!-- Item 49: what the app's own name stands for, styled as the same section-title/
+           section-body pair every other section here already uses. Each word's own first letter
+           is wrapped in .acronym-letter (bold + brand yellow) so B-E-L-U-G-A-S reads out of the
+           expansion at a glance, matching "set the initial letters apart" -- GPS's own "G" still
+           counts once even though the rest of that word is also capitalized, same rule as every
+           other word. -->
+      <div class="subpage-section">
+        <div class="section-title">ABOUT BELUGAS</div>
+        <p class="section-body">
+          <span class="acronym-letter">B</span>eluga
+          <span class="acronym-letter">E</span>nvironmental
+          <span class="acronym-letter">L</span>ogging
+          <span class="acronym-letter">U</span>sing
+          <span class="acronym-letter">G</span>PS
+          <span class="acronym-letter">A</span>nd
+          <span class="acronym-letter">S</span>martphones
+        </p>
+      </div>
+      <hr class="section-divider">
+
       <div class="subpage-section">
         <div class="section-title">DEVELOPMENT</div>
         <p class="section-body">BELUGAS is developed by Ryan Messimer.</p>
@@ -583,6 +603,14 @@
         <button id="tier-code-departure-btn" class="departure-btn" type="button">Report Departure</button>
         <p id="tier-code-departure-status" class="status-info"></p>
       </div>
+
+      <!-- Item 47: on-screen diagnostics for why this section isn't showing -- same ?debug=1
+           pattern as item 39's BearingDial overlay, for testing on a phone with no devtools
+           console. Shows the raw result of each of the three gates (isKenaiDepartureReporter,
+           the GPS fix, the polygon check) instead of the collapsed true/false the actual UI logic
+           uses, including any RPC/geolocation error rather than letting it fail silently into a
+           plain "hidden." Off/hidden by default. -->
+      <pre id="tier-code-departure-debug-overlay" class="tier-code-departure-debug-overlay" hidden></pre>
     </div>
   </div>
 

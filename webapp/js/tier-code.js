@@ -69,21 +69,50 @@ const KENAI_DEPARTURE_VIEWING_AREA = [
   [60.55892294657778, -151.289777984689]
 ];
 
-// Wraps getCurrentPosition in a promise that resolves null (never rejects) on any failure/
-// unavailability -- matches locationService.getCurrentLocation()'s own null-on-failure contract
-// exactly, so callers can use the same `coords != null` check native does.
+// Wraps getCurrentPosition in a promise that never rejects -- matches locationService.
+// getCurrentLocation()'s own null-on-failure contract, so callers can use the same
+// `result.coords != null` check native does. Item 47: also carries accuracy/the raw error
+// message through (previously discarded entirely), read by checkDepartureEligibility's debug
+// overlay so a failed/unavailable fix is visible instead of just silently resolving to "no."
 function getCurrentPositionOnce(options) {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
-      resolve(null);
+      resolve({ coords: null, accuracy: null, error: "geolocation not supported" });
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
-      () => resolve(null),
+      (position) => resolve({
+        coords: { lat: position.coords.latitude, lng: position.coords.longitude },
+        accuracy: position.coords.accuracy,
+        error: null
+      }),
+      (err) => resolve({ coords: null, accuracy: null, error: err.message || String(err) }),
       options
     );
   });
+}
+
+// Item 47: on-screen diagnostics for why the "WHALES LEFT?" section isn't showing -- same
+// ?debug=1 pattern as item 39's BearingDial overlay, for testing on a phone with no devtools
+// console. Shows the raw result of each of the three gates (including any RPC/geolocation error)
+// instead of the collapsed true/false the actual visibility logic uses.
+function renderDepartureDebugOverlay(state) {
+  if (!DEBUG_MODE_ENABLED) return;
+  const el = document.getElementById("tier-code-departure-debug-overlay");
+  if (!el) return;
+  el.hidden = false;
+  const fmt = (v) => (v == null ? "—" : String(v));
+  el.textContent = [
+    `subscriberId: ${fmt(state.subscriberId)}`,
+    `isKenaiDepartureReporter(): ${fmt(state.isReporter)}` +
+      (state.tierCheckError ? ` (RPC ERROR: ${state.tierCheckError})` : ""),
+    state.isReporter
+      ? `GPS fix: ${state.coords ? `${state.coords.lat.toFixed(6)}, ${state.coords.lng.toFixed(6)} (±${fmt(state.accuracy)}m)` : "none"}` +
+        (state.gpsError ? ` (ERROR: ${state.gpsError})` : "")
+      : "GPS fix: (skipped -- not a tier-1 reporter)",
+    `pointInPolygon(KENAI_DEPARTURE_VIEWING_AREA): ${fmt(state.isInsideViewingArea)}`,
+    `section shown: ${!document.getElementById("tier-code-departure-section").hidden}`
+  ].join("\n");
 }
 
 async function checkDepartureEligibility(subscriberId) {
@@ -92,17 +121,32 @@ async function checkDepartureEligibility(subscriberId) {
   section.hidden = true;
   checking.hidden = true;
   document.getElementById("tier-code-departure-status").textContent = "";
+  document.getElementById("tier-code-departure-debug-overlay").hidden = true;
 
   const isReporter = await isKenaiDepartureReporter(subscriberId);
-  if (!isReporter) return;
+  const tierCheckError = lastDepartureTierCheckError;
+  if (!isReporter) {
+    renderDepartureDebugOverlay({ subscriberId, isReporter, tierCheckError, coords: null, accuracy: null, gpsError: null, isInsideViewingArea: null });
+    return;
+  }
 
   checking.hidden = false;
-  const coords = await getCurrentPositionOnce({ enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
+  const gpsResult = await getCurrentPositionOnce({ enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
   checking.hidden = true;
 
-  const isInsideViewingArea = coords != null &&
-    pointInPolygon(coords.lat, coords.lng, KENAI_DEPARTURE_VIEWING_AREA);
+  const isInsideViewingArea = gpsResult.coords != null &&
+    pointInPolygon(gpsResult.coords.lat, gpsResult.coords.lng, KENAI_DEPARTURE_VIEWING_AREA);
   section.hidden = !isInsideViewingArea;
+
+  renderDepartureDebugOverlay({
+    subscriberId,
+    isReporter,
+    tierCheckError,
+    coords: gpsResult.coords,
+    accuracy: gpsResult.accuracy,
+    gpsError: gpsResult.error,
+    isInsideViewingArea
+  });
 }
 
 function setDepartureStatus(message, isError = false) {
@@ -119,8 +163,9 @@ async function submitDepartureReport() {
   const subscriberId = getOrCreateSubscriberId();
   // Fresh, uncached fix -- this is asserting "I am here right now," not a cached location from
   // whenever the modal happened to open.
-  const coords = await getCurrentPositionOnce({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
-  const succeeded = coords != null && await reportKenaiDeparture(subscriberId, coords.lat, coords.lng);
+  const gpsResult = await getCurrentPositionOnce({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+  const succeeded = gpsResult.coords != null &&
+    await reportKenaiDeparture(subscriberId, gpsResult.coords.lat, gpsResult.coords.lng);
 
   if (succeeded) {
     setDepartureStatus("Reported. The alert will step down.");

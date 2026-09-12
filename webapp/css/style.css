@@ -464,6 +464,15 @@ main {
   margin: 0 0 8px;
 }
 
+/* Item 49: each word's own first letter in the "About BELUGAS" acronym expansion (index.html) --
+   brand yellow + bolder + a touch larger than the surrounding .section-body text, so B-E-L-U-G-
+   A-S reads out of the full phrase at a glance instead of needing to be spelled out separately. */
+.acronym-letter {
+  color: var(--brand-yellow);
+  font-weight: 900;
+  font-size: 1.15em;
+}
+
 .text-link {
   display: block;
   color: var(--brand-cyan);
@@ -2281,6 +2290,23 @@ button.secondary {
 
 .departure-btn:disabled {
   opacity: 0.6;
+}
+
+/* Item 47: on-screen debug diagnostics, only shown when ?debug=1 -- sits in this modal's own
+   LIGHT .modal-card surface (unlike the BearingDial overlay's dark-map treatment), so dark text
+   on a light monospace panel instead. */
+.tier-code-departure-debug-overlay {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .modal-actions {

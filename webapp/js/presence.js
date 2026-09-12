@@ -138,9 +138,26 @@ function colorForBelugaPresenceStatus(status) {
 }
 
 // Matches kenaiBannerLabel exactly, including the gate-time early-bias and the three distinct
-// BLUE sub-states.
+// BLUE sub-states -- PLUS item 48's own RED addition, which native doesn't have yet (see that
+// branch's own comment).
 function kenaiBannerLabel(status, detail, zoneSuffix) {
-  if (status === PRESENCE_RED) return `BELUGAS PRESENT · CHECK MAP${zoneSuffix}`;
+  if (status === PRESENCE_RED) {
+    // Item 48: gate_time_possible_epoch_ms/gate_time_likely_epoch_ms are predicted ARRIVAL
+    // times, not departure times -- there is no departure prediction anywhere in this model
+    // (confirmed against get_kenai_presence_state's own SQL before writing this, not assumed).
+    // The RPC's own "gate floor" logic already rolls gate_time_possible_epoch_ms forward to the
+    // UPCOMING cycle once the current cycle's own gate + 90-min holdover has passed -- typically
+    // already true by the time a RED condition is even showing -- so by the time this renders,
+    // it's naturally "the next window after this one," not the gate that already happened. Same
+    // field/bias/formatting as the BLUE branch below (native's own "NOT EXPECTED IN THE RIVER
+    // BEFORE {time}"), just worded for a forward-looking "next window" instead, since native
+    // doesn't surface this during RED at all yet -- gracefully omitted if gate_time_possible_
+    // epoch_ms is null (tide data unavailable), matching that branch's own null-handling exactly.
+    const base = `BELUGAS PRESENT · CHECK MAP`;
+    if (detail.gate_time_possible_epoch_ms == null) return `${base}${zoneSuffix}`;
+    const biasedGateTimeMs = detail.gate_time_possible_epoch_ms - KENAI_GATE_TIME_EARLY_BIAS_MS;
+    return `${base} · NEXT WINDOW ~${formatTime12Hour(biasedGateTimeMs)}${zoneSuffix}`;
+  }
   if (status === PRESENCE_YELLOW) return `POSSIBLE ACTIVITY${zoneSuffix}`;
   if (status === PRESENCE_BLUE) {
     if (!detail.in_season) return `NOT EXPECTED THIS TIME OF YEAR${zoneSuffix}`;

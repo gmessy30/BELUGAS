@@ -806,10 +806,10 @@ function snapToNearest16Point(degrees) {
 }
 
 // Item 39: same diagnostics as item 37, now ALSO rendered on-screen (not just console.log) --
-// a phone has no devtools console to read. Query-param gated (?debug=1) so it never shows for a
-// normal user; off by default. Remove this whole block, its call sites, and the overlay element/
-// CSS once item 37/39 are confirmed fixed.
-const BEARING_DIAL_DEBUG_ENABLED = new URLSearchParams(window.location.search).get("debug") === "1";
+// a phone has no devtools console to read. Query-param gated (?debug=1, DEBUG_MODE_ENABLED in
+// config.js, shared with tier-code.js's own item-47 overlay) so it never shows for a normal user;
+// off by default. Remove this whole block, its call sites, and the overlay element/CSS once item
+// 37/39 are confirmed fixed.
 const bearingDialDebugState = {
   pointerdownCount: 0,
   lastPointerdown: null, // { pointerType, x, y }
@@ -820,7 +820,7 @@ const bearingDialDebugState = {
 };
 
 function renderBearingDialDebugOverlay() {
-  if (!BEARING_DIAL_DEBUG_ENABLED) return;
+  if (!DEBUG_MODE_ENABLED) return;
   const el = document.getElementById("bearing-dial-debug-overlay");
   if (!el) return;
   const s = bearingDialDebugState;
@@ -918,7 +918,7 @@ function updateBearingDialNeedle(degrees) {
 function initBearingDial() {
   const dial = document.getElementById("bearing-dial");
 
-  if (BEARING_DIAL_DEBUG_ENABLED) {
+  if (DEBUG_MODE_ENABLED) {
     document.getElementById("bearing-dial-debug-overlay").hidden = false;
     renderBearingDialDebugOverlay();
   }

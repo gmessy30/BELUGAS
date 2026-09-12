@@ -466,6 +466,13 @@ async function isPointWithinCoastlineChannel(lat, lng) {
   return data;
 }
 
+// Item 47: the last RPC error isKenaiDepartureReporter hit, if any -- the function's own return
+// value collapses "really not tier-1" and "the RPC failed" into the same `false` (correct for the
+// real UI, which should fail closed either way), so this is the one place that distinction
+// survives, read by tier-code.js's debug overlay to confirm the check isn't failing silently.
+// Cleared on a call that succeeds (whether the answer was true or false), not just left stale.
+let lastDepartureTierCheckError = null;
+
 /**
  * Item 40: matches SupabaseApi.isKenaiDepartureReporter exactly -- purely a visibility signal
  * for the departure-report section (tier-code.js), narrower than exposing get_observer_tier's
@@ -478,8 +485,10 @@ async function isKenaiDepartureReporter(subscriberId) {
   const { data, error } = await supabaseClient.rpc("is_kenai_departure_reporter", { p_subscriber_id: subscriberId });
   if (error) {
     console.error("DEPARTURE_TIER_CHECK_ERROR", error);
+    lastDepartureTierCheckError = error.message || String(error);
     return false;
   }
+  lastDepartureTierCheckError = null;
   return data === true;
 }
 
