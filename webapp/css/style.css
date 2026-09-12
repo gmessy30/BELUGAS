@@ -113,6 +113,18 @@ main {
   position: absolute;
   inset: 0;
   overflow: auto;
+  /* Map is never actually display:none'd while another full-screen overlay (About/Resources/
+     Alerts/the main menu/any modal) is open on top of it -- those overlays don't go through
+     switchTab at all, only .view-to-.view tab switches do, so Map stays alive underneath to
+     preserve its pan/zoom/marker state. That's fine for Map's own pixels, but Leaflet's control
+     container (attribution + zoom buttons) sets its own z-index around 800-1000 in its bundled
+     CSS -- with no stacking context of its own, .view had none of that trapped inside it, so it
+     competed directly against sibling overlays' z-index (960/950/900/etc.) in the SAME top-level
+     stacking context and won, showing the OSM attribution poked through on every screen. isolation:
+     isolate traps any descendant's z-index (Leaflet's included) inside this element's own
+     stacking level, so it can never outrank a sibling overlay regardless of the raw number --
+     without changing position/layout at all, unlike giving .view an explicit z-index would. */
+  isolation: isolate;
 }
 
 #map-view {
