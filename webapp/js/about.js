@@ -110,6 +110,18 @@ function initAboutPage() {
     dot.addEventListener("click", () => setAboutBackground(Number(dot.dataset.bgIndex)));
   });
 
+  // Item 43: nested full-screen page reached FROM About rather than the main menu -- its own
+  // nav-stack layer so a back gesture returns to About (still open underneath), not straight
+  // past it to whatever was open before About.
+  document.getElementById("about-share-link-btn").addEventListener("click", () => {
+    document.getElementById("about-page").hidden = true;
+    openSharePage();
+    pushNavLayer("share-page", () => {
+      document.getElementById("share-page").hidden = true;
+      document.getElementById("about-page").hidden = false;
+    });
+  });
+
   // One listener on the whole page, not just a background layer: native's own tap detector sits
   // BEHIND the header/text (so those get first claim on their own taps) but still receives any
   // tap that isn't consumed by a real control -- including a tap that lands on empty space

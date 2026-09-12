@@ -444,6 +444,19 @@ main {
   padding-top: 8px;
 }
 
+/* .text-link is used on real <a> links everywhere else -- a <button> (item 43's About-page
+   "Share this app" link, styled the same way since it triggers JS nav rather than a real href)
+   needs its own default browser chrome (background/border/cursor) reset first. */
+button.text-link {
+  background: none;
+  border: none;
+  padding: 0;
+  padding-top: 8px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
 .section-divider {
   border: none;
   border-top: 1px solid rgba(255, 255, 255, 0.15);
@@ -844,6 +857,82 @@ main {
   font-size: 0.75rem;
   font-weight: 700;
   flex-shrink: 0;
+}
+
+/* --- Share page (item 43, web-only -- no native equivalent) --- */
+
+.share-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 960;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.share-url-text {
+  color: #ffffff;
+  font-family: monospace;
+  font-size: 0.85rem;
+  word-break: break-all;
+  user-select: all;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0 0 10px;
+}
+
+.share-action-btn {
+  display: block;
+  width: 100%;
+}
+
+.share-qr-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.share-qr-container {
+  position: relative;
+  display: inline-block;
+  margin-top: 8px;
+  padding: 12px;
+  background: #ffffff;
+  border-radius: 12px;
+}
+
+/* qrcodejs draws its own canvas (or table, on very old browsers with no canvas support) directly
+   into #share-qr-code at the width/height passed to the QRCode constructor (share.js) -- nothing
+   sized here, this is just the drop point. */
+#share-qr-code {
+  line-height: 0;
+}
+
+/* Centered over the QR by the container's own real rendered size, not a hardcoded pixel value --
+   qrcodejs draws at exactly the width/height given to it (240px, share.js), so 50%/50% + translate
+   always lands dead-center regardless of what that size is. ~22% of 240px -- see share.js's own
+   comment on why level-H error correction is what makes this safe. White backing (not just the
+   icon's own image) keeps a clean quiet margin between the icon and the QR's dark modules right
+   at its edge, same reasoning as a real-world printed QR-with-logo. */
+.share-qr-icon-wrap {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 54px;
+  height: 54px;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 5px;
+  box-sizing: border-box;
+}
+
+.share-qr-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
 }
 
 /* --- Point+radius / custom-polygon full-screen pickers --- */

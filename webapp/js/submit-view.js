@@ -844,18 +844,35 @@ function logBearingDialNeedleDiagnostics(degrees) {
   renderBearingDialDebugOverlay();
 }
 
+// BUG FIX (item 42): SVGElement does not inherit from HTMLElement, and the `hidden` IDL property
+// (the thing `el.hidden = true/false` actually sets) is only reflected on HTMLElement -- on an
+// <svg>/<g>/etc. element, `.hidden = false` is a harmless no-op expando assignment that never
+// touches the real `hidden` CONTENT ATTRIBUTE, the one the app-wide `[hidden] { display: none
+// !important }` rule (style.css) actually matches against. Confirmed via the item-39/41 debug
+// overlay: after a successful drag, the needle's coordinates were already correct, but its
+// `hidden` ATTRIBUTE was still present (computed display: none) -- .hidden = false had silently
+// done nothing. setAttribute/removeAttribute work on any element regardless of interface, since
+// they operate on the actual attribute, not a per-interface reflected property.
+function setSvgElementHidden(el, hidden) {
+  if (hidden) {
+    el.setAttribute("hidden", "");
+  } else {
+    el.removeAttribute("hidden");
+  }
+}
+
 function updateBearingDialNeedle(degrees) {
   const needle = document.getElementById("bearing-dial-needle");
   // The "?" mark and the needle are mutually exclusive -- exactly one of them is ever visible, so
   // the dial always shows SOMETHING explicit rather than going blank when degrees is null (which
   // read as ambiguous: "not set yet" vs. "no needle drawn for some other reason" -- item 27b).
-  document.getElementById("bearing-dial-unknown-mark").hidden = degrees != null;
+  setSvgElementHidden(document.getElementById("bearing-dial-unknown-mark"), degrees != null);
   if (degrees == null) {
-    needle.hidden = true;
+    setSvgElementHidden(needle, true);
     logBearingDialNeedleDiagnostics(degrees);
     return;
   }
-  needle.hidden = false;
+  setSvgElementHidden(needle, false);
   const cx = 75, cy = 85, radius = 58; // must match the SVG geometry in index.html
   const radians = (degrees * Math.PI) / 180;
   const endX = cx + Math.sin(radians) * radius;

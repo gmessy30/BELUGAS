@@ -86,6 +86,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initTierCodeModal();
   initAboutPage();
   initResourcesPage();
+  initSharePage();
   initNewsFeedPage();
   initAlertsPage();
   initPresenceBanner();

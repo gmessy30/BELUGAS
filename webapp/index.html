@@ -105,6 +105,9 @@
     <button id="menu-resources-item" class="menu-nav-item">Resources</button>
     <button id="menu-about-item" class="menu-nav-item">About</button>
     <button id="menu-alerts-item" class="menu-nav-item">Alerts</button>
+    <!-- Item 43: web-only, no native equivalent (native is distributed via the app stores, which
+         already have their own share/listing mechanics) -- opens share.js's dedicated page. -->
+    <button id="menu-share-item" class="menu-nav-item">Share</button>
     <!-- No native equivalent at all -- native is installed via the app stores, no in-app
          install-prompt concept exists there. Web-only, hidden by default; install-prompt.js
          reveals it once installing is actually possible (see that file's own header comment). -->
@@ -159,6 +162,57 @@
       <div class="about-bg-dots">
         <button class="about-bg-dot active about-interactive" data-bg-index="0" aria-label="Show reference sketch"></button>
         <button class="about-bg-dot about-interactive" data-bg-index="1" aria-label="Show breaching sketches"></button>
+      </div>
+      <hr class="section-divider">
+
+      <!-- Item 43: link to the new Share page -- web-only, no native AboutScreen equivalent. -->
+      <div class="subpage-section">
+        <div class="section-title">SHARE</div>
+        <button id="about-share-link-btn" class="text-link about-interactive" type="button">Share this app →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Item 43: web-only, no native equivalent (native is distributed via the app stores, which
+       already have their own share mechanics). Reached from the main menu's "Share" item and
+       from a link on the About page (share.js owns both entry points' handlers). Same page-shell
+       shape (mae-background, subpage-top-row/-content) as Resources/News Feed/Alerts. -->
+  <div id="share-page" class="share-screen mae-background" hidden>
+    <div class="subpage-top-row">
+      <h1 class="subpage-title">SHARE</h1>
+      <button id="share-back-btn" class="subpage-back-btn">← BACK</button>
+    </div>
+
+    <div class="subpage-content">
+      <div class="subpage-section">
+        <div class="section-title">APP LINK</div>
+        <p id="share-url-text" class="share-url-text"></p>
+        <button id="share-copy-btn" class="secondary share-action-btn" type="button">📋 Copy Link</button>
+      </div>
+      <hr class="section-divider">
+
+      <!-- Hidden entirely (not just disabled) where navigator.share doesn't exist -- most
+           desktop browsers -- share.js's initSharePage feature-detects this once at load. The
+           copy button above already covers that case. -->
+      <div id="share-native-section" class="subpage-section" hidden>
+        <button id="share-native-btn" class="primary share-action-btn" type="button">📤 Share…</button>
+      </div>
+      <hr id="share-native-divider" class="section-divider" hidden>
+
+      <div class="subpage-section share-qr-section">
+        <div class="section-title">SCAN TO OPEN</div>
+        <!-- qrcodejs (davidshimjs, loaded via CDN below) renders its canvas/table INTO this div;
+             the app icon is a plain absolutely-positioned sibling on top, not composited into the
+             QR's own pixel data -- visually identical to a scanner either way, and far simpler
+             than canvas manipulation. High error-correction (level H, ~30% redundancy) is what
+             makes overlaying anything here safe at all -- see share.js's own comment on why the
+             icon is capped at ~22% of the code's width instead of dropping the level down. -->
+        <div id="share-qr-container" class="share-qr-container">
+          <div id="share-qr-code"></div>
+          <div class="share-qr-icon-wrap">
+            <img src="icons/icon-192.png" alt="" class="share-qr-icon">
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -901,6 +955,11 @@
           crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <!-- Item 43: davidshimjs/qrcodejs -- self-contained (no server round trip per render, unlike an
+       external QR image-generator service), so the Share page's code still renders once this
+       script itself is cached, matching this app's offline-first posture. Exposes a global
+       `QRCode` constructor (share.js). -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <!-- Compat build (global `firebase` namespace, plain script) -- see push-notifications.js's
        header comment for why, over the modular ES-module build. -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -918,6 +977,7 @@
   <script src="js/presence-state.js"></script>
   <script src="js/offline-queue.js"></script>
   <script src="js/tier-code.js"></script>
+  <script src="js/share.js"></script>
   <script src="js/about.js"></script>
   <script src="js/resources.js"></script>
   <script src="js/news-feed.js"></script>

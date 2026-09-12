@@ -8,7 +8,11 @@
 // Report Manually (REPORT MANUALLY -- opens ManualLoggingScreen.kt's port directly, see
 // openManualReportFlow in submit-view.js), Sightings List, Sightings Map, News Feed, Resources,
 // About, Alerts, in that same relative order. EXPORT DATA has no web equivalent yet, so it's
-// just omitted rather than reordering what's left. "About" opens the
+// just omitted rather than reordering what's left. "Share" (item 43) is appended after Alerts --
+// a genuinely web-only addition with no native counterpart at all (native is distributed through
+// the app stores, which already have their own listing/share mechanics), so it has no "correct"
+// native position to match; tacked on at the end rather than interleaved into the ported order.
+// "About" opens the
 // real AboutScreen.kt port (about.js) -- the tier-code modal has no menu entry at all, matching
 // native: it's reached only via the hidden nose-tap gesture on that page. "Alerts" opens the real
 // SubscriptionsScreen.kt port (subscriptions.js) -- native's own menu item is also literally
@@ -128,6 +132,16 @@ function initMainMenu() {
     openAlertsPage();
     pushNavLayer("alerts-page", () => {
       document.getElementById("alerts-page").hidden = true;
+      menu.hidden = false;
+    });
+  });
+
+  // Item 43: same nav-stack pattern as every other full-screen page above.
+  document.getElementById("menu-share-item").addEventListener("click", () => {
+    menu.hidden = true;
+    openSharePage();
+    pushNavLayer("share-page", () => {
+      document.getElementById("share-page").hidden = true;
       menu.hidden = false;
     });
   });
