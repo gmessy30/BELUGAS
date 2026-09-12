@@ -70,18 +70,30 @@
   text-decoration: none;
 }
 
+/* Item 54: this list previously had NO background of its own -- just a border-bottom divider
+   between rows, sitting directly on .mae-background's own artwork/gradient. Mae's own sketch is
+   pale/white in large areas, and every row's text is already light-on-dark (see below), so any row
+   landing over one of those pale patches read as pale text on a near-white background -- invisible.
+   Given its own opaque dark card here instead, matching .sighting-item's real dark-card treatment
+   (App.kt's SightingListItem Card -- same --dark-card-bg/--dark-card-border/radius/padding this
+   app uses for every other real list, not just this one), so contrast holds regardless of what's
+   behind it. */
+#tier-codes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .tier-code-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-.tier-code-row:last-child {
-  border-bottom: none;
+  background: var(--dark-card-bg);
+  border: 1px solid var(--dark-card-border);
+  border-radius: 10px;
+  padding: 12px 14px;
 }
 
 .tier-code-info {
