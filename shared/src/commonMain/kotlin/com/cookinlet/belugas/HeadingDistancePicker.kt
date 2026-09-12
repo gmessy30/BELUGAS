@@ -53,7 +53,10 @@ fun HeadingDistanceButton(
     altitudeMeters: Double,
     region: RegionConfig,
     modifier: Modifier = Modifier,
-    onConfirm: (HeadingEstimate, DistanceBucket) -> Unit
+    // BUG FIX (item 47): both nullable now -- see HeadingDistanceDialog's own comments on
+    // manualDegrees/selectedDistance for why a confirm can now genuinely carry a null heading
+    // and/or a null distance.
+    onConfirm: (HeadingEstimate?, DistanceBucket?) -> Unit
 ) {
     var showDialog by remember { mutableStateOf(false) }
 
@@ -101,15 +104,33 @@ private fun HeadingDistanceDialog(
     initialHeading: HeadingEstimate?,
     initialDistance: DistanceBucket?,
     onDismiss: () -> Unit,
-    onConfirm: (HeadingEstimate, DistanceBucket) -> Unit
+    // BUG FIX (item 47): HeadingEstimate? not HeadingEstimate -- see manualDegrees' own comment
+    // for why a confirm can now genuinely carry a null heading (manual entry, never touched).
+    onConfirm: (HeadingEstimate?, DistanceBucket?) -> Unit
 ) {
     val compassService = rememberCompassService()
 
     var sensorReading by remember { mutableStateOf<HeadingEstimate?>(null) }
     var isSensing by remember { mutableStateOf(true) }
     var useManual by remember { mutableStateOf(initialHeading?.source == HeadingSource.MANUAL) }
-    var manualDegrees by remember { mutableStateOf(initialHeading?.degrees ?: 0.0) }
-    var selectedDistance by remember { mutableStateOf(initialDistance ?: DistanceBucket.MEDIUM) }
+    // BUG FIX (item 47): was `initialHeading?.degrees ?: 0.0` -- on a genuinely fresh pick
+    // (initialHeading null, manual entry active because the sensor is unavailable), 0.0 happens
+    // to equal COMPASS_POINTS' own "N" value, so the N chip rendered as already selected and
+    // tapping USE THIS without ever touching a chip or the slider committed "0°/North" as if it
+    // had been deliberately chosen -- same shape of bug as selectedDistance's own MEDIUM default
+    // below. Re-opening to adjust an ALREADY-confirmed heading still carries the real value over
+    // correctly (that's what initialHeading?.degrees IS in that case); only the never-set case
+    // now stays null.
+    var manualDegrees by remember { mutableStateOf(initialHeading?.degrees) }
+    // BUG FIX (item 47): was `initialDistance ?: DistanceBucket.MEDIUM` -- on a genuinely fresh
+    // pick (initialDistance null), that silently seeded MEDIUM as if it had been chosen, and
+    // tapping USE THIS without ever touching a distance chip committed it as fact. Re-opening to
+    // adjust an ALREADY-confirmed distance still carries the real value over correctly (that's
+    // what initialDistance IS in that case); only the never-set case now stays null through to
+    // onConfirm, matching LoggingScreen's own launchSubmit gate (heading != null && bucket !=
+    // null), which already routes a null bucket to the "Can't Place This Sighting" dialog exactly
+    // like a null heading always has.
+    var selectedDistance by remember { mutableStateOf(initialDistance) }
 
     LaunchedEffect(Unit) {
         val reading = compassService.getCurrentHeading()
@@ -118,15 +139,25 @@ private fun HeadingDistanceDialog(
         if (reading == null) useManual = true
     }
 
-    val currentHeading = if (!useManual && sensorReading != null) {
-        sensorReading!!
+    // BUG FIX (item 47): nullable now -- manualDegrees can genuinely be null (see its own comment
+    // above), so there may be no real current heading at all yet. onConfirm/HeadingDistanceButton
+    // widened to HeadingEstimate? to carry that through; LoggingScreen's own launchSubmit gate
+    // already treats a null heading as "can't place this sighting," same as it always has.
+    val currentHeading: HeadingEstimate? = if (!useManual && sensorReading != null) {
+        sensorReading
     } else {
-        HeadingEstimate(manualDegrees, HeadingSource.MANUAL)
+        manualDegrees?.let { HeadingEstimate(it, HeadingSource.MANUAL) }
     }
 
-    val radiusMeters = selectedDistance.radiusMeters(isAerial)
+    // All three null-guarded -- currentHeading/selectedDistance can genuinely be null now (see
+    // their own comments above).
+    val radiusMeters = selectedDistance?.radiusMeters(isAerial)
     val sectorOnWater = remember(currentHeading, selectedDistance) {
-        sectorEndpointWithinGeofence(originLat, originLng, currentHeading, radiusMeters, altitudeMeters, region)
+        if (currentHeading == null || radiusMeters == null) {
+            true // nothing to warn about yet -- no heading/distance chosen means no sector to check
+        } else {
+            sectorEndpointWithinGeofence(originLat, originLng, currentHeading, radiusMeters, altitudeMeters, region)
+        }
     }
 
     AlertDialog(
@@ -191,9 +222,17 @@ private fun HeadingDistanceDialog(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text("Fine-tune: ${manualDegrees.toInt()}°", fontSize = 11.sp, color = Color.Gray)
+                    // BUG FIX (item 47): label reads "Not set" rather than a fake "0°" when
+                    // manualDegrees is genuinely null -- the Slider itself still needs SOME
+                    // numeric thumb position to render at (0f, same as before), but that's purely
+                    // a starting visual -- it doesn't itself commit manualDegrees to 0.0.
+                    Text(
+                        text = manualDegrees?.let { "Fine-tune: ${it.toInt()}°" } ?: "Fine-tune: not set",
+                        fontSize = 11.sp,
+                        color = Color.Gray
+                    )
                     Slider(
-                        value = manualDegrees.toFloat(),
+                        value = (manualDegrees ?: 0.0).toFloat(),
                         onValueChange = { manualDegrees = it.toDouble() },
                         valueRange = 0f..359f
                     )

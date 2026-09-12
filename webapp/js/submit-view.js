@@ -33,8 +33,16 @@ const manualCounts = { whites: 0, greys: 0, calves: 0, unknown: 0 };
 let selectedPodDirection = "NONE"; // AWAY/LEFT/RIGHT/NONE -- relative to the observer
 let headingDegrees = null; // null = not set yet
 let headingIsAerial = false; // cached once per review-step visit, see goToReviewStep
-let selectedDistanceBucketKey = "MEDIUM";
-let pendingHeadingDegreesDraft = 0; // the heading-distance modal's own working value pre-confirm
+// BUG FIX (item 47): was "MEDIUM" -- an unreviewed default let a sighting submit with a real
+// heading but a distance nobody ever actually chose. null now, same as headingDegrees, until
+// explicitly set via a distance chip tap (see the heading-distance modal's own draft handling).
+let selectedDistanceBucketKey = null;
+let pendingHeadingDegreesDraft = null; // the heading-distance modal's own working value pre-confirm
+// BUG FIX (item 47): mirrors pendingHeadingDegreesDraft above -- the distance chips used to write
+// selectedDistanceBucketKey directly and immediately (even if the modal was then CANCELLED), with
+// no pending/draft/confirm step at all, unlike heading. Now both fields go through the identical
+// draft-then-commit-on-CONFIRM path.
+let pendingDistanceBucketKeyDraft = null;
 
 // --- Manual-path state (ManualLoggingScreen.kt) ---
 let manualMapInstance = null;
@@ -292,7 +300,7 @@ function resetCameraPositionControls() {
   selectedPodDirection = "NONE";
   document.querySelectorAll(".direction-arrow-btn").forEach((b) => b.classList.remove("selected"));
   headingDegrees = null;
-  selectedDistanceBucketKey = "MEDIUM";
+  selectedDistanceBucketKey = null; // BUG FIX (item 47): was "MEDIUM" -- see that variable's own comment
   updateHeadingDistanceButtonLabel();
 }
 
@@ -347,6 +355,11 @@ function initHeadingDistanceModal() {
   document.getElementById("heading-distance-cancel-btn").addEventListener("click", () => navigateBack());
   document.getElementById("heading-distance-confirm-btn").addEventListener("click", () => {
     headingDegrees = pendingHeadingDegreesDraft;
+    // BUG FIX (item 47): distance now commits on CONFIRM exactly like heading, instead of the
+    // chip click writing selectedDistanceBucketKey directly and immediately (which meant a
+    // distance change "stuck" even if the user then hit CANCEL, and meant there was no way for
+    // it to ever be null -- see this variable's own declaration comment).
+    selectedDistanceBucketKey = pendingDistanceBucketKeyDraft;
     updateHeadingDistanceButtonLabel();
     navigateBack();
   });
@@ -358,9 +371,18 @@ function initHeadingDistanceModal() {
 }
 
 function openHeadingDistanceModal() {
-  pendingHeadingDegreesDraft = headingDegrees ?? 0;
-  document.getElementById("heading-slider").value = String(pendingHeadingDegreesDraft);
-  document.getElementById("heading-slider-value").textContent = `${pendingHeadingDegreesDraft}°`;
+  // BUG FIX (item 47): no "?? 0"/"?? MEDIUM" fallback here anymore -- a genuinely never-set
+  // field (headingDegrees/selectedDistanceBucketKey both null) now stays null in the draft too,
+  // rather than silently seeding a fabricated starting value that CONFIRM would then commit as
+  // if it had been deliberately chosen. Re-opening to adjust an ALREADY-confirmed value still
+  // carries that real value over correctly, since headingDegrees/selectedDistanceBucketKey
+  // themselves are what's being read here, not a hardcoded default.
+  pendingHeadingDegreesDraft = headingDegrees;
+  pendingDistanceBucketKeyDraft = selectedDistanceBucketKey;
+  const sliderDisplayValue = pendingHeadingDegreesDraft ?? 0;
+  document.getElementById("heading-slider").value = String(sliderDisplayValue);
+  document.getElementById("heading-slider-value").textContent =
+    pendingHeadingDegreesDraft != null ? `${sliderDisplayValue}°` : "Not set";
   renderHeadingCompassChips();
   renderHeadingDistanceChips();
   document.getElementById("heading-distance-modal").hidden = false;
@@ -398,10 +420,10 @@ function renderHeadingDistanceChips() {
   DISTANCE_BUCKETS.forEach((bucket) => {
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = "chip-toggle" + (selectedDistanceBucketKey === bucket.key ? " active" : "");
+    chip.className = "chip-toggle" + (pendingDistanceBucketKeyDraft === bucket.key ? " active" : "");
     chip.textContent = distanceBucketShortLabel(bucket.key, headingIsAerial);
     chip.addEventListener("click", () => {
-      selectedDistanceBucketKey = bucket.key;
+      pendingDistanceBucketKeyDraft = bucket.key;
       renderHeadingDistanceChips();
     });
     container.appendChild(chip);
@@ -410,7 +432,10 @@ function renderHeadingDistanceChips() {
 
 function updateHeadingDistanceButtonLabel() {
   const btn = document.getElementById("heading-distance-btn");
-  if (headingDegrees != null) {
+  // BUG FIX (item 47): both required now, not just heading -- selectedDistanceBucketKey can
+  // genuinely be null (see its own declaration comment), and DISTANCE_BUCKETS.find(...) would
+  // throw on a null key rather than just returning undefined.
+  if (headingDegrees != null && selectedDistanceBucketKey != null) {
     const bucketLabel = DISTANCE_BUCKETS.find((b) => b.key === selectedDistanceBucketKey).label.toUpperCase();
     btn.textContent = `🧭 ${Math.round(headingDegrees)}° · ${bucketLabel}`;
   } else {
@@ -438,10 +463,15 @@ async function submitCameraSighting() {
     setSubmitStatus("Enter at least one whale count before submitting.", true);
     return;
   }
-  if (headingDegrees == null) {
-    // No CoastlineGeometry fallback-guess port (see this file's header comment) -- always
-    // directed here when no heading was set, not only once a fallback guess also fails as it is
-    // natively.
+  // BUG FIX (item 47): distance used to default to "MEDIUM" and never actually require a tap --
+  // a user could set heading, hit CONFIRM in the Heading & Distance modal without ever touching a
+  // distance chip, and silently submit at MEDIUM's radius, unreviewed. Distance is now gated the
+  // same way heading already is: null until explicitly chosen (see openHeadingDistanceModal/
+  // renderHeadingDistanceChips), so either one missing routes here, matching this dialog's own
+  // existing "no CoastlineGeometry fallback-guess port -- always directed here when no heading
+  // was set" reasoning exactly (a radius with no real distance behind it is exactly as fabricated
+  // as a position with no real heading behind it).
+  if (headingDegrees == null || selectedDistanceBucketKey == null) {
     document.getElementById("cannot-place-modal").hidden = false;
     pushNavLayer("cannot-place-modal", () => {
       document.getElementById("cannot-place-modal").hidden = true;
