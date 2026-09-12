@@ -464,6 +464,11 @@ main {
   height: 100%;
   object-fit: contain;
   mix-blend-mode: multiply;
+  /* AboutHiddenGesture.kt's 7-tap-within-1.5s gesture needs every tap to register immediately --
+     without this, mobile Safari/Chrome's default double-tap-to-zoom detection can swallow or
+     delay a fast second tap on this image waiting to see if a third tap makes it a double-tap,
+     which both slows down and can outright break landing all 7 taps inside the timeout window. */
+  touch-action: manipulation;
 }
 
 .about-toggle-btn {
