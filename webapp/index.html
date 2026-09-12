@@ -59,6 +59,14 @@
     <button id="queue-retry-btn" class="queue-retry-btn">Retry now</button>
   </div>
 
+  <!-- Web Push foreground message -- native's BelugasMessagingService.onMessageReceived just
+       logs a foreground FCM message (no visible UI at all); push-notifications.js deliberately
+       doesn't copy that gap, showing this instead. -->
+  <div id="push-foreground-banner" class="queue-banner push-foreground-banner" hidden>
+    <span>🔔 <strong id="push-foreground-banner-title"></strong>: <span id="push-foreground-banner-body"></span></span>
+    <button id="push-foreground-banner-dismiss-btn" class="queue-retry-btn">Dismiss</button>
+  </div>
+
   <!-- Ports PresenceBanner.kt's BelugaPresenceBannerCarousel -- see presence-banner.js's own
        header comment for the exact visibility gating (subscription OR 15km proximity, NOT the
        same as the map shading's unconditional visibility). Fixed at the bottom, above every
@@ -278,6 +286,15 @@
     </div>
 
     <div id="alerts-content" class="subpage-content" hidden>
+      <div class="subpage-section">
+        <div class="section-title">PUSH NOTIFICATIONS</div>
+        <p id="push-enable-description" class="section-body"></p>
+        <button id="push-enable-btn" class="primary" type="button" hidden>🔔 ENABLE ALERTS</button>
+        <button id="push-ios-install-first-btn" class="secondary" type="button" hidden>SEE HOW TO INSTALL</button>
+        <p id="push-status" class="status-info"></p>
+      </div>
+      <hr class="section-divider">
+
       <div class="subpage-section">
         <div class="section-title">WATCHING</div>
         <div id="alerts-watching-list"></div>
@@ -611,11 +628,17 @@
           crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <!-- Compat build (global `firebase` namespace, plain script) -- see push-notifications.js's
+       header comment for why, over the modular ES-module build. -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js"></script>
 
   <script src="js/config.js"></script>
+  <script src="js/firebase-config.js"></script>
   <script src="js/nav-stack.js"></script>
   <script src="js/install-prompt.js"></script>
   <script src="js/db.js"></script>
+  <script src="js/push-notifications.js"></script>
   <script src="js/geofence.js"></script>
   <script src="js/presence.js"></script>
   <script src="js/presence-state.js"></script>

@@ -362,6 +362,25 @@ async function deleteSubscription(id) {
 }
 
 /**
+ * Registers (or refreshes) this device's FCM token -- matches SupabaseApi.registerDeviceToken
+ * exactly (supabase/migrations/20260823000000_add_device_tokens_and_notify_trigger.sql's
+ * device_tokens table): upserts on fcm_token so re-registering the same token (a silent refresh
+ * on every app load, or this app's own "Enable Alerts" re-tap) is a no-op rather than an error,
+ * and keeps subscriber_id in sync so match_notification_recipients can target this device.
+ */
+async function registerDeviceToken(token, subscriberId) {
+  const { error } = await supabaseClient.from("device_tokens").upsert(
+    { fcm_token: token, subscriber_id: subscriberId },
+    { onConflict: "fcm_token" }
+  );
+  if (error) {
+    console.error("DEVICE_TOKEN_REGISTER_ERROR", error);
+    return false;
+  }
+  return true;
+}
+
+/**
  * This browser's persistent per-device id, generated once and kept in localStorage -- mirrors
  * AppPreferences.getOrCreateSubscriberId() on the native side. Write-only from this app's own
  * perspective too: sent at insert so the server's BEFORE INSERT trigger can compute

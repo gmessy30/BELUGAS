@@ -6,7 +6,33 @@
 // the only thing that makes the activate handler below actually replace the old cached shell.
 // Without a version bump, a returning visitor's already-installed service worker sees byte-
 // identical install/activate logic and never even attempts an update.
-const CACHE_NAME = "belugas-shell-v13";
+const CACHE_NAME = "belugas-shell-v14";
+
+// Web Push (FCM) background-message handling -- coordinates with the app-shell caching below by
+// living in this SAME service worker file rather than a separate firebase-messaging-sw.js (the
+// two options item 11 offered): this file already registers at the whole /webapp/ scope, so
+// there's nothing a second, separately-registered SW would cover that this one doesn't already.
+// Wrapped in try/catch so a not-yet-configured deploy (js/firebase-config.js still has its
+// placeholder values) or a transient CDN fetch failure during a SW update never breaks the
+// install/activate/fetch handlers below, which this whole PWA's offline/reload behavior depends
+// on regardless of whether push is set up yet.
+try {
+  importScripts(
+    "https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js",
+    "https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js",
+    "./js/firebase-config.js"
+  );
+  if (!FIREBASE_CONFIG.apiKey.startsWith("REPLACE_")) {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    // Constructing this registers firebase-messaging-compat.js's own internal "push" and
+    // "notificationclick" listeners, which auto-display a system notification from a background
+    // message's notification payload and open its webpush.fcm_options.link on click -- no
+    // explicit onBackgroundMessage/notificationclick handler needed here on top of that.
+    firebase.messaging();
+  }
+} catch (e) {
+  console.error("SW_FIREBASE_MESSAGING_INIT_ERROR", e);
+}
 
 // Relative to this file's own location (webapp/), so this works whether the app is served from
 // a domain root or a subpath like /BELUGAS/webapp/.
@@ -16,9 +42,11 @@ const APP_SHELL = [
   "./manifest.json",
   "./css/style.css",
   "./js/config.js",
+  "./js/firebase-config.js",
   "./js/nav-stack.js",
   "./js/install-prompt.js",
   "./js/db.js",
+  "./js/push-notifications.js",
   "./js/geofence.js",
   "./js/presence.js",
   "./js/presence-state.js",

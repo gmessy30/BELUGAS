@@ -94,6 +94,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   initMainMenu();
   initOfflineQueue();
   initPresenceState();
+  initPushForegroundBanner();
+  initPushEnableButtons();
+  initPushNotifications();
 
   const minDelay = new Promise((resolve) => setTimeout(resolve, SPLASH_MIN_DISPLAY_MS));
   await Promise.all([minDelay, refreshSightings()]);

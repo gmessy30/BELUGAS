@@ -1558,6 +1558,13 @@ button.secondary {
   white-space: nowrap;
 }
 
+/* Reuses .queue-banner's layout wholesale, just a distinct color from the (also amber) offline-
+   queue banner so the two are never confused for one another if both happen to show at once. */
+.push-foreground-banner {
+  background: var(--brand-cyan);
+  color: var(--brand-cyan-contrast);
+}
+
 /* --- Tier code modal --- */
 .modal-backdrop {
   position: fixed;

@@ -227,6 +227,11 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
   );
 }
 
+// The webapp's own deployed URL -- used only by the webpush section below (icon to show, and
+// where a tap on the notification opens). Update this if the GitHub Pages deployment URL ever
+// changes; nothing else in this function depends on it.
+const WEBAPP_URL = "https://gmessy30.github.io/BELUGAS/webapp/";
+
 async function sendFcmMessage(
   projectId: string,
   accessToken: string,
@@ -244,6 +249,21 @@ async function sendFcmMessage(
       message: {
         token,
         notification: { title, body },
+        // Platform-specific overrides are additive and independent -- this "webpush" section is
+        // only ever applied when FCM delivers to a browser/web-push registration (this webapp's
+        // own tokens); it changes nothing about how the SAME message reaches an Android native
+        // client's token, which has no webpush section to read. Icon/link are needed here since
+        // a bare notification payload shows with a generic browser icon and no click-through
+        // destination otherwise -- Android instead uses the app's own launcher icon and opens the
+        // app automatically, so it never needed this.
+        webpush: {
+          notification: {
+            icon: `${WEBAPP_URL}icons/icon-192.png`,
+          },
+          fcm_options: {
+            link: WEBAPP_URL,
+          },
+        },
       },
     }),
   });

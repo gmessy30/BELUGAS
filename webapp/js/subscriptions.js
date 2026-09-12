@@ -87,6 +87,7 @@ async function openAlertsPage() {
   document.getElementById("alerts-page").hidden = false;
   document.getElementById("alerts-loading").hidden = false;
   document.getElementById("alerts-content").hidden = true;
+  updatePushUi();
 
   alertsSubscriberId = getOrCreateSubscriberId();
   const [zones, presets] = await Promise.all([
