@@ -161,7 +161,13 @@ function formatTime12Hour(epochMs) {
 function presenceBannerLabel(card) {
   const zoneSuffix = card.zoneName ? ` · ${card.zoneName.toUpperCase()}` : "";
   let baseLabel;
-  if (card.status === PRESENCE_UNKNOWN) {
+  // Item 44: checked before the plain UNKNOWN branch below -- "never fetched yet" (isLoading)
+  // reads as a genuinely different claim than "fetched, and the real answer is unknown/stale."
+  // A grey "STATUS UNKNOWN" banner during an actual RED condition (the data just hasn't landed
+  // yet) is actively misleading; "LOADING…" makes clear this isn't the real answer at all.
+  if (card.isLoading) {
+    baseLabel = `LOADING…${zoneSuffix}`;
+  } else if (card.status === PRESENCE_UNKNOWN) {
     baseLabel = `STATUS UNKNOWN${zoneSuffix}`;
   } else if (card.kenaiDetail != null) {
     baseLabel = kenaiBannerLabel(card.status, card.kenaiDetail, zoneSuffix);

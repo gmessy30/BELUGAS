@@ -94,14 +94,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   initOrientationLock();
   initMainMenu();
   initOfflineQueue();
-  initPresenceState();
   initPushForegroundBanner();
   initPushEnableButtons();
   initPushNotifications();
   initLaunchScreenPicker();
 
+  // BUG FIX (item 44): initPresenceState() used to be called fire-and-forget up above, so this
+  // gate never actually waited for it -- the presence banner (and the map's own river shading)
+  // could already be visible, showing a default grey/UNKNOWN read, before the real RED/YELLOW/
+  // BLUE data had landed. Awaiting it here alongside refreshSightings() means neither surface is
+  // ever shown before the real data has landed, same as this gate already does for sightings.
   const minDelay = new Promise((resolve) => setTimeout(resolve, SPLASH_MIN_DISPLAY_MS));
-  await Promise.all([minDelay, refreshSightings()]);
+  await Promise.all([minDelay, refreshSightings(), initPresenceState()]);
   // Resolved while still covered by the splash screen, same timing intent as App.kt's own
   // resolveAndSetLaunchScreen (called during the splash's own display window) -- the very first
   // thing visible once the splash clears is already the right screen, not a Map flash-then-swap.

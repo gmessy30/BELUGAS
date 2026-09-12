@@ -297,22 +297,30 @@ main {
   flex-direction: column;
   align-items: flex-end;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   padding: 24px;
   padding-top: calc(env(safe-area-inset-top, 0px) + 24px);
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
   overflow-y: auto;
 }
 
+/* BUG FIX (item 44): trimmed from 1.3rem/10px down modestly -- a second, independent margin of
+   safety alongside .menu-overlay.mae-background's own repositioning above (that alone already
+   moves Mae out of this column's way; this just shrinks the column's own footprint too, in both
+   directions, so the longest items -- REPORT MANUALLY, SIGHTINGS LIST/MAP -- have more room
+   before their own left edge could ever reach anywhere near Mae's now-small top-left corner, and
+   the block overall is shorter, leaving more clearance as more items get added later). Still a
+   comfortable ~36px effective touch target (8+8 padding + ~20px line height), not shrunk to the
+   point of hurting legibility or tap accuracy. */
 .menu-nav-item {
   background: none;
   border: none;
   color: #ffffff;
-  font-size: 1.3rem;
+  font-size: 1.15rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-  padding: 10px 0;
+  padding: 8px 0;
   text-align: right;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
@@ -374,6 +382,27 @@ main {
   background-size: contain, cover;
   background-position: center, center;
   background-repeat: no-repeat, no-repeat;
+}
+
+/* BUG FIX (item 44): on every OTHER .mae-background screen, Mae is the only foreground content --
+   full-width "contain" and dead-center is exactly right there. The menu is different: its own
+   content is a right-aligned, vertically-centered, GROWING text column (9 items already, plus a
+   Close item and the launch-screen chips native doesn't have at all -- see main-menu.js's own
+   comment). At the shared rule's full-width "contain" size, Mae has zero horizontal slack to be
+   repositioned within at all (she already spans the full viewport width), so her face -- which
+   sits noticeably right-of-center and in the artwork's own top third (confirmed by looking at
+   beluga_background.png directly, not guessed) -- lands close enough to screen-center that a
+   vertically-centered column of this length reaches it (SIGHTINGS MAP/SIGHTINGS LIST reported
+   sitting directly over her eye).
+   Scaling her down specifically on THIS screen creates real slack in BOTH axes, so she can move
+   into a corner the text column never reaches, rather than fighting over the same shared center:
+   pinned small into the top-left, clear of the right-aligned column at any height, and clear of
+   the vertical center regardless of how many more items get added later (growth extends the
+   column further down/up from center, never sideways into the left third where she now lives).
+   Still full "contain" sizing/aspect, just smaller -- not cropped, not stretched, same artwork. */
+.menu-overlay.mae-background {
+  background-size: 30% auto, cover;
+  background-position: 3% 5%, center;
 }
 
 .subpage-top-row {
@@ -1014,12 +1043,38 @@ button.text-link {
   cursor: pointer;
 }
 
+/* Item 45: a subtle press-state, same affordance idea as a native list row -- makes it read as
+   tappable at a glance rather than static text, without needing a visible border/button chrome
+   that would fight the banner's own solid status color. Applies whenever ANYTHING here is
+   tappable (both the RED-navigates-to-map case and the existing multi-card cycle case), matching
+   .clickable's own existing scope. */
+.presence-banner-main.clickable:active {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.presence-banner-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
 .presence-banner-label {
   color: #ffffff;
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.03em;
   text-align: center;
+}
+
+/* Item 45: shown only alongside RED's own "CHECK MAP" label (presence-banner.js) -- the one
+   clear "tap this to go somewhere" affordance, rather than styling the whole banner as generically
+   clickable on every phase (YELLOW/BLUE/UNKNOWN don't navigate anywhere, so no chevron on those). */
+.presence-banner-chevron {
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .presence-banner-warnings {

@@ -83,3 +83,7 @@ project (via `supabase db query --linked --file <path>`) — don't tell the user
   Android/PWA back-gesture nav stack, Camera/Report Manually's responsive (portrait+landscape,
   no forced orientation) layout and fullscreen-on-touch-devices behavior, and the Android/iOS
   install prompt — none of this has been exercised in an actual browser this session.
+- **Native-side parity item**: the PWA's presence banner (RED phase, "CHECK MAP") is now tappable
+  and navigates straight to the Sightings Map (webapp/js/presence-banner.js's
+  `handlePresenceBannerTap`) — a field suggestion implemented web-only so far. `PresenceBanner.kt`/
+  `BelugaPresenceBannerCarousel` don't have this yet; worth adding there too for parity.

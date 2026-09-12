@@ -12,7 +12,12 @@ const presenceState = {
   nearbyWatchedZones: [],
   kenaiPresenceSnapshot: null, // { detail, fetchedAtMs }
   isKenaiDataStale: false,
-  kenaiBelugaStatus: PRESENCE_UNKNOWN
+  kenaiBelugaStatus: PRESENCE_UNKNOWN,
+  // Item 44: parallels hasEverFetchedWatchedZoneStatuses above, but for the Kenai path -- lets
+  // presence-banner.js tell "genuinely never fetched yet" (LOADING) apart from "fetched, and the
+  // real answer is UNKNOWN" (kenaiPresenceSnapshot being null is NOT enough on its own for that,
+  // since nothing here otherwise distinguishes those two cases).
+  hasEverFetchedKenaiPresenceState: false
 };
 
 const presenceStateListeners = [];
@@ -29,10 +34,25 @@ async function initPresenceState() {
   presenceState.watchedZoneShadingAreas = await getWatchedZoneShadingAreas();
   notifyPresenceStateChanged();
 
-  pollWatchedZoneStatuses();
+  // BUG FIX (item 44): these two used to be fire-and-forget (called without awaiting, both here
+  // and by app.js's own caller), so app.js's splash-gate Promise.all never actually waited for
+  // them -- kenaiBelugaStatus/watchedZoneStatuses sat at their default PRESENCE_UNKNOWN for
+  // however long the FIRST real poll took to land, which was AFTER the splash had already
+  // cleared and the presence banner was already visible: grey, then correcting to the real color
+  // moments later (same root cause as the river shading's own analogous lag). Awaiting the first
+  // round of each here -- and awaiting initPresenceState() itself from app.js's own gate now --
+  // means neither the banner nor the shading is ever shown before the real data has actually
+  // landed, except on a genuine fetch failure (see the LOADING-vs-UNKNOWN distinction those two
+  // functions' own hasEverFetched* flags now carry, for exactly that residual case). Both
+  // functions still self-schedule their own OWN recurring poll via setTimeout independently of
+  // this await -- only the very first round is gated.
+  await Promise.all([pollWatchedZoneStatuses(), pollKenaiPresenceState()]);
   tickWatchedZoneStatusesStaleness();
-  pollKenaiPresenceState();
   tickKenaiBelugaStatus();
+  // Not awaited/gated -- GPS can prompt for permission or take far longer than a Supabase RPC
+  // round trip, and blocking the splash on that would risk a much worse hang than the two awaits
+  // above. This only affects whether a zone counts as "nearby" (relevantIds' own visibility gate,
+  // presence-banner.js), not the RED/YELLOW/BLUE color/status data itself.
   pollNearbyWatchedZones();
 }
 
@@ -64,6 +84,7 @@ async function pollKenaiPresenceState() {
   const fetched = await getKenaiPresenceState();
   if (fetched != null) {
     presenceState.kenaiPresenceSnapshot = { detail: fetched, fetchedAtMs: Date.now() };
+    presenceState.hasEverFetchedKenaiPresenceState = true;
     notifyPresenceStateChanged();
   }
   setTimeout(pollKenaiPresenceState, LOCATION_POLL_INTERVAL_MS);

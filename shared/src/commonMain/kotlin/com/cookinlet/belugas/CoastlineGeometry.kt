@@ -918,6 +918,14 @@ private const val FALLBACK_SEARCH_STEP_METERS = 25.0
 const val FALLBACK_UNCERTAINTY_RADIUS_METERS = 500.0
 
 /**
+ * NOT CALLED FROM LoggingScreen ANYMORE (BUG FIX item 46) -- a real submitted sighting
+ * (position_source=FALLBACK, no heading/distance) proved this function's own [isWithinWellSourcedWater]
+ * "is this point in water" check can be wrong on a complex coastline, so LoggingScreen now always
+ * shows its "Can't Place This Sighting" dialog when no heading was given, unconditionally, rather
+ * than trying this guess first. Left defined (not deleted) in case its accuracy is ever improved
+ * enough to reconsider offering it back as an explicit, user-confirmed guess rather than a silent
+ * save -- do not wire this back into LoggingScreen's submit path without addressing that first.
+ *
  * Last-resort whale-position guess for LoggingScreen, used only when the observer gave no
  * heading/distance reading at all (SightingRecord.positionSource = FALLBACK). Walks outward
  * from the observer along [computeDefaultOffshoreHeadingDegrees]'s perpendicular-to-nearest-

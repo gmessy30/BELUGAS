@@ -79,7 +79,14 @@
        as whatever screen is current. -->
   <div id="presence-banner" class="presence-banner" hidden>
     <div id="presence-banner-main" class="presence-banner-main">
-      <span id="presence-banner-label" class="presence-banner-label"></span>
+      <!-- Item 45: RED's own label always ends in "CHECK MAP" (presence.js's kenaiBannerLabel/
+           presenceBannerLabel) -- the chevron only ever shows alongside that specific label, per
+           presence-banner.js's own renderPresenceBannerCard, so it never implies "tap me" on a
+           phase that doesn't actually go anywhere. -->
+      <div class="presence-banner-label-row">
+        <span id="presence-banner-label" class="presence-banner-label"></span>
+        <span id="presence-banner-chevron" class="presence-banner-chevron" hidden>›</span>
+      </div>
       <span id="presence-banner-warnings" class="presence-banner-warnings" hidden></span>
     </div>
     <div id="presence-banner-dots" class="presence-banner-dots" hidden></div>

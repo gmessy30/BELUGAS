@@ -63,13 +63,14 @@ fun LoggingScreen(
 
     var showGeofenceWarning by remember { mutableStateOf(false) }
     var showZeroCountWarning by remember { mutableStateOf(false) }
-    // No heading was given, and CoastlineGeometry.projectOffshoreFallback couldn't place a
-    // credible whale position either (no real coastline data near the observer, or no water
-    // confirmed within its search cap). There is deliberately no SAVE ANYWAY for this case --
-    // the only coordinates available are the observer's own raw GPS fix, and writing those into
-    // whale_lat/whale_lng under a FALLBACK label would store exactly the observer position this
-    // redesign exists to stop storing, mislabelled as the whale's. Losing the report is the
-    // correct outcome here; ManualLoggingScreen's dropped pin is the way to place it by hand.
+    // BUG FIX (item 46): shown whenever no heading was given, unconditionally -- there is
+    // deliberately no SAVE ANYWAY for this case, and (as of this fix) no CoastlineGeometry
+    // offshore-guess fallback attempt first either (see launchSubmit's own comment on why that
+    // path was removed, not just left as a last resort). The only coordinates available without
+    // a heading are the observer's own raw GPS fix, and writing those into whale_lat/whale_lng
+    // would store exactly the observer position this redesign exists to stop storing, mislabelled
+    // as the whale's. Losing the report is the correct outcome here; ManualLoggingScreen's
+    // dropped pin is the way to place it by hand.
     var showCannotPlaceDialog by remember { mutableStateOf(false) }
     // Coarse outer-geofence hard reject (GeofenceUtils.isWithinOuterGeofence), checked before
     // isWhalePositionVerified -- see that dialog's own text for why there's no SAVE ANYWAY.
@@ -144,20 +145,20 @@ fun LoggingScreen(
             val travelBearing = heading?.let { h -> selectedDirection.toAbsoluteTravelBearingDegrees(h.degrees) }
             val travelBearingSource = if (travelBearing != null) heading.source.name else null
 
-            // Real heading+distance -> project the whale position (PROJECTED).
-            // No heading given -> CoastlineGeometry's offshore-perpendicular guess
-            // (FALLBACK), or null if there's no real coastline data near the
-            // observer to guess from at all.
+            // BUG FIX (item 46): real heading+distance -> project the whale position
+            // (PROJECTED). No heading given -> no credible position at all, full stop --
+            // see showCannotPlaceDialog's own comment below for why the FALLBACK branch
+            // this used to have (CoastlineGeometry.projectOffshoreFallback's offshore-
+            // perpendicular guess) was removed rather than kept. projectOffshoreFallback
+            // itself is left defined in CoastlineGeometry.kt (unused from here) rather than
+            // deleted, in case its water-detection accuracy is ever fixed enough to
+            // reconsider offering it back as an explicit, confirmed guess -- not a live path.
             val position: WhalePositionEstimate? = if (heading != null && bucket != null) {
                 val radius = bucket.radiusMeters(currentAlt > 100.0)
                 val (projLat, projLng) = destinationPoint(currentLat, currentLng, heading.degrees, radius)
                 WhalePositionEstimate(projLat, projLng, radius, bucket.name, PositionSource.PROJECTED)
             } else {
-                projectOffshoreFallback(currentLat, currentLng)?.let { (fbLat, fbLng) ->
-                    WhalePositionEstimate(
-                        fbLat, fbLng, FALLBACK_UNCERTAINTY_RADIUS_METERS, null, PositionSource.FALLBACK
-                    )
-                }
+                null
             }
 
             // This device's own persistent id, sent so the server can compute
@@ -185,14 +186,12 @@ fun LoggingScreen(
             )
 
             suspend fun finishWith(pos: WhalePositionEstimate, passed: Boolean) {
-                // A FALLBACK position is in water almost by construction (the walk
-                // stops the moment it would leave water) -- treating that as real
-                // evidence would make "verified" trivially true for exactly the
-                // submissions with the least actual evidence behind them, so it's
-                // forced false here regardless of whether the check passed.
-                val verified = passed && pos.positionSource != PositionSource.FALLBACK
+                // position is always PROJECTED here now (BUG FIX item 46 removed the only other
+                // source, FALLBACK) -- a real heading+distance reading is real evidence, so
+                // "verified" just follows the geofence check directly, no positionSource carve-out
+                // needed anymore.
                 if (passed) {
-                    saveAndFinish(buildRecord(pos, verified = verified))
+                    saveAndFinish(buildRecord(pos, verified = true))
                 } else {
                     pendingRecord = buildRecord(pos, verified = false)
                     showGeofenceWarning = true
@@ -201,13 +200,22 @@ fun LoggingScreen(
             }
 
             if (position == null) {
-                // No heading given, and no real coastline geometry/water found to
-                // guess a position from either -- there is no credible whale
-                // position to save, not even a rough one, and no SAVE ANYWAY here:
-                // the only coordinates on hand are the observer's own raw GPS fix,
-                // and saving those under a whale-position label is exactly what this
-                // redesign exists to prevent. Direct the user to the manual flow
-                // instead of silently mislabelling a position.
+                // BUG FIX (item 46): no heading given -- there is no credible whale position to
+                // save, not even a rough one, and no SAVE ANYWAY here: the only coordinates on
+                // hand are the observer's own raw GPS fix, and saving those under a whale-
+                // position label is exactly what this redesign exists to prevent. Direct the
+                // user to the manual flow instead of silently mislabelling a position.
+                //
+                // This used to only be reached when CoastlineGeometry.projectOffshoreFallback
+                // ALSO failed to find a credible offshore guess -- a real submitted sighting
+                // (position_source=FALLBACK, heading_degrees/distance_bucket both null) proved
+                // that fallback's own "is this point in water" check can be wrong on a complex
+                // coastline, silently saving a guessed position that lands on dry land with no
+                // indication to the user it was ever a guess rather than a measurement. Rather
+                // than trying to make that approximation perfect, no heading now always means
+                // this dialog, unconditionally -- matching the web port's own behavior, which
+                // never had a fallback-guess path at all (see webapp/js/submit-view.js's own
+                // header comment).
                 showCannotPlaceDialog = true
                 isSaving = false
             } else if (!GeofenceUtils.isWithinOuterGeofence(position.lat, position.lng)) {
@@ -509,7 +517,11 @@ fun LoggingScreen(
                         ""
                     }
                     Text(
-                        text = "No direction/distance was given, and this location isn't close enough to known water to estimate one automatically.\n\nUse Manual Logging to drop a pin at the sighting location instead.$photoWarning"
+                        // BUG FIX (item 46): no longer claims an automatic estimate was attempted
+                        // and failed -- as of this fix, none ever is (see launchSubmit's own
+                        // comment on why the offshore-guess fallback was removed rather than kept
+                        // as a last resort).
+                        text = "No direction/distance was given, so there's no way to estimate the whale's position.\n\nUse Manual Logging to drop a pin at the sighting location instead.$photoWarning"
                     )
                 },
                 confirmButton = {
