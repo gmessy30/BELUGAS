@@ -128,18 +128,35 @@ function effectivePresenceStatus(status, lastSuccessfulFetchAtMs, nowMs) {
 
 // Shared by the map's FillLayer/LineLayer and the banner -- same hex values as
 // colorForBelugaPresenceStatus, so the two surfaces always agree.
+//
+// Item 53: YELLOW was #F9A825 (a orange, not actually yellow) -- changed to the same true
+// --brand-yellow/Color.Yellow (#FFFF00) used everywhere else in this app (the menu's own
+// "← Close" text, .chip-toggle.active). presence-banner.js flips the banner's own text/dot
+// colors to black whenever this is the active status (matching the black-on-yellow convention
+// every other yellow surface in this app already uses) -- see that file's own on-yellow handling.
 function colorForBelugaPresenceStatus(status) {
   switch (status) {
     case PRESENCE_RED: return "#C62828";
-    case PRESENCE_YELLOW: return "#F9A825";
+    case PRESENCE_YELLOW: return "#FFFF00";
     case PRESENCE_BLUE: return "#0277BD";
     default: return "#616161";
   }
 }
 
-// Matches kenaiBannerLabel exactly, including the gate-time early-bias and the three distinct
-// BLUE sub-states -- PLUS item 48's own RED addition, which native doesn't have yet (see that
-// branch's own comment).
+// Item 53: YELLOW and BLUE now render the IDENTICAL gate-time label -- the color alone already
+// says "possible" vs. "not expected," so the wording no longer needs to repeat that distinction;
+// both just answer "when's the next window," same field/bias/formatting either way. Extracted
+// since it's now shared by two callers instead of copied.
+function kenaiGateTimeLabel(detail, zoneSuffix) {
+  if (!detail.in_season) return `NOT EXPECTED THIS TIME OF YEAR${zoneSuffix}`;
+  if (detail.gate_time_possible_epoch_ms == null) return `TIDE DATA UNAVAILABLE${zoneSuffix}`;
+  const biasedGateTimeMs = detail.gate_time_possible_epoch_ms - KENAI_GATE_TIME_EARLY_BIAS_MS;
+  return `NOT EXPECTED IN THE RIVER BEFORE ${formatTime12Hour(biasedGateTimeMs)}${zoneSuffix}`;
+}
+
+// Matches kenaiBannerLabel's own gate-time early-bias and BLUE sub-states -- PLUS item 48's own
+// RED addition and item 53's own YELLOW-now-matches-BLUE change, neither of which native has yet
+// (see their own comments).
 function kenaiBannerLabel(status, detail, zoneSuffix) {
   if (status === PRESENCE_RED) {
     // Item 48: gate_time_possible_epoch_ms/gate_time_likely_epoch_ms are predicted ARRIVAL
@@ -149,7 +166,7 @@ function kenaiBannerLabel(status, detail, zoneSuffix) {
     // UPCOMING cycle once the current cycle's own gate + 90-min holdover has passed -- typically
     // already true by the time a RED condition is even showing -- so by the time this renders,
     // it's naturally "the next window after this one," not the gate that already happened. Same
-    // field/bias/formatting as the BLUE branch below (native's own "NOT EXPECTED IN THE RIVER
+    // field/bias/formatting as kenaiGateTimeLabel below (native's own "NOT EXPECTED IN THE RIVER
     // BEFORE {time}"), just worded for a forward-looking "next window" instead, since native
     // doesn't surface this during RED at all yet -- gracefully omitted if gate_time_possible_
     // epoch_ms is null (tide data unavailable), matching that branch's own null-handling exactly.
@@ -158,13 +175,10 @@ function kenaiBannerLabel(status, detail, zoneSuffix) {
     const biasedGateTimeMs = detail.gate_time_possible_epoch_ms - KENAI_GATE_TIME_EARLY_BIAS_MS;
     return `${base} · NEXT WINDOW ~${formatTime12Hour(biasedGateTimeMs)}${zoneSuffix}`;
   }
-  if (status === PRESENCE_YELLOW) return `POSSIBLE ACTIVITY${zoneSuffix}`;
-  if (status === PRESENCE_BLUE) {
-    if (!detail.in_season) return `NOT EXPECTED THIS TIME OF YEAR${zoneSuffix}`;
-    if (detail.gate_time_possible_epoch_ms == null) return `TIDE DATA UNAVAILABLE${zoneSuffix}`;
-    const biasedGateTimeMs = detail.gate_time_possible_epoch_ms - KENAI_GATE_TIME_EARLY_BIAS_MS;
-    return `NOT EXPECTED IN THE RIVER BEFORE ${formatTime12Hour(biasedGateTimeMs)}${zoneSuffix}`;
-  }
+  // Item 53: was `POSSIBLE ACTIVITY` -- the color already communicates "possible" vs. "not
+  // expected" (yellow vs. blue), so this now reuses BLUE's own next-arrival wording verbatim
+  // instead of a separate, less informative message.
+  if (status === PRESENCE_YELLOW || status === PRESENCE_BLUE) return kenaiGateTimeLabel(detail, zoneSuffix);
   return `STATUS UNKNOWN${zoneSuffix}`;
 }
 

@@ -379,13 +379,21 @@ main {
   background-image:
     url("../img/beluga_background.png"),
     linear-gradient(180deg, var(--brand-teal-1), var(--brand-teal-2));
-  background-size: contain, cover;
+  /* ITEM 52: was "contain" (full-width on every portrait phone viewport -- her aspect ratio is
+     wider-per-height than a typical phone's, so "contain" is constrained by width, not height, in
+     practice) -- shrunk ~22% to 78% specifically because full-width competed with this same
+     content (List/Resources/News Feed/Alerts/Share all share this one rule) rather than sitting
+     behind it. Position/repeat unchanged -- still centered, this is scale only. The menu has its
+     own separate, more aggressively-scaled-and-repositioned override below (item 44/51) for a
+     different reason (a right-aligned text column, not centered content), so this change doesn't
+     touch it at all. */
+  background-size: 78% auto, cover;
   background-position: center, center;
   background-repeat: no-repeat, no-repeat;
 }
 
-/* BUG FIX (item 44): on every OTHER .mae-background screen, Mae is the only foreground content --
-   full-width "contain" and dead-center is exactly right there. The menu is different: its own
+/* BUG FIX (item 44): the menu is different from every OTHER .mae-background screen (which all
+   just went through item 52's own shrink above, still centered dead-center content): its own
    content is a right-aligned, vertically-centered, GROWING text column (9 items already, plus a
    Close item and the launch-screen chips native doesn't have at all -- see main-menu.js's own
    comment). At the shared rule's full-width "contain" size, Mae has zero horizontal slack to be
@@ -399,9 +407,27 @@ main {
    pinned small into the top-left, clear of the right-aligned column at any height, and clear of
    the vertical center regardless of how many more items get added later (growth extends the
    column further down/up from center, never sideways into the left third where she now lives).
-   Still full "contain" sizing/aspect, just smaller -- not cropped, not stretched, same artwork. */
+   Still full "contain" sizing/aspect, just smaller -- not cropped, not stretched, same artwork.
+
+   ITEM 51 UPDATE: 30% read as a small corner decal rather than background artwork, so scaled up
+   ~60% to 48% width. Kept LEFT-anchored (not centered) on purpose, not just carried over: at 48%
+   width on a ~360px-wide phone she's ~173px wide/~299px tall (same ~0.58 aspect as before), and
+   the longest menu item's own text (REPORT MANUALLY, at this rule's own 1.15rem/tightened
+   tracking) runs to roughly 52% of the screen width from the right edge -- so a CENTERED 48%-wide
+   image (spanning roughly 26%-74%) would overlap that text by a wide margin, not just graze it.
+   Even flush-left (0%) her own right edge (48%) still sits past the text's own left edge (~42%)
+   by several points, so full horizontal separation genuinely isn't achievable at this size on a
+   narrow phone -- centering would only make that worse, hence left instead of shrinking back
+   down, per the explicit direction here. Y stays at 5% (unchanged) rather than also increasing --
+   at her new, much taller box, this keeps her FACE (the artwork's own top ~35%) anchored in the
+   screen's top margin, above where the vertically-centered text column actually starts; any
+   residual overlap lower in her box lands on her body/tail, not the eye the original report was
+   about. Estimated from the artwork's own proportions and this rule's own font metrics, not
+   measured on an actual device -- worth a real visual check, and worth revisiting (nudge width
+   down a few points, or resume the item-44 spacing tightening further) if the tail still visibly
+   crosses into the text on a real phone. */
 .menu-overlay.mae-background {
-  background-size: 30% auto, cover;
+  background-size: 48% auto, cover;
   background-position: 3% 5%, center;
 }
 
@@ -1114,6 +1140,29 @@ button.text-link {
   width: 7px;
   height: 7px;
   background: rgba(255, 255, 255, 0.95);
+}
+
+/* Item 53: YELLOW is now the same true --brand-yellow (#FFFF00) used everywhere else in the app
+   (the "← Close" menu text, .chip-toggle.active) -- white text/dots, fine against RED/BLUE, read
+   as barely-there against pure yellow. .on-yellow is toggled on #presence-banner itself (not
+   -main, since -dots is -main's own SIBLING, not a descendant -- both need to flip together) by
+   presence-banner.js whenever the current card's status is YELLOW, matching the same black-on-
+   yellow convention .chip-toggle.active/native's own yellow FilterChips already use. */
+#presence-banner.on-yellow .presence-banner-label,
+#presence-banner.on-yellow .presence-banner-chevron {
+  color: #000000;
+}
+
+#presence-banner.on-yellow .presence-banner-warnings {
+  color: rgba(0, 0, 0, 0.75);
+}
+
+#presence-banner.on-yellow .presence-banner-dot {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+#presence-banner.on-yellow .presence-banner-dot.active {
+  background: rgba(0, 0, 0, 0.85);
 }
 
 /* Reclaims the mobile browser chrome's height on these screens specifically (not the whole app --

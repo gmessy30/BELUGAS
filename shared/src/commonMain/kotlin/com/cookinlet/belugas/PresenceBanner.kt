@@ -352,7 +352,13 @@ fun effectivePresenceStatus(
 // the banner does use it directly, and colorForBelugaPresenceStatus needs to stay total either way.
 fun colorForBelugaPresenceStatus(status: BelugaPresenceStatus): Color = when (status) {
     BelugaPresenceStatus.RED -> Color(0xFFC62828)
-    BelugaPresenceStatus.YELLOW -> Color(0xFFF9A825)
+    // Item 53: was Color(0xFFF9A825) -- an orange, not actually yellow. Changed to the same true
+    // yellow (#FFFF00) used everywhere else in the app (FilterChips' own selected-yellow state,
+    // webapp's --brand-yellow) so the banner, the map's river shading, and native's own yellow
+    // chips all agree. White text/dots read as barely-there against pure yellow, so every Text/dot
+    // in this file below now switches to black specifically when status == YELLOW (webapp's own
+    // .on-yellow does the same, matching the black-on-yellow convention those chips established).
+    BelugaPresenceStatus.YELLOW -> Color(0xFFFFFF00)
     BelugaPresenceStatus.BLUE -> Color(0xFF0277BD)
     BelugaPresenceStatus.UNKNOWN -> Color(0xFF616161)
 }
@@ -371,23 +377,28 @@ fun colorForBelugaPresenceStatus(status: BelugaPresenceStatus): Color = when (st
 // in the branch body below -- the two are equivalent by the server's own definition
 // (20260909000000_return_gate_times_from_get_kenai_presence_state.sql), so this is purely to
 // avoid a !! rather than a different claim.
+// Item 53: extracted so YELLOW and BLUE can share it verbatim -- the color alone already says
+// "possible" (yellow) vs. "not expected" (blue), so the wording no longer needs to repeat that
+// distinction; both just answer "when's the next window."
+private fun kenaiGateTimeLabel(detail: KenaiPresenceState, zoneSuffix: String): String = when {
+    !detail.inSeason -> "NOT EXPECTED THIS TIME OF YEAR$zoneSuffix"
+    detail.gateTimePossibleEpochMs == null -> "TIDE DATA UNAVAILABLE$zoneSuffix"
+    else -> {
+        val biasedGateTimeMs = detail.gateTimePossibleEpochMs - KENAI_GATE_TIME_EARLY_BIAS_MS
+        "NOT EXPECTED IN THE RIVER BEFORE ${formatTime12Hour(biasedGateTimeMs)}$zoneSuffix"
+    }
+}
+
 private fun kenaiBannerLabel(status: BelugaPresenceStatus, detail: KenaiPresenceState, zoneSuffix: String): String =
     when (status) {
         // RED means a qualifying sighting actually landed this cycle -- the map has something
-        // worth looking at right now, so it points there directly. YELLOW deliberately does NOT
-        // get the same suffix: it's a recency caution (nobody's seen them for a cycle or more),
-        // not a live sighting, and sending someone to the map for something hours old is weaker
-        // advice that would dilute "CHECK MAP" as a signal for when RED actually needs it.
+        // worth looking at right now, so it points there directly.
         BelugaPresenceStatus.RED -> "BELUGAS PRESENT · CHECK MAP$zoneSuffix"
-        BelugaPresenceStatus.YELLOW -> "POSSIBLE ACTIVITY$zoneSuffix"
-        BelugaPresenceStatus.BLUE -> when {
-            !detail.inSeason -> "NOT EXPECTED THIS TIME OF YEAR$zoneSuffix"
-            detail.gateTimePossibleEpochMs == null -> "TIDE DATA UNAVAILABLE$zoneSuffix"
-            else -> {
-                val biasedGateTimeMs = detail.gateTimePossibleEpochMs - KENAI_GATE_TIME_EARLY_BIAS_MS
-                "NOT EXPECTED IN THE RIVER BEFORE ${formatTime12Hour(biasedGateTimeMs)}$zoneSuffix"
-            }
-        }
+        // Item 53: was "POSSIBLE ACTIVITY" -- the color already communicates "possible" vs. "not
+        // expected" (yellow vs. blue), so this now reuses BLUE's own next-arrival wording verbatim
+        // instead of a separate, less informative message (matches webapp's presence.js exactly).
+        BelugaPresenceStatus.YELLOW -> kenaiGateTimeLabel(detail, zoneSuffix)
+        BelugaPresenceStatus.BLUE -> kenaiGateTimeLabel(detail, zoneSuffix)
         // Unreachable in practice -- BelugaPresenceBanner intercepts UNKNOWN before ever calling
         // this function, since kenaiDetail is null whenever status is UNKNOWN by construction
         // (both come from kenaiPresenceState being null). Kept for when-exhaustiveness.
@@ -443,6 +454,11 @@ fun BelugaPresenceBanner(
         }
     }
     val label = if (isDataStale) "$baseLabel (UPDATING…)" else baseLabel
+    // Item 53: white text/warnings read as barely-there against the new true-yellow background
+    // (see colorForBelugaPresenceStatus) -- flips to black on YELLOW specifically, matching the
+    // black-on-yellow convention this app's own selected FilterChips already use (and webapp's
+    // .on-yellow does the same).
+    val onColor = if (status == BelugaPresenceStatus.YELLOW) Color.Black else Color.White
 
     Row(
         modifier = modifier
@@ -456,7 +472,7 @@ fun BelugaPresenceBanner(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = label,
-                color = Color.White,
+                color = onColor,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.5.sp,
@@ -465,7 +481,7 @@ fun BelugaPresenceBanner(
             if (kenaiDetail != null && kenaiDetail.warnings.isNotEmpty()) {
                 Text(
                     text = "⚠ " + kenaiDetail.warnings.joinToString(" · "),
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = onColor.copy(alpha = 0.85f),
                     fontSize = 10.sp,
                     textAlign = TextAlign.Center
                 )
@@ -547,6 +563,9 @@ fun BelugaPresenceBannerCarousel(cards: List<PresenceBannerCardData>, modifier: 
             }
         )
         if (showChrome) {
+            // Item 53: same black-on-yellow flip as BelugaPresenceBanner's own Text -- white dots
+            // would barely show against the new true-yellow background.
+            val dotColor = if (card.status == BelugaPresenceStatus.YELLOW) Color.Black else Color.White
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -560,7 +579,7 @@ fun BelugaPresenceBannerCarousel(cards: List<PresenceBannerCardData>, modifier: 
                             .padding(horizontal = 3.dp)
                             .size(if (i == safeIndex) 7.dp else 5.dp)
                             .clip(CircleShape)
-                            .background(Color.White.copy(alpha = if (i == safeIndex) 0.95f else 0.5f))
+                            .background(dotColor.copy(alpha = if (i == safeIndex) 0.95f else 0.5f))
                     )
                 }
             }

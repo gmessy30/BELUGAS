@@ -143,6 +143,14 @@ function renderPresenceBannerCard() {
   const card = presenceBannerCards[safeIndex];
   const color = colorForBelugaPresenceStatus(card.status);
 
+  // Item 53: YELLOW is now the same true --brand-yellow (#FFFF00) the rest of this app uses --
+  // white text/dots (fine against RED/BLUE's own darker fills) read as barely-there against pure
+  // yellow, so .on-yellow (style.css) flips them to black, matching the black-on-yellow
+  // convention .chip-toggle.active/native's own yellow FilterChips already use. Toggled on
+  // #presence-banner itself, not -main, since -dots is -main's own sibling, not a descendant --
+  // both need to flip together.
+  banner.classList.toggle("on-yellow", card.status === PRESENCE_YELLOW);
+
   const mainEl = document.getElementById("presence-banner-main");
   mainEl.style.background = color;
   document.getElementById("presence-banner-label").textContent = presenceBannerLabel(card);
