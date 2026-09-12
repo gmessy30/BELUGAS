@@ -89,7 +89,15 @@
        reasoning. Right-aligned, vertically centered, bold uppercase white text over the teal
        backdrop, exactly like the native menu column. -->
   <div id="main-menu" class="menu-overlay mae-background" hidden>
-    <button class="menu-nav-item" data-nav="submit">Camera</button>
+    <!-- BUG FIX (item 36): NOT [data-nav] -- the generic data-nav handler below only calls
+         switchTab("submit"), which reveals #submit-view but never touches which of its own
+         sub-steps (camera-step/review-step/manual-log-step) is showing inside it. Once Report
+         Manually had been opened at least once (openManualReportFlow forces manual-log-step
+         visible), that sub-step stayed visible forever after -- so this item, using the generic
+         handler, was routing into whatever #submit-view last happened to show, not the camera.
+         Its own dedicated handler below explicitly calls goToCameraStep() too, the same way
+         Report Manually's own handler explicitly forces manual-log-step. -->
+    <button id="menu-camera-item" class="menu-nav-item">Camera</button>
     <button id="menu-report-manually-item" class="menu-nav-item">Report Manually</button>
     <button class="menu-nav-item" data-nav="list">Sightings List</button>
     <button class="menu-nav-item" data-nav="map">Sightings Map</button>
@@ -431,6 +439,28 @@
       <div class="modal-actions">
         <button id="geofence-warning-cancel-btn" class="secondary" type="button">Cancel</button>
         <button id="geofence-warning-save-btn" class="primary" type="button">Save Anyway</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Item 34: pre-submit confirmation, shared by both the camera and manual reporting paths
+       (submit-view.js's showSubmitConfirmModal) -- a compact, large-text, single-screen summary
+       (counts spelled out, direction/heading, time) with CONFIRM/BACK, requiring a deliberate tap
+       before anything actually submits. No auto-dismiss: BACK and CONFIRM are the only ways out,
+       same as every other modal in this app (tapping the backdrop doesn't close these either).
+       Native parity: the identical confirm step goes into LoggingScreen.kt/
+       ManualLoggingScreen.kt's own DONE/SUBMIT handlers (shared/src/commonMain), not web-only. -->
+  <div id="submit-confirm-modal" class="modal-backdrop" hidden>
+    <div class="modal-card">
+      <h2>Confirm Sighting</h2>
+      <div class="confirm-summary">
+        <p id="confirm-summary-counts" class="confirm-summary-line"></p>
+        <p id="confirm-summary-direction" class="confirm-summary-line"></p>
+        <p id="confirm-summary-time" class="confirm-summary-line"></p>
+      </div>
+      <div class="modal-actions">
+        <button id="submit-confirm-back-btn" class="secondary" type="button">← Back</button>
+        <button id="submit-confirm-confirm-btn" class="primary" type="button">Confirm</button>
       </div>
     </div>
   </div>

@@ -48,12 +48,55 @@ let manualObserverType = "SELF";
 // currently active.
 let pendingFinishAction = null;
 
+// Item 34: pre-submit confirmation, shared by both paths the same way pendingFinishAction is
+// above -- set right before showing #submit-confirm-modal, cleared on either button. Native
+// parity: the same confirm step goes into LoggingScreen.kt/ManualLoggingScreen.kt's own DONE/
+// SUBMIT handlers (shared/src/commonMain), not web-only.
+let pendingConfirmAction = null;
+
+// "2 white, 0 grey, 2 calves, 0 unknown" -- shared by both paths' confirm summary, both count
+// objects have the identical {whites, greys, calves, unknown} shape.
+function formatWhaleCountsSummary(counts) {
+  return `${counts.whites} white, ${counts.greys} grey, ${counts.calves} calves, ${counts.unknown} unknown`;
+}
+
+// Nearest-8-point label for a quick-glance display only (exact degrees are shown alongside it) --
+// same rounding-for-display-only treatment map-view.js's formatTravelDirection already uses for
+// stored travel bearings, applied here to the heading-to-whale value instead.
+function compassLabelForDegrees(degrees) {
+  const normalized = ((degrees % 360) + 360) % 360;
+  const index = Math.round(normalized / 45) % 8;
+  return COMPASS_POINTS_8[index][0];
+}
+
+// Item 34: compact readable summary (counts spelled out, direction/heading, time) with CONFIRM/
+// BACK, shown before EITHER path's actual submit logic runs -- requires a deliberate tap, never
+// auto-dismisses. onConfirm is deferred until the CONFIRM button's own click handler below, not
+// called from here.
+function showSubmitConfirmModal(countsText, directionText, timeText, onConfirm) {
+  document.getElementById("confirm-summary-counts").textContent = countsText;
+  document.getElementById("confirm-summary-direction").textContent = directionText;
+  document.getElementById("confirm-summary-time").textContent = `Time: ${timeText}`;
+  pendingConfirmAction = onConfirm;
+  document.getElementById("submit-confirm-modal").hidden = false;
+  pushNavLayer("submit-confirm-modal", () => {
+    document.getElementById("submit-confirm-modal").hidden = true;
+    pendingConfirmAction = null;
+  });
+}
+
 function initSubmitView() {
   document.getElementById("capture-btn").addEventListener("click", capturePhoto);
   document.getElementById("skip-camera-btn").addEventListener("click", () => goToReviewStep());
   document.getElementById("retake-btn").addEventListener("click", retakePhoto);
   document.getElementById("done-btn").addEventListener("click", submitCameraSighting);
   document.getElementById("manual-submit-btn").addEventListener("click", submitManualSighting);
+
+  document.getElementById("submit-confirm-back-btn").addEventListener("click", () => navigateBack());
+  document.getElementById("submit-confirm-confirm-btn").addEventListener("click", () => {
+    navigateBack();
+    if (pendingConfirmAction) pendingConfirmAction();
+  });
 
   document.getElementById("outer-geofence-reject-ok-btn").addEventListener("click", () => navigateBack());
   document.getElementById("geofence-warning-cancel-btn").addEventListener("click", () => navigateBack());
@@ -410,28 +453,102 @@ async function submitCameraSighting() {
     return;
   }
 
+  // Item 34: frozen here rather than re-read from Date.now() again after confirmation -- the
+  // time shown in the summary is exactly the time that ends up stored, not an approximation of it.
+  const observedAtEpochMs = Date.now();
+  const directionParts = [
+    `Heading to whale: ${Math.round(headingDegrees)}° (${compassLabelForDegrees(headingDegrees)}) · ` +
+      distanceBucketShortLabel(selectedDistanceBucketKey, headingIsAerial)
+  ];
+  if (selectedPodDirection !== "NONE") {
+    directionParts.push(`Pod moving: ${selectedPodDirection}`);
+  }
+  showSubmitConfirmModal(
+    formatWhaleCountsSummary(cameraCounts),
+    directionParts.join(" · "),
+    new Date(observedAtEpochMs).toLocaleString(),
+    () => proceedCameraSubmit(observedAtEpochMs)
+  );
+}
+
+async function proceedCameraSubmit(observedAtEpochMs) {
   const button = document.getElementById("done-btn");
   button.disabled = true;
   setSubmitStatus("Getting your location…");
 
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      const radiusMeters = distanceBucketRadiusMeters(selectedDistanceBucketKey, headingIsAerial);
-      const [whaleLat, whaleLng] = destinationPoint(
-        position.coords.latitude, position.coords.longitude, headingDegrees, radiusMeters
-      );
-      continueCameraSubmit(whaleLat, whaleLng, radiusMeters);
-    },
-    (err) => {
-      console.error("GEOLOCATION_ERROR", err);
-      setSubmitStatus("Couldn't get your location (" + err.message + "). Check location permissions.", true);
-      button.disabled = false;
-    },
-    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-  );
+  try {
+    const position = await getBestGpsFix((sample) => {
+      setSubmitStatus(`Getting your location… (best so far: ±${Math.round(sample.coords.accuracy)}m)`);
+    });
+    // Item 30a: surfaced so a poor fix is visible BEFORE it gets baked into a projected whale
+    // position several hundred meters off -- native never shows this either (LocationService.kt's
+    // LocationCoordinates doesn't even carry accuracy), but a raw browser GPS fix is more variable
+    // than the OS-level fused/CoreLocation APIs native calls, so this app surfaces it where native
+    // doesn't need to.
+    console.log("GEOLOCATION_FIX_ACCURACY_METERS", position.coords.accuracy);
+    setSubmitStatus(`Location acquired (±${Math.round(position.coords.accuracy)}m). Checking location…`);
+    const radiusMeters = distanceBucketRadiusMeters(selectedDistanceBucketKey, headingIsAerial);
+    const [whaleLat, whaleLng] = destinationPoint(
+      position.coords.latitude, position.coords.longitude, headingDegrees, radiusMeters
+    );
+    continueCameraSubmit(whaleLat, whaleLng, radiusMeters, observedAtEpochMs);
+  } catch (err) {
+    console.error("GEOLOCATION_ERROR", err);
+    setSubmitStatus("Couldn't get your location (" + (err.message || err) + "). Check location permissions.", true);
+    button.disabled = false;
+  }
 }
 
-async function continueCameraSubmit(whaleLat, whaleLng, radiusMeters) {
+// Item 30a: a single getCurrentPosition() call can hand back a poor fix even with
+// enableHighAccuracy/maximumAge:0 -- a first-fix-after-idle chipset warm-up in particular, common
+// in a browser tab/PWA that isn't holding a location session open the way a native app's fused/
+// CoreLocation client does. Sampling a short burst via watchPosition and keeping whichever fix
+// reports the best (lowest) coords.accuracy is far more reliable than trusting whatever the FIRST
+// callback happens to deliver -- exactly the "prime suspect" for a projected position landing
+// hundreds of meters off. Resolves early once a good-enough fix arrives rather than always
+// waiting out the full sampling window.
+const GPS_FIX_SAMPLE_WINDOW_MS = 5000;
+const GPS_FIX_GOOD_ENOUGH_ACCURACY_METERS = 20;
+
+function getBestGpsFix(onSample) {
+  return new Promise((resolve, reject) => {
+    let best = null;
+    let settled = false;
+
+    const finish = (fatalErr) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      navigator.geolocation.clearWatch(watchId);
+      if (best) resolve(best);
+      else reject(fatalErr || new Error("No location fix was received."));
+    };
+
+    const timer = setTimeout(finish, GPS_FIX_SAMPLE_WINDOW_MS);
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        if (!best || position.coords.accuracy < best.coords.accuracy) {
+          best = position;
+          onSample?.(position);
+        }
+        if (position.coords.accuracy <= GPS_FIX_GOOD_ENOUGH_ACCURACY_METERS) {
+          finish();
+        }
+      },
+      (err) => {
+        // Permission denial is terminal -- no reason to burn the whole sampling window waiting
+        // on a sample that will never arrive (matches the old single-shot call's fail-fast
+        // behavior for this case). Other errors (timeout/position-unavailable) might still be
+        // followed by a later successful sample within the window, so only bail early here.
+        if (!best && err.code === err.PERMISSION_DENIED) finish(err);
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: GPS_FIX_SAMPLE_WINDOW_MS }
+    );
+  });
+}
+
+async function continueCameraSubmit(whaleLat, whaleLng, radiusMeters, observedAtEpochMs) {
   const button = document.getElementById("done-btn");
 
   if (!isWithinOuterGeofence(whaleLat, whaleLng)) {
@@ -444,7 +561,7 @@ async function continueCameraSubmit(whaleLat, whaleLng, radiusMeters) {
   }
 
   setSubmitStatus("Checking location…");
-  const finish = (verified) => finishCameraSubmit(whaleLat, whaleLng, radiusMeters, verified);
+  const finish = (verified) => finishCameraSubmit(whaleLat, whaleLng, radiusMeters, verified, observedAtEpochMs);
   const verified = isWhalePositionVerified(whaleLat, whaleLng, radiusMeters);
   if (verified === true) {
     await finish(true);
@@ -465,7 +582,7 @@ async function continueCameraSubmit(whaleLat, whaleLng, radiusMeters) {
   }
 }
 
-function buildCameraSightingRecord(whaleLat, whaleLng, radiusMeters, isGeofenceVerified) {
+function buildCameraSightingRecord(whaleLat, whaleLng, radiusMeters, isGeofenceVerified, observedAtEpochMs) {
   const travelBearing = podDirectionToAbsoluteTravelBearingDegrees(selectedPodDirection, headingDegrees);
   return {
     whale_lat: whaleLat,
@@ -479,7 +596,7 @@ function buildCameraSightingRecord(whaleLat, whaleLng, radiusMeters, isGeofenceV
     count_greys: cameraCounts.greys,
     count_calves: cameraCounts.calves,
     count_unknown: cameraCounts.unknown,
-    observed_at_epoch_ms: Date.now(),
+    observed_at_epoch_ms: observedAtEpochMs,
     observer_type: "SELF", // LoggingScreen has no SELF/OTHER toggle at all -- that's manual-only
     is_geofence_verified: isGeofenceVerified,
     photo_url: null,
@@ -487,13 +604,13 @@ function buildCameraSightingRecord(whaleLat, whaleLng, radiusMeters, isGeofenceV
   };
 }
 
-async function finishCameraSubmit(whaleLat, whaleLng, radiusMeters, isGeofenceVerified) {
+async function finishCameraSubmit(whaleLat, whaleLng, radiusMeters, isGeofenceVerified, observedAtEpochMs) {
   const button = document.getElementById("done-btn");
   button.disabled = true;
   setSubmitStatus("Submitting…");
 
   try {
-    const record = buildCameraSightingRecord(whaleLat, whaleLng, radiusMeters, isGeofenceVerified);
+    const record = buildCameraSightingRecord(whaleLat, whaleLng, radiusMeters, isGeofenceVerified, observedAtEpochMs);
     const result = await submitOrQueueSighting(record, capturedPhotoBlob);
 
     if (result.ok) {
@@ -746,6 +863,21 @@ async function submitManualSighting() {
     return;
   }
 
+  // Item 34: manualSelectedTimestampMs() reads the SET DATE/TIME input directly -- unlike the
+  // camera path's Date.now(), there's no freeze-vs-reread mismatch to worry about here, since the
+  // confirm modal is itself modal (the input can't change while it's showing).
+  const directionText = manualTravelBearingDegrees != null
+    ? `Travel direction: ${Math.round(manualTravelBearingDegrees)}°`
+    : "Travel direction: Unknown";
+  showSubmitConfirmModal(
+    formatWhaleCountsSummary(manualCounts),
+    directionText,
+    new Date(manualSelectedTimestampMs()).toLocaleString(),
+    () => proceedManualSubmit()
+  );
+}
+
+async function proceedManualSubmit() {
   const button = document.getElementById("manual-submit-btn");
   button.disabled = true;
   setManualSubmitStatus("Checking location…");

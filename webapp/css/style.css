@@ -769,15 +769,21 @@ main {
    state (.review-bottom-panel's own backing was removed here, see that rule's comment) -- against
    pale tiles (open water, cleared land) the white "My Sighting"/"Reported By Other" lettering
    nearly disappeared. Same outlined-text-style shadow as the whale-count glyphs keeps it legible
-   over ANY tile color; the active chip's solid yellow fill already reads fine on its own, but a
-   black border makes "this one is selected" unmistakable at a glance rather than relying on the
-   translucent-vs-opaque background contrast alone. */
+   over ANY tile color. */
 #manual-log-step .chip-toggle {
   text-shadow:
     -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
 }
 
+/* BUG FIX (item 35b): the rule above was unscoped, so it ALSO landed on the active/selected chip
+   -- whose text is already BLACK (on solid yellow, from the shared #manual-log-step .chip-toggle.
+   active rule above), so a heavy BLACK 4-direction shadow around already-black lettering just
+   smeared it into an unreadable blob instead of adding contrast. The selected state's solid
+   yellow fill already gives its black text all the contrast it needs on its own -- no shadow
+   required here at all, unlike the unselected state's translucent backdrop. A black border marks
+   "this one is selected" unmistakable at a glance instead. */
 #manual-log-step .chip-toggle.active {
+  text-shadow: none;
   border: 2px solid #000000;
 }
 
@@ -1398,12 +1404,30 @@ button.camera-status.secondary {
   pointer-events: none;
 }
 
+/* DIAGNOSED (item 35a): the ring/crosshair/needle were already plain <line>/<circle> elements,
+   which touch-action:none alone was enough to keep a drag gesture working on -- but item 27b
+   added the FIRST <text> elements inside this control (the "?" unknown-mark), sitting right at
+   its exact center, precisely where a drag naturally starts. Mobile browsers (iOS Safari
+   especially) give text content its own native touch handling -- long-press selection/callout,
+   a magnifying-glass loupe -- independent of touch-action, and that native handling can steal the
+   gesture out from under this element's own pointerdown/pointermove/pointerup listeners entirely.
+   That's what silently broke dragging (not any pointer-events change from item 27a -- .bearing-
+   dial-wrap/#bearing-dial are siblings of .review-bottom-panel, never its descendants, so that
+   rule was never reachable from here). Disabling selection/callout on the whole control removes
+   the competing native gesture. */
 .bearing-dial {
   position: relative;
   width: 150px;
   height: 150px;
   pointer-events: auto;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.bearing-dial svg text {
+  pointer-events: none;
 }
 
 /* :not(.bearing-dial-pin) matters -- the pin below is ALSO an <svg> inside .bearing-dial, so
@@ -2000,6 +2024,25 @@ button.secondary {
   color: var(--muted);
   font-size: 0.85rem;
   margin: 0 0 14px;
+}
+
+/* Item 34: deliberately larger than .modal-description -- "large text, readable outdoors" was
+   the explicit ask, this being the one screen a reporter checks in direct sun before the actual
+   submit happens. */
+.confirm-summary {
+  margin-bottom: 14px;
+}
+
+.confirm-summary-line {
+  color: var(--text);
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0 0 10px;
+}
+
+.confirm-summary-line:last-child {
+  margin-bottom: 0;
 }
 
 .ios-install-icon-row {

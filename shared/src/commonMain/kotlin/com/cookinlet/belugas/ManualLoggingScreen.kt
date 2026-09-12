@@ -77,6 +77,12 @@ fun ManualLoggingScreen(
     var selectedTimestampMs by remember { mutableStateOf(currentTimeMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }
 
+    // Item 34: pre-submit confirmation -- shows a compact summary (counts, travel direction,
+    // time) with CONFIRM/BACK before any of the geofence/save work below actually runs. Parity
+    // with the web app's identical confirm step (webapp/js/submit-view.js's
+    // showSubmitConfirmModal) and with LoggingScreen.kt's own version of this same dialog.
+    var showConfirmDialog by remember { mutableStateOf(false) }
+
     // Geofence & Save Controls
     var showGeofenceWarning by remember { mutableStateOf(false) }
     var showZeroCountWarning by remember { mutableStateOf(false) }
@@ -152,6 +158,88 @@ fun ManualLoggingScreen(
                 e.printStackTrace()
             } finally {
                 onDoneClick()
+            }
+        }
+    }
+
+    // Item 34: the actual geofence/save work, extracted out of the SUBMIT button's own onClick
+    // so it only ever runs after the confirm dialog's CONFIRM button, never on the first tap
+    // directly.
+    fun launchSubmit() {
+        isSaving = true
+
+        scope.launch {
+            // The pin IS the whale position -- no projection, no heading/distance
+            // reading needed for placement.
+            val targetCenter = cameraState.position.target
+
+            // There's no observer position on this screen to measure a distance
+            // from, so nothing is asked of the user and nothing is persisted for
+            // uncertaintyRadiusMeters/uncertaintyBucket below -- both are nullable
+            // columns and every consumer (SightingsMapScreen's circle rendering, the
+            // server-side zone/banner RPCs) already treats a null radius as "not
+            // reported" rather than assuming a value. isWhalePositionVerified below
+            // still needs *some* search buffer to check the pin against real
+            // whale-presence data, though, so it gets a fixed MEDIUM default -- local
+            // to this check only, never shown to the user, never saved to the record.
+            val geofenceCheckRadiusMeters = DistanceBucket.MEDIUM.radiusMeters(isAerial = false)
+
+            // This device's own persistent id, sent so the server can compute
+            // observerTier at insert -- never read back by the app (anon has no
+            // SELECT grant on sightings.subscriber_id at all, see
+            // 20260903010000_add_observer_tier_system.sql).
+            val subscriberId = appPreferences.getOrCreateSubscriberId()
+
+            val record = SightingRecord(
+                whaleLat = targetCenter.latitude,
+                whaleLng = targetCenter.longitude,
+                travelBearingDegrees = travelBearingDegrees,
+                travelBearingSource = if (travelBearingDegrees != null) TravelBearingSource.MANUAL.name else null,
+                positionSource = PositionSource.PIN.name,
+                countWhites = whiteCount,
+                countGreys = greyCount,
+                countCalves = calfCount,
+                countUnknown = unknownCount,
+                observedAtEpochMs = selectedTimestampMs,
+                observerType = observerType.name,
+                subscriberId = subscriberId
+            )
+
+            if (!GeofenceUtils.isWithinOuterGeofence(targetCenter.latitude, targetCenter.longitude)) {
+                // Coarse hard reject, ahead of the real geofence flow -- see
+                // GeofenceUtils.isWithinOuterGeofence's own comment. No SAVE
+                // ANYWAY, no pendingRecord, no soft warning: this location isn't
+                // remotely Cook Inlet.
+                showOutsideOuterGeofenceDialog = true
+                isSaving = false
+                return@launch
+            }
+
+            when (GeofenceUtils.isWhalePositionVerified(targetCenter.latitude, targetCenter.longitude, geofenceCheckRadiusMeters)) {
+                true -> saveAndFinish(record.copy(isGeofenceVerified = true))
+                false -> {
+                    pendingRecord = record
+                    showGeofenceWarning = true
+                    isSaving = false
+                }
+                null -> {
+                    // Only reachable once the buffer check found no well-sourced
+                    // data near this point at all -- the online fallback never
+                    // runs, and this loading state never shows, on a normal
+                    // (resolved) submit.
+                    isCheckingCoastlineFallback = true
+                    val validByChannel = GeofenceUtils.isWithinCoastlineChannelFallback(
+                        targetCenter.latitude, targetCenter.longitude
+                    )
+                    isCheckingCoastlineFallback = false
+                    if (validByChannel) {
+                        saveAndFinish(record.copy(isGeofenceVerified = true))
+                    } else {
+                        pendingRecord = record
+                        showGeofenceWarning = true
+                        isSaving = false
+                    }
+                }
             }
         }
     }
@@ -234,82 +322,9 @@ fun ManualLoggingScreen(
                         showZeroCountWarning = true
                         return@Button
                     }
-                    isSaving = true
-
-                    scope.launch {
-                        // The pin IS the whale position -- no projection, no heading/distance
-                        // reading needed for placement.
-                        val targetCenter = cameraState.position.target
-
-                        // There's no observer position on this screen to measure a distance
-                        // from, so nothing is asked of the user and nothing is persisted for
-                        // uncertaintyRadiusMeters/uncertaintyBucket below -- both are nullable
-                        // columns and every consumer (SightingsMapScreen's circle rendering, the
-                        // server-side zone/banner RPCs) already treats a null radius as "not
-                        // reported" rather than assuming a value. isWhalePositionVerified below
-                        // still needs *some* search buffer to check the pin against real
-                        // whale-presence data, though, so it gets a fixed MEDIUM default -- local
-                        // to this check only, never shown to the user, never saved to the record.
-                        val geofenceCheckRadiusMeters = DistanceBucket.MEDIUM.radiusMeters(isAerial = false)
-
-                        // This device's own persistent id, sent so the server can compute
-                        // observerTier at insert -- never read back by the app (anon has no
-                        // SELECT grant on sightings.subscriber_id at all, see
-                        // 20260903010000_add_observer_tier_system.sql).
-                        val subscriberId = appPreferences.getOrCreateSubscriberId()
-
-                        val record = SightingRecord(
-                            whaleLat = targetCenter.latitude,
-                            whaleLng = targetCenter.longitude,
-                            travelBearingDegrees = travelBearingDegrees,
-                            travelBearingSource = if (travelBearingDegrees != null) TravelBearingSource.MANUAL.name else null,
-                            positionSource = PositionSource.PIN.name,
-                            countWhites = whiteCount,
-                            countGreys = greyCount,
-                            countCalves = calfCount,
-                            countUnknown = unknownCount,
-                            observedAtEpochMs = selectedTimestampMs,
-                            observerType = observerType.name,
-                            subscriberId = subscriberId
-                        )
-
-                        if (!GeofenceUtils.isWithinOuterGeofence(targetCenter.latitude, targetCenter.longitude)) {
-                            // Coarse hard reject, ahead of the real geofence flow -- see
-                            // GeofenceUtils.isWithinOuterGeofence's own comment. No SAVE
-                            // ANYWAY, no pendingRecord, no soft warning: this location isn't
-                            // remotely Cook Inlet.
-                            showOutsideOuterGeofenceDialog = true
-                            isSaving = false
-                            return@launch
-                        }
-
-                        when (GeofenceUtils.isWhalePositionVerified(targetCenter.latitude, targetCenter.longitude, geofenceCheckRadiusMeters)) {
-                            true -> saveAndFinish(record.copy(isGeofenceVerified = true))
-                            false -> {
-                                pendingRecord = record
-                                showGeofenceWarning = true
-                                isSaving = false
-                            }
-                            null -> {
-                                // Only reachable once the buffer check found no well-sourced
-                                // data near this point at all -- the online fallback never
-                                // runs, and this loading state never shows, on a normal
-                                // (resolved) submit.
-                                isCheckingCoastlineFallback = true
-                                val validByChannel = GeofenceUtils.isWithinCoastlineChannelFallback(
-                                    targetCenter.latitude, targetCenter.longitude
-                                )
-                                isCheckingCoastlineFallback = false
-                                if (validByChannel) {
-                                    saveAndFinish(record.copy(isGeofenceVerified = true))
-                                } else {
-                                    pendingRecord = record
-                                    showGeofenceWarning = true
-                                    isSaving = false
-                                }
-                            }
-                        }
-                    }
+                    // Item 34: show the confirm summary first -- launchSubmit (the real
+                    // geofence/save work) only runs once CONFIRM is tapped, below.
+                    showConfirmDialog = true
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.85f)),
                 shape = RoundedCornerShape(8.dp)
@@ -492,6 +507,55 @@ fun ManualLoggingScreen(
                     Text("CHECKING WATER DATA…", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
+        }
+
+        // --- ITEM 34: PRE-SUBMIT CONFIRMATION DIALOG ---
+        // Compact, large-text summary (counts spelled out, travel direction, time) with
+        // CONFIRM/BACK -- requires a deliberate tap before launchSubmit's geofence/save work
+        // starts. onDismissRequest (tapping outside, back gesture) behaves the same as BACK: it
+        // never confirms. Parity with the web app's identical confirm step (webapp/js/
+        // submit-view.js's showSubmitConfirmModal) and with LoggingScreen.kt's own version.
+        if (showConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showConfirmDialog = false },
+                title = { Text("Confirm Sighting", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        Text(
+                            formatWhaleCountsSummary(whiteCount, greyCount, calfCount, unknownCount),
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = travelBearingDegrees?.let { "Travel direction: ${it.toInt()}°" }
+                                ?: "Travel direction: Unknown",
+                            fontSize = 18.sp
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text("Time: ${formatDateTime(selectedTimestampMs)}", fontSize = 18.sp)
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showConfirmDialog = false
+                            launchSubmit()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                    ) {
+                        Text("CONFIRM", color = Color.Black, fontWeight = FontWeight.Black)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showConfirmDialog = false }) {
+                        Text("BACK", color = Color.White)
+                    }
+                },
+                containerColor = Color(0xFF1E293B),
+                titleContentColor = Color.White,
+                textContentColor = Color.LightGray
+            )
         }
 
         // --- GEOFENCE WARNING DIALOG ---

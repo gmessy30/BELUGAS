@@ -52,6 +52,15 @@ fun LoggingScreen(
     var calfCount by remember { mutableStateOf(0) }
     var unknownCount by remember { mutableStateOf(0) }
 
+    // Item 34: pre-submit confirmation -- shows a compact summary (counts, heading/direction,
+    // time) with CONFIRM/BACK before any of the GPS/geofence/save work below actually runs.
+    // confirmObservedAtEpochMs is frozen the instant DONE is tapped (not re-read from
+    // currentTimeMillis() again once CONFIRM is pressed), so the time shown in the summary is
+    // exactly the time that ends up stored, not an approximation of it. Parity with the web app's
+    // identical confirm step (webapp/js/submit-view.js's showSubmitConfirmModal).
+    var showConfirmDialog by remember { mutableStateOf(false) }
+    var confirmObservedAtEpochMs by remember { mutableStateOf(0L) }
+
     var showGeofenceWarning by remember { mutableStateOf(false) }
     var showZeroCountWarning by remember { mutableStateOf(false) }
     // No heading was given, and CoastlineGeometry.projectOffshoreFallback couldn't place a
@@ -109,6 +118,124 @@ fun LoggingScreen(
         }
     }
 
+    // Item 34: the actual GPS/projection/geofence/save work, extracted out of the DONE button's
+    // own onClick so it only ever runs after the confirm dialog's CONFIRM button, never on the
+    // first tap directly. [observedAtEpochMs] is the timestamp frozen when DONE was first tapped
+    // (see confirmObservedAtEpochMs above), not a fresh currentTimeMillis() read here.
+    fun launchSubmit(observedAtEpochMs: Long) {
+        isSaving = true
+        scope.launch {
+            val coords = locationService.getCurrentLocation()
+            val currentLat = coords?.latitude ?: region.defaultCenterLat
+            val currentLng = coords?.longitude ?: region.defaultCenterLng
+            val currentAlt = coords?.altitudeMeters ?: 0.0
+
+            val heading = headingEstimate
+            val bucket = distanceBucket
+
+            // Travel direction needs a real base bearing -- only computed when a
+            // heading reading was actually confirmed, even if a direction arrow was
+            // tapped. Deriving it from computeDefaultOffshoreHeadingDegrees's
+            // algorithmic guess (as this used to) would manufacture "which way it
+            // was heading" from a bearing nobody measured, and labeling that MANUAL
+            // would conflate it with a real compass pick (e.g. ManualLoggingScreen's
+            // CompassBearingButton) under the same source tag -- exactly the kind of
+            // fabricated fact this redesign exists to avoid.
+            val travelBearing = heading?.let { h -> selectedDirection.toAbsoluteTravelBearingDegrees(h.degrees) }
+            val travelBearingSource = if (travelBearing != null) heading.source.name else null
+
+            // Real heading+distance -> project the whale position (PROJECTED).
+            // No heading given -> CoastlineGeometry's offshore-perpendicular guess
+            // (FALLBACK), or null if there's no real coastline data near the
+            // observer to guess from at all.
+            val position: WhalePositionEstimate? = if (heading != null && bucket != null) {
+                val radius = bucket.radiusMeters(currentAlt > 100.0)
+                val (projLat, projLng) = destinationPoint(currentLat, currentLng, heading.degrees, radius)
+                WhalePositionEstimate(projLat, projLng, radius, bucket.name, PositionSource.PROJECTED)
+            } else {
+                projectOffshoreFallback(currentLat, currentLng)?.let { (fbLat, fbLng) ->
+                    WhalePositionEstimate(
+                        fbLat, fbLng, FALLBACK_UNCERTAINTY_RADIUS_METERS, null, PositionSource.FALLBACK
+                    )
+                }
+            }
+
+            // This device's own persistent id, sent so the server can compute
+            // observerTier at insert -- never read back by the app (anon has no
+            // SELECT grant on sightings.subscriber_id at all, see
+            // 20260903010000_add_observer_tier_system.sql).
+            val subscriberId = appPreferences.getOrCreateSubscriberId()
+
+            fun buildRecord(pos: WhalePositionEstimate, verified: Boolean) = SightingRecord(
+                whaleLat = pos.lat,
+                whaleLng = pos.lng,
+                uncertaintyRadiusMeters = pos.uncertaintyRadiusMeters,
+                uncertaintyBucket = pos.uncertaintyBucket,
+                travelBearingDegrees = travelBearing,
+                travelBearingSource = travelBearingSource,
+                positionSource = pos.positionSource.name,
+                countWhites = whiteCount,
+                countGreys = greyCount,
+                countCalves = calfCount,
+                countUnknown = unknownCount,
+                observedAtEpochMs = observedAtEpochMs,
+                observerType = ObserverType.SELF.name,
+                isGeofenceVerified = verified,
+                subscriberId = subscriberId
+            )
+
+            suspend fun finishWith(pos: WhalePositionEstimate, passed: Boolean) {
+                // A FALLBACK position is in water almost by construction (the walk
+                // stops the moment it would leave water) -- treating that as real
+                // evidence would make "verified" trivially true for exactly the
+                // submissions with the least actual evidence behind them, so it's
+                // forced false here regardless of whether the check passed.
+                val verified = passed && pos.positionSource != PositionSource.FALLBACK
+                if (passed) {
+                    saveAndFinish(buildRecord(pos, verified = verified))
+                } else {
+                    pendingRecord = buildRecord(pos, verified = false)
+                    showGeofenceWarning = true
+                    isSaving = false
+                }
+            }
+
+            if (position == null) {
+                // No heading given, and no real coastline geometry/water found to
+                // guess a position from either -- there is no credible whale
+                // position to save, not even a rough one, and no SAVE ANYWAY here:
+                // the only coordinates on hand are the observer's own raw GPS fix,
+                // and saving those under a whale-position label is exactly what this
+                // redesign exists to prevent. Direct the user to the manual flow
+                // instead of silently mislabelling a position.
+                showCannotPlaceDialog = true
+                isSaving = false
+            } else if (!GeofenceUtils.isWithinOuterGeofence(position.lat, position.lng)) {
+                // Coarse hard reject, ahead of the real geofence flow -- see
+                // GeofenceUtils.isWithinOuterGeofence's own comment. No SAVE ANYWAY,
+                // no pendingRecord, no soft warning: this location isn't remotely
+                // Cook Inlet.
+                showOutsideOuterGeofenceDialog = true
+                isSaving = false
+            } else {
+                when (GeofenceUtils.isWhalePositionVerified(position.lat, position.lng, position.uncertaintyRadiusMeters)) {
+                    true -> finishWith(position, passed = true)
+                    false -> finishWith(position, passed = false)
+                    null -> {
+                        // Only reachable once the buffer check found no well-sourced
+                        // data near this point at all -- the online fallback never
+                        // runs, and this loading state never shows, on a normal
+                        // (resolved) submit.
+                        isCheckingCoastlineFallback = true
+                        val validByChannel = GeofenceUtils.isWithinCoastlineChannelFallback(position.lat, position.lng)
+                        isCheckingCoastlineFallback = false
+                        finishWith(position, passed = validByChannel)
+                    }
+                }
+            }
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // --- 1. REAL CAPTURED PHOTO BACKGROUND ---
         if (!capturedPhotoPath.isNullOrEmpty()) {
@@ -145,117 +272,10 @@ fun LoggingScreen(
                         showZeroCountWarning = true
                         return@Button
                     }
-                    isSaving = true
-                    scope.launch {
-                        val coords = locationService.getCurrentLocation()
-                        val currentLat = coords?.latitude ?: region.defaultCenterLat
-                        val currentLng = coords?.longitude ?: region.defaultCenterLng
-                        val currentAlt = coords?.altitudeMeters ?: 0.0
-
-                        val heading = headingEstimate
-                        val bucket = distanceBucket
-
-                        // Travel direction needs a real base bearing -- only computed when a
-                        // heading reading was actually confirmed, even if a direction arrow was
-                        // tapped. Deriving it from computeDefaultOffshoreHeadingDegrees's
-                        // algorithmic guess (as this used to) would manufacture "which way it
-                        // was heading" from a bearing nobody measured, and labeling that MANUAL
-                        // would conflate it with a real compass pick (e.g. ManualLoggingScreen's
-                        // CompassBearingButton) under the same source tag -- exactly the kind of
-                        // fabricated fact this redesign exists to avoid.
-                        val travelBearing = heading?.let { h -> selectedDirection.toAbsoluteTravelBearingDegrees(h.degrees) }
-                        val travelBearingSource = if (travelBearing != null) heading.source.name else null
-
-                        // Real heading+distance -> project the whale position (PROJECTED).
-                        // No heading given -> CoastlineGeometry's offshore-perpendicular guess
-                        // (FALLBACK), or null if there's no real coastline data near the
-                        // observer to guess from at all.
-                        val position: WhalePositionEstimate? = if (heading != null && bucket != null) {
-                            val radius = bucket.radiusMeters(currentAlt > 100.0)
-                            val (projLat, projLng) = destinationPoint(currentLat, currentLng, heading.degrees, radius)
-                            WhalePositionEstimate(projLat, projLng, radius, bucket.name, PositionSource.PROJECTED)
-                        } else {
-                            projectOffshoreFallback(currentLat, currentLng)?.let { (fbLat, fbLng) ->
-                                WhalePositionEstimate(
-                                    fbLat, fbLng, FALLBACK_UNCERTAINTY_RADIUS_METERS, null, PositionSource.FALLBACK
-                                )
-                            }
-                        }
-
-                        // This device's own persistent id, sent so the server can compute
-                        // observerTier at insert -- never read back by the app (anon has no
-                        // SELECT grant on sightings.subscriber_id at all, see
-                        // 20260903010000_add_observer_tier_system.sql).
-                        val subscriberId = appPreferences.getOrCreateSubscriberId()
-
-                        fun buildRecord(pos: WhalePositionEstimate, verified: Boolean) = SightingRecord(
-                            whaleLat = pos.lat,
-                            whaleLng = pos.lng,
-                            uncertaintyRadiusMeters = pos.uncertaintyRadiusMeters,
-                            uncertaintyBucket = pos.uncertaintyBucket,
-                            travelBearingDegrees = travelBearing,
-                            travelBearingSource = travelBearingSource,
-                            positionSource = pos.positionSource.name,
-                            countWhites = whiteCount,
-                            countGreys = greyCount,
-                            countCalves = calfCount,
-                            countUnknown = unknownCount,
-                            observedAtEpochMs = currentTimeMillis(),
-                            observerType = ObserverType.SELF.name,
-                            isGeofenceVerified = verified,
-                            subscriberId = subscriberId
-                        )
-
-                        suspend fun finishWith(pos: WhalePositionEstimate, passed: Boolean) {
-                            // A FALLBACK position is in water almost by construction (the walk
-                            // stops the moment it would leave water) -- treating that as real
-                            // evidence would make "verified" trivially true for exactly the
-                            // submissions with the least actual evidence behind them, so it's
-                            // forced false here regardless of whether the check passed.
-                            val verified = passed && pos.positionSource != PositionSource.FALLBACK
-                            if (passed) {
-                                saveAndFinish(buildRecord(pos, verified = verified))
-                            } else {
-                                pendingRecord = buildRecord(pos, verified = false)
-                                showGeofenceWarning = true
-                                isSaving = false
-                            }
-                        }
-
-                        if (position == null) {
-                            // No heading given, and no real coastline geometry/water found to
-                            // guess a position from either -- there is no credible whale
-                            // position to save, not even a rough one, and no SAVE ANYWAY here:
-                            // the only coordinates on hand are the observer's own raw GPS fix,
-                            // and saving those under a whale-position label is exactly what this
-                            // redesign exists to prevent. Direct the user to the manual flow
-                            // instead of silently mislabelling a position.
-                            showCannotPlaceDialog = true
-                            isSaving = false
-                        } else if (!GeofenceUtils.isWithinOuterGeofence(position.lat, position.lng)) {
-                            // Coarse hard reject, ahead of the real geofence flow -- see
-                            // GeofenceUtils.isWithinOuterGeofence's own comment. No SAVE ANYWAY,
-                            // no pendingRecord, no soft warning: this location isn't remotely
-                            // Cook Inlet.
-                            showOutsideOuterGeofenceDialog = true
-                            isSaving = false
-                        } else {
-                            when (GeofenceUtils.isWhalePositionVerified(position.lat, position.lng, position.uncertaintyRadiusMeters)) {
-                                true -> finishWith(position, passed = true)
-                                false -> finishWith(position, passed = false)
-                                null -> {
-                                    // Only reachable once the buffer check found no well-sourced
-                                    // data near this point at all -- the online fallback never
-                                    // runs, and this loading state never shows, on a normal
-                                    // (resolved) submit.
-                                    isCheckingCoastlineFallback = true
-                                    val validByChannel = GeofenceUtils.isWithinCoastlineChannelFallback(position.lat, position.lng)
-                                    isCheckingCoastlineFallback = false
-                                    finishWith(position, passed = validByChannel)
-                                }
-                            }
-                        }
-                    }
+                    // Item 34: show the confirm summary first -- launchSubmit (the real GPS/
+                    // geofence/save work) only runs once CONFIRM is tapped, below.
+                    confirmObservedAtEpochMs = currentTimeMillis()
+                    showConfirmDialog = true
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.8f))
             ) {
@@ -373,6 +393,64 @@ fun LoggingScreen(
                     Text("CHECKING WATER DATA…", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
+        }
+
+        // --- ITEM 34: PRE-SUBMIT CONFIRMATION DIALOG ---
+        // Compact, large-text summary (counts spelled out, heading/direction, time) with
+        // CONFIRM/BACK -- requires a deliberate tap before launchSubmit's GPS/geofence/save work
+        // starts. onDismissRequest (tapping outside, back gesture) behaves the same as BACK: it
+        // never confirms. Parity with the web app's identical confirm step (webapp/js/
+        // submit-view.js's showSubmitConfirmModal).
+        if (showConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showConfirmDialog = false },
+                title = { Text("Confirm Sighting", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        Text(
+                            formatWhaleCountsSummary(whiteCount, greyCount, calfCount, unknownCount),
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        val heading = headingEstimate
+                        val bucket = distanceBucket
+                        Text(
+                            text = if (heading != null) {
+                                "Heading to whale: ${heading.degrees.toInt()}°" +
+                                    (bucket?.let { " · ${it.shortLabel(isAerial)}" } ?: "")
+                            } else {
+                                "Heading/distance: not set"
+                            },
+                            fontSize = 18.sp
+                        )
+                        if (selectedDirection != PodDirection.NONE) {
+                            Text("Pod moving: ${selectedDirection.name}", fontSize = 18.sp)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text("Time: ${formatDateTime(confirmObservedAtEpochMs)}", fontSize = 18.sp)
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showConfirmDialog = false
+                            launchSubmit(confirmObservedAtEpochMs)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                    ) {
+                        Text("CONFIRM", color = Color.Black, fontWeight = FontWeight.Black)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showConfirmDialog = false }) {
+                        Text("BACK", color = Color.White)
+                    }
+                },
+                containerColor = Color(0xFF1E293B),
+                titleContentColor = Color.White,
+                textContentColor = Color.LightGray
+            )
         }
 
         // --- GEOFENCE WARNING DIALOG ---

@@ -57,6 +57,29 @@ function initMainMenu() {
     });
   });
 
+  // BUG FIX (item 36): dedicated handler, not the generic [data-nav="submit"] one -- that only
+  // calls switchTab("submit"), which reveals #submit-view but never resets which of its own
+  // sub-steps is showing inside it. Once Report Manually had ever forced manual-log-step visible
+  // (openManualReportFlow), it stayed visible, so the generic handler kept landing back on
+  // Manual Logging instead of the camera. goToCameraStep() explicitly shows camera-step and hides
+  // review-step/manual-log-step, the same way openManualReportFlow explicitly forces the opposite.
+  document.getElementById("menu-camera-item").addEventListener("click", () => {
+    const previousTab = getActiveTabName();
+    menu.hidden = true;
+    switchTab("submit");
+    // Only force it when camera-step isn't already the visible sub-step -- goToCameraStep()
+    // restarts the getUserMedia stream (startCamera() never stops an existing one first), so
+    // calling it unconditionally would flicker-restart an already-running camera for the common
+    // case (menu -> Camera while already on the camera step) instead of just leaving it alone.
+    if (document.getElementById("camera-step").hidden) {
+      goToCameraStep();
+    }
+    pushNavLayer("tab:submit", () => {
+      switchTab(previousTab);
+      menu.hidden = false;
+    });
+  });
+
   document.getElementById("menu-report-manually-item").addEventListener("click", () => {
     const previousTab = getActiveTabName();
     menu.hidden = true;

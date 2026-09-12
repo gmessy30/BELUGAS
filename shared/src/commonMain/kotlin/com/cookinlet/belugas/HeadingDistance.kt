@@ -133,6 +133,12 @@ fun buildCircleGeoJsonFeature(
     """.trimIndent()
 }
 
+// Item 34: "2 white, 0 grey, 2 calves, 0 unknown" -- shared by LoggingScreen.kt/
+// ManualLoggingScreen.kt's own pre-submit confirmation summary (and by webapp/js/submit-view.js's
+// formatWhaleCountsSummary, the same format ported to the web app for parity).
+fun formatWhaleCountsSummary(whites: Int, greys: Int, calves: Int, unknown: Int): String =
+    "$whites white, $greys grey, $calves calves, $unknown unknown"
+
 // Compass isn't accurate enough to justify rendering a precise degree value -- the map arrow
 // always snaps to the nearest of 8 compass points, even though the stored travelBearingDegrees
 // keeps its full precision (this only affects display).
