@@ -41,7 +41,7 @@ function fmtAnchorageTime(ms) {
 }
 
 function renderMapDebugOverlay() {
-  const el = document.getElementById("map-debug-overlay");
+  const el = document.getElementById("map-debug-overlay-text");
   if (!el) return;
 
   const banner = document.getElementById("presence-banner");
@@ -81,6 +81,11 @@ function initMapDebugOverlay() {
   const el = document.getElementById("map-debug-overlay");
   if (!el) return;
   el.hidden = false;
+  // Item 84: the one tappable part of this overlay (pointer-events:auto, style.css) -- there'd
+  // otherwise be no way to dismiss it short of stripping ?debug=1 from the URL and reloading.
+  document.getElementById("map-debug-overlay-hide-btn").addEventListener("click", () => {
+    el.hidden = true;
+  });
   renderMapDebugOverlay();
   setInterval(renderMapDebugOverlay, 500);
 }

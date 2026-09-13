@@ -96,11 +96,21 @@
        as expected on Map -- same ?debug=1 pattern as items 39/47. Reports REAL measured/computed
        DOM state (map-view.js's renderMapDebugOverlay), not source-code reasoning, so a report of
        "the banner's invisible" can be checked against actual numbers read off the phone instead
-       of guessed at again. Off/hidden by default. Fixed at the very top of the screen (not
-       bottom, to avoid competing with the banner/FAB it's reporting on) and above everything
-       else (z-index higher than the presence banner's own 970 and every overlay page's), so it's
-       never itself the thing that's hidden. -->
-  <pre id="map-debug-overlay" class="map-debug-overlay" hidden></pre>
+       of guessed at again. Off/hidden by default.
+       ITEM 84: originally pinned to the top of the screen (same area as the Map's top-right
+       stack, VERIFIED ONLY/FAB) -- pointer-events:none there already let taps pass THROUGH to
+       those buttons, but the overlay's own opaque text still visually covered them, making it
+       impossible to see where to tap. Moved to bottom-left, above the presence banner, instead --
+       nothing else lives there to cover. The hide button below is the one part of this overlay
+       that keeps pointer-events:auto (see style.css), since there'd otherwise be no way to
+       dismiss it short of stripping ?debug=1 from the URL and reloading. Split into a wrapper
+       (positioned, holds the hide button) + inner #map-debug-overlay-text <pre> specifically so
+       map-view.js's renderMapDebugOverlay can keep overwriting just the text every 500ms via
+       .textContent without wiping the button back out each time. -->
+  <div id="map-debug-overlay" class="map-debug-overlay" hidden>
+    <button id="map-debug-overlay-hide-btn" class="map-debug-overlay-hide-btn" type="button" aria-label="Hide debug overlay">✕</button>
+    <pre id="map-debug-overlay-text" class="map-debug-overlay-text"></pre>
+  </div>
 
   <!-- Ports App.kt's MainMenuDrawer -- see main-menu.js's own header comment for the item-set
        reasoning. Right-aligned, vertically centered, bold uppercase white text over the teal

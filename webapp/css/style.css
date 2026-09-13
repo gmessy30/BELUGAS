@@ -1708,24 +1708,53 @@ button.camera-status.secondary {
    of. z-index 9999 -- deliberately higher than every other z-index in this app (highest prior use
    was the presence banner's own 970) so this is never the thing that's covered. pointer-events:
    none so it never blocks interaction with whatever's underneath. */
+/* Item 84: moved from the top (where it visually covered the Map's top-right stack -- VERIFIED
+   ONLY/FAB -- even though pointer-events:none already let taps pass through it) to bottom-left,
+   stopping well clear of the presence banner (same fixed, non-measured reservation style as
+   .map-top-controls' own bottom inset -- see that rule's comment for why). max-width keeps it a
+   corner box rather than the old full-width bar, so it can't reach back over to the right side of
+   the screen either. */
 .map-debug-overlay {
   position: fixed;
-  top: env(safe-area-inset-top, 0px);
   left: 8px;
-  right: 8px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 100px);
   z-index: 9999;
-  margin: 0;
+  max-width: min(70vw, 320px);
+  max-height: 45vh;
   padding: 8px 10px;
   background: rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+  overflow: auto;
+}
+
+.map-debug-overlay-text {
+  margin: 0;
   color: #00ff00;
   font-family: monospace;
   font-size: 10px;
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
-  pointer-events: none;
-  max-height: 45vh;
-  overflow: auto;
+}
+
+/* The one part of this overlay that's actually tappable -- everything else keeps
+   pointer-events:none (inherited from .map-debug-overlay) so it never blocks the map/controls
+   underneath it. */
+.map-debug-overlay-hide-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  pointer-events: auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 255, 0, 0.4);
+  background: rgba(0, 0, 0, 0.6);
+  color: #00ff00;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
 }
 
 /* Directly under the top bar, not floating at the bottom edge -- .review-bottom-panel is tall
