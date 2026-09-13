@@ -191,6 +191,12 @@ function updateMapVerifiedToggleUi() {
 
 function renderSightingsOnMap(sightings) {
   lastCombinedSightings = sightings;
+  // Item 86: date range now governs the map's default (non-playback) view too, not just the
+  // playback panel's own internal state while open -- recomputed here so the persisted quick
+  // range (e.g. TODAY) is resolved fresh against whatever data/now actually are, even if the
+  // panel has never been opened this session (playbackRangeStart/End otherwise stay at their
+  // unset 0/0 initial values, which would filter out every real sighting).
+  recomputePlaybackRange();
   drawMapMarkers();
 }
 
@@ -245,9 +251,20 @@ function drawMapMarkers(skipFitBounds = false) {
   mapMarkersLayer.clearLayers();
   mapUncertaintyLayer.clearLayers();
 
+  // BUG FIX (item 86): date range and fade window used to be entangled behind one
+  // `playbackIsOpen` gate -- closing the panel dropped ALL filtering (showing literally
+  // everything, ignoring the selected date range), while an OPEN-but-idle panel still applied
+  // the fade window/cursor left over from the last time playback ran, so the same date range
+  // could show different sightings depending on unrelated leftover playback state. Now: the date
+  // range applies UNCONDITIONALLY (it's the one setting that governs the static view, open or
+  // closed, per item 83b); the fade window/cursor is a playback-only EFFECT layered on top, only
+  // while actually playing or the slider is being actively dragged.
+  const isPlaybackCursorActive = playbackIsPlaying || playbackScrubbing;
+
   const visible = lastCombinedSightings.filter((s) => {
     if (s.whale_lat == null || s.whale_lng == null) return false;
-    if (playbackIsOpen && !isWithinPlaybackWindow(s)) return false;
+    if (!isWithinDateRange(s)) return false;
+    if (isPlaybackCursorActive && !isWithinPlaybackFadeWindow(s)) return false;
     if (s.is_local) return true; // never filtered by VERIFIED ONLY -- see isHighConfidence's own comment
     return !mapVerifiedOnly || isHighConfidence(s);
   });
@@ -387,6 +404,12 @@ const FALL_END_MONTH = 12, FALL_END_DAY = 31;
 let playbackIsOpen = false;
 let playbackIsMinimized = false;
 let playbackIsPlaying = false;
+// Item 86: true only WHILE the slider is actively being dragged (set on the slider's own
+// "input" event, cleared on "change" -- see initPlaybackPanel) -- distinct from playbackIsOpen
+// (the panel being visible at all) and from playbackIsPlaying (the ticker actually running).
+// isWithinPlaybackFadeWindow/drawMapMarkers only apply the fade-window+cursor effect while
+// playbackIsPlaying || playbackScrubbing; the date-range filter applies unconditionally instead.
+let playbackScrubbing = false;
 let playbackSpeedMultiplier = 1;
 let playbackFadeWindowKey = "ALL";
 let playbackSelectedQuickRange = "ALL_TIME";
@@ -546,11 +569,19 @@ function initPlaybackPanel() {
   document.getElementById("playback-play-btn").addEventListener("click", togglePlayback);
 
   document.getElementById("playback-slider").addEventListener("input", (event) => {
+    playbackScrubbing = true; // item 86: the fade/cursor effect is active for as long as this stays true
     playbackTimeMs = playbackRangeStart + Number(event.target.value);
     stopPlaybackTicker(); // matches native: dragging the slider stops playback
     playbackIsPlaying = false;
     updatePlaybackPlayButtonUi();
     updatePlaybackTimeLabel();
+    drawMapMarkers(true);
+  });
+  // Item 86: fires once when the drag/touch actually ends (unlike "input", which fires
+  // continuously mid-drag) -- this is what turns playbackScrubbing back off, so fade/cursor
+  // filtering stops the instant the user lets go, same as it stops when playback itself pauses.
+  document.getElementById("playback-slider").addEventListener("change", () => {
+    playbackScrubbing = false;
     drawMapMarkers(true);
   });
 
@@ -602,8 +633,15 @@ function openPlaybackPanel() {
 function closePlaybackPanel() {
   stopPlaybackTicker();
   playbackIsPlaying = false;
+  playbackScrubbing = false; // item 86: closing counts as a stop even mid-drag
   playbackIsOpen = false;
   document.getElementById("playback-panel").hidden = true;
+  // Item 86: "the panel closes" is one of the two explicit cursor-reset triggers (the other is
+  // playback stopping, see togglePlayback) -- the map itself no longer depends on this for what
+  // it shows (isWithinDateRange applies regardless of playbackIsOpen now), but resetting it here
+  // keeps playbackTimeMs from silently carrying a stale mid-scrub position into next time the
+  // panel reopens.
+  playbackTimeMs = playbackRangeEnd;
   drawMapMarkers();
 }
 
@@ -654,10 +692,20 @@ function recomputePlaybackRange() {
   playbackRangeEnd = end;
 }
 
-function isWithinPlaybackWindow(s) {
+// Item 86: the persisted date-range filter -- applies whether or not the playback panel is even
+// open, let alone playing. This is what makes "TODAY" (or any other quick range) an actual
+// property of the map's default view, not just a playback-session detail.
+function isWithinDateRange(s) {
   if (s.observed_at_epoch_ms == null) return false;
+  return s.observed_at_epoch_ms >= playbackRangeStart && s.observed_at_epoch_ms <= playbackRangeEnd;
+}
+
+// Item 86: the playback-only fade effect -- only ever consulted while drawMapMarkers' own
+// isPlaybackCursorActive is true (playing or actively scrubbing). Deliberately does NOT check
+// the date range itself (isWithinDateRange already does, applied separately in drawMapMarkers) --
+// this only judges a sighting's position relative to the live scrub cursor/fade window.
+function isWithinPlaybackFadeWindow(s) {
   if (s.observed_at_epoch_ms > playbackTimeMs) return false;
-  if (s.observed_at_epoch_ms < playbackRangeStart || s.observed_at_epoch_ms > playbackRangeEnd) return false;
   const fadeOption = FADE_WINDOW_OPTIONS.find((f) => f.key === playbackFadeWindowKey);
   if (fadeOption.ms == null) return true;
   return playbackTimeMs - s.observed_at_epoch_ms <= fadeOption.ms;
@@ -709,6 +757,13 @@ function togglePlayback() {
     startPlaybackTicker();
   } else {
     stopPlaybackTicker();
+    // Item 86: pausing is a STOP, not a pause-in-place -- the cursor resets to the end of the
+    // range ("now") and the fade effect clears (drawMapMarkers' own isPlaybackCursorActive check
+    // goes false the instant playbackIsPlaying does), same as reaching the end of the range
+    // naturally already did in startPlaybackTicker below.
+    playbackTimeMs = playbackRangeEnd;
+    updatePlaybackSliderUi();
+    drawMapMarkers(true);
   }
 }
 
