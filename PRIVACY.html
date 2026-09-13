@@ -145,7 +145,32 @@
         changes will be noted here.</p>
     </div>
 
-    <a class="back-link" href="webapp/">← Back to BELUGAS</a>
+    <a id="back-link" class="back-link" href="webapp/">← Back to BELUGAS</a>
   </div>
+  <script>
+    // Item 71: a plain href="webapp/" always loads a FRESH app instance -- fine if this page was
+    // opened directly (a QR code, a shared link, typed URL, no app tab to return to), but wrong
+    // if it was opened FROM the app, where the point is to return to the same running instance,
+    // not reload it. Two better paths when there's somewhere real to go back to:
+    //   1. This tab was opened via target="_blank" from the app (About's own PRIVACY POLICY/
+    //      LICENSE buttons have no rel="noopener", specifically so window.opener survives here --
+    //      see index.html's own comment on that) -- closing this tab reveals the app tab
+    //      underneath exactly as it was, no reload.
+    //   2. No opener, but this tab's own history has more than one entry (e.g. the app URL and
+    //      this one were both visited in the SAME tab) -- a real back-navigation exists to use.
+    // Neither applies -> let the plain href navigate normally (the only sane destination when
+    // there's nothing to return to).
+    document.getElementById("back-link").addEventListener("click", function (event) {
+      if (window.opener && !window.opener.closed) {
+        event.preventDefault();
+        window.close();
+        return;
+      }
+      if (window.history.length > 1) {
+        event.preventDefault();
+        window.history.back();
+      }
+    });
+  </script>
 </body>
 </html>

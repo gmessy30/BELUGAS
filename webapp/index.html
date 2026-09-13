@@ -196,11 +196,17 @@
            rather than as in-app subpages, since these are plain static files entirely outside
            this SPA's own nav-stack/subpage system, and a new tab is the simple, robust option the
            request explicitly allowed as a fallback. No policy/license text duplicated here, just
-           the links and a one-line summary of which license this is. -->
+           the links and a one-line summary of which license this is.
+
+           ITEM 71: deliberately NO rel="noopener" here -- both destinations are this app's own
+           same-origin pages, and their own "Back to BELUGAS" link needs a live window.opener
+           reference to close back to THIS tab instead of loading a fresh app instance. noopener
+           exists to stop an opened page from reaching back into the opener (reverse tabnabbing),
+           a real risk for a third-party destination but not for content we control ourselves. -->
       <div class="subpage-section">
         <div class="legal-links-row">
-          <a class="legal-link-btn about-interactive" href="../PRIVACY.html" target="_blank" rel="noopener">Privacy Policy</a>
-          <a class="legal-link-btn about-interactive" href="../LICENSE.html" target="_blank" rel="noopener">License</a>
+          <a class="legal-link-btn about-interactive" href="../PRIVACY.html" target="_blank">Privacy Policy</a>
+          <a class="legal-link-btn about-interactive" href="../LICENSE.html" target="_blank">License</a>
         </div>
         <p class="section-body legal-note">Free for non-commercial use (PolyForm Noncommercial).</p>
       </div>
