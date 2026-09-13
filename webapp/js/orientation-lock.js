@@ -1,5 +1,8 @@
-// Report-tab environment: fullscreen + a non-blocking rotate hint. NOT App.kt's
-// LockLandscapeOrientation -- a forced/locked orientation was tried here and removed.
+// Report-tab environment: fullscreen + a non-blocking rotate hint. Item 67a: Sightings Map also
+// gets the fullscreen half of this (lockFullscreenForMapTab/app.js's switchTab) -- no rotate hint
+// there, Map already lays out fine either way, this is purely about reclaiming browser-chrome
+// space. NOT App.kt's LockLandscapeOrientation -- a forced/locked orientation was tried here and
+// removed.
 // screen.orientation.lock("landscape") turned out to be a genuine LOCK on Android/Chrome (auto-
 // rotation disabled entirely, frozen at whichever landscape variant was current the instant it
 // resolved), not a live sensor-following choice between landscape-primary/secondary the way
@@ -58,7 +61,10 @@ function dismissRotateHint() {
   updateRotateHint();
 }
 
-async function enterFullscreenForReportTab() {
+// Item 67a: generalized from enterFullscreenForReportTab/exitFullscreenForReportTab -- Sightings
+// Map now uses these too (see lockFullscreenForMapTab below), and the underlying best-effort
+// fullscreen request/exit has nothing Report-tab-specific about it.
+async function enterFullscreenForTouchDevice() {
   if (!isTouchDevice() || !document.documentElement.requestFullscreen) return;
   try {
     await document.documentElement.requestFullscreen();
@@ -70,7 +76,7 @@ async function enterFullscreenForReportTab() {
   }
 }
 
-function exitFullscreenForReportTab() {
+function exitFullscreenIfActive() {
   if (document.fullscreenElement) {
     document.exitFullscreen().catch((e) => console.warn("FULLSCREEN_EXIT_ERROR", e));
   }
@@ -80,12 +86,22 @@ function exitFullscreenForReportTab() {
 function lockLandscapeForReportTab() {
   rotateHintDismissedForThisVisit = false; // a fresh hint each time the tab is (re)entered
   updateRotateHint();
-  enterFullscreenForReportTab();
+  enterFullscreenForTouchDevice();
+}
+
+// Item 67a: same best-effort fullscreen treatment as the Report tab (item 22) -- Sightings Map
+// loses the same real screen space to the browser's own address bar in landscape, no native
+// equivalent to reclaim it from at all (a native app has no browser chrome in the first place).
+// No rotate hint here, unlike Report -- Map already lays out fine in either orientation, this is
+// purely about reclaiming browser-chrome space.
+function lockFullscreenForMapTab() {
+  document.getElementById("rotate-hint-banner").hidden = true;
+  enterFullscreenForTouchDevice();
 }
 
 function unlockOrientationForOtherTabs() {
   document.getElementById("rotate-hint-banner").hidden = true;
-  exitFullscreenForReportTab();
+  exitFullscreenIfActive();
 }
 
 function initOrientationLock() {

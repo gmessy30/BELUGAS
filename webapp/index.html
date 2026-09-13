@@ -172,6 +172,22 @@
       </div>
       <hr class="section-divider">
 
+      <!-- Item 65b: plain, brief changelog -- a date plus a handful of short lines on what a
+           returning user would actually notice, not a full technical changelog. Update the date
+           and swap the lines for whatever the next round of user-visible changes turns out to be;
+           this isn't meant to accumulate every past entry. -->
+      <div class="subpage-section">
+        <div class="section-title">WHAT'S NEW -- SEPTEMBER 12, 2026</div>
+        <ul class="tip-list">
+          <li>Reporting is now one flow: snap a photo (or skip it), then drop the pin and travel direction on a map instead of estimating range from where you're standing.</li>
+          <li>The presence banner is tappable -- when it's red, tap it to jump straight to the map.</li>
+          <li>Yellow and blue banners both show the same "next expected window" estimate now.</li>
+          <li>Added a Share page with a QR code, for handing someone your phone or a link instead of spelling out the app name.</li>
+          <li>The app can be added to your phone's home screen like a native app -- look for the install prompt or your browser's "Add to Home Screen" option.</li>
+        </ul>
+      </div>
+      <hr class="section-divider">
+
       <div class="subpage-section">
         <div class="section-title">DEVELOPMENT</div>
         <p class="section-body">BELUGAS is developed by Ryan Messimer.</p>
@@ -307,9 +323,11 @@
 
       <div class="subpage-section">
         <div class="section-title">HOW TO USE THIS APP</div>
+        <p class="section-body">To log a sighting: tap Camera and take a photo, or skip it if you don't have one. Then pan the map so the crosshair marks where the whale actually was, and drag the ring around it if you know which way it was heading. Enter how many you saw and confirm. No photo at all? Report Manually skips straight to that same map.</p>
+        <p class="section-body">This app asks for the whale's position, not yours -- that's deliberate. A report is far more useful to other observers and researchers when it marks where the animal actually was, so take the extra moment to place that pin rather than just dropping it on your own location.</p>
         <p class="section-body">Many good viewing spots along the Kenai and Kasilof are on or accessed through private property. Always get permission before crossing a fence line or cutting through someone's yard to reach the water -- public road pullouts and posted public access points exist for a reason.</p>
-        <p class="section-body">When you log a sighting, this app asks for the whale's position, not yours -- that's deliberate. A report is far more useful to other observers and researchers when it marks where the animal actually was, so take the extra moment to estimate that rather than just dropping a pin on your own location.</p>
-        <p class="section-body">The blue banner shows the earliest time the rising tide is deep enough for belugas to enter the river -- they're often visible milling in the inlet before that. Red means someone has actually seen them in the current tide cycle. Yellow is a caution: a verified sighting in the last few cycles, but none confirmed right now. Blue is the gate time -- not expected in the river before then, but worth watching the inlet.</p>
+        <p class="section-body">The blue banner shows the earliest time the rising tide is deep enough for belugas to enter the river -- they're often visible milling in the inlet before that. Red means someone has actually seen them in the current tide cycle, and tapping it jumps straight to the map. Yellow is a caution: a verified sighting in the last few cycles, but none confirmed right now. Both yellow and blue show the same next-window estimate; yellow just means it's happened recently.</p>
+        <p class="section-body">Reporting is open to anyone -- no account or login needed. A small number of credentialed observers carry a verification code that unlocks a couple of extra tools, like confirming once a group has clearly moved on from a watched area.</p>
       </div>
       <hr class="section-divider">
 
@@ -768,27 +786,40 @@
         <div id="manual-map" class="manual-map"></div>
 
         <!-- BearingDial.kt ported directly: black-outline-then-white ring, a crosshair at its
-             exact center (the position), a fixed decorative teardrop pin at the ring's north
-             point (never rotates), and a yellow needle from center to the ring edge pointing at
-             the current/dragged bearing -- present only once a bearing is set, matching native's
-             own displayDegrees-is-null-until-touched behavior. "Unknown" is a small explicit
-             clear affordance below the dial -- native's own gesture has no separate "clear" input
-             at all (only ever reachable by never touching the dial), which isn't a real option
-             once a drag has already set one; this lets a user undo an accidental drag back to
-             "not recorded" without it being a native-tracked feature. -->
+             exact center (the position), and a yellow needle from center to the ring edge
+             pointing at the current/dragged bearing -- present only once a bearing is set,
+             matching native's own displayDegrees-is-null-until-touched behavior. "Unknown" is a
+             small explicit clear affordance below the dial -- native's own gesture has no
+             separate "clear" input at all (only ever reachable by never touching the dial),
+             which isn't a real option once a drag has already set one; this lets a user undo an
+             accidental drag back to "not recorded" without it being a native-tracked feature.
+
+             ITEM 66: the decorative north-point pin (what used to be the standalone map pin
+             before BearingDial fused it in, per that native comment) is gone entirely -- it never
+             marked the logged position (the crosshair always has, both here and in
+             BearingDial.kt), so it was pure decoration competing for attention with the one
+             marker that actually matters. Removing it also fixed a real, previously-existing
+             mismatch: the ring/crosshair/needle used to be drawn off-true-center (cy=85 in this
+             150-tall viewBox, not 75) specifically to leave the pin headroom above the ring, but
+             submit-view.js's bearingFromPointerEvent computes the drag angle from this ELEMENT's
+             own true geometric center (getBoundingClientRect's width/2, height/2 -- i.e. 75, not
+             85) -- a 10px mismatch between where the drag gesture's pivot was assumed to be and
+             where the ring/crosshair/needle were actually drawn. Re-centering everything below to
+             75 (matching bearingFromPointerEvent's own assumption, and updateBearingDialNeedle's
+             matching cy) fixes both the leftover pin-spacing AND this pivot mismatch at once. -->
         <div class="bearing-dial-wrap">
           <div id="bearing-dial" class="bearing-dial" role="slider" aria-label="Travel direction"
                aria-valuemin="0" aria-valuemax="359">
             <svg viewBox="0 0 150 150" width="150" height="150">
-              <circle cx="75" cy="85" r="58" fill="none" stroke="#000000" stroke-width="18"/>
-              <circle cx="75" cy="85" r="58" fill="none" stroke="#ffffff" stroke-width="14"/>
-              <line x1="66" y1="85" x2="84" y2="85" stroke="#000000" stroke-width="6" stroke-linecap="round"/>
-              <line x1="75" y1="76" x2="75" y2="94" stroke="#000000" stroke-width="6" stroke-linecap="round"/>
-              <line x1="66" y1="85" x2="84" y2="85" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
-              <line x1="75" y1="76" x2="75" y2="94" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="75" cy="75" r="58" fill="none" stroke="#000000" stroke-width="18"/>
+              <circle cx="75" cy="75" r="58" fill="none" stroke="#ffffff" stroke-width="14"/>
+              <line x1="66" y1="75" x2="84" y2="75" stroke="#000000" stroke-width="6" stroke-linecap="round"/>
+              <line x1="75" y1="66" x2="75" y2="84" stroke="#000000" stroke-width="6" stroke-linecap="round"/>
+              <line x1="66" y1="75" x2="84" y2="75" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+              <line x1="75" y1="66" x2="75" y2="84" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
               <g id="bearing-dial-needle" hidden>
-                <line id="bearing-dial-needle-outline" x1="75" y1="85" x2="75" y2="27" stroke="#000000" stroke-width="8" stroke-linecap="round"/>
-                <line id="bearing-dial-needle-line" x1="75" y1="85" x2="75" y2="27" stroke="#FFFF00" stroke-width="4" stroke-linecap="round"/>
+                <line id="bearing-dial-needle-outline" x1="75" y1="75" x2="75" y2="17" stroke="#000000" stroke-width="8" stroke-linecap="round"/>
+                <line id="bearing-dial-needle-line" x1="75" y1="75" x2="75" y2="17" stroke="#FFFF00" stroke-width="4" stroke-linecap="round"/>
               </g>
               <!-- Shown exactly when the needle above is hidden (no bearing set, whether never
                    touched or explicitly cleared via "Unknown Direction") -- an empty dial read as
@@ -796,13 +827,9 @@
                    un-set state now always draws something explicit rather than just omitting the
                    needle. -->
               <g id="bearing-dial-unknown-mark">
-                <text x="75" y="93" text-anchor="middle" font-size="26" font-weight="900" fill="#000000">?</text>
-                <text x="75" y="92" text-anchor="middle" font-size="26" font-weight="900" fill="#ffffff">?</text>
+                <text x="75" y="83" text-anchor="middle" font-size="26" font-weight="900" fill="#000000">?</text>
+                <text x="75" y="82" text-anchor="middle" font-size="26" font-weight="900" fill="#ffffff">?</text>
               </g>
-            </svg>
-            <svg class="bearing-dial-pin" viewBox="0 0 30 30" width="30" height="30" aria-hidden="true">
-              <path d="M15,29 C9,23 3,18 3,12 A12,12 0 0 1 27,12 C27,18 21,23 15,29 Z" fill="#e53935" stroke="#000000" stroke-width="1"/>
-              <circle cx="15" cy="12" r="4.5" fill="#ffffff"/>
             </svg>
           </div>
           <button id="bearing-dial-unknown-btn" class="secondary bearing-dial-unknown-btn" type="button">Unknown Direction</button>

@@ -23,6 +23,12 @@
   --dark-card-bg: #1E1E1E;
   --dark-card-border: #333333;
   --dark-card-alt-bg: #2A2A2A;
+
+  /* Item 67b: kept updated live by presence-banner.js's updatePresenceBannerHeightVar (0 whenever
+     the banner is actually hidden) -- matches native's LocalBottomContentInset. Defaulted here so
+     every bottom-anchored control below has a real value (not an unresolved var()) before that
+     script's first run, and via var()'s own fallback wherever JS hasn't loaded at all. */
+  --presence-banner-height: 0px;
 }
 
 * {
@@ -127,8 +133,15 @@ main {
   isolation: isolate;
 }
 
+/* Item 67a: same 100dvh treatment #submit-view already had (see that rule's own comment) -- Map
+   now also attempts fullscreen (orientation-lock.js's lockFullscreenForMapTab), and needs the
+   same iOS Safari fallback (no real fullscreen support there at all): 100dvh tracks the
+   viewport's CURRENT size as the browser's own address bar shows/hides, instead of 100vh/.view's
+   own inset:0-derived height resolving against the LARGE (chrome-hidden-assumed) viewport size. */
 #map-view {
   padding: 0;
+  height: 100vh;
+  height: 100dvh;
 }
 
 /* List gets AppBackground's real default backdrop (.mae-background, applied via HTML class) --
@@ -137,8 +150,11 @@ main {
    plain black fallback, as their own backgrounds -- neither of those goes through AppBackground
    natively either (LoggingScreen draws the real photo itself; CaptureScreen/SightingsMapScreen
    render their own full-bleed content). */
+/* Item 67b: bottom padding grows by --presence-banner-height so the banner (fixed, z-index:970)
+   never sits over the last sighting row -- #list-view's own overflow:auto scroll (.view) means
+   this just adds scrollable room rather than clipping anything. */
 #list-view {
-  padding: 12px 16px 24px;
+  padding: 12px 16px calc(24px + var(--presence-banner-height, 0px));
 }
 
 #submit-view {
@@ -1482,8 +1498,10 @@ button.camera-status.secondary {
 /* BearingDial.kt ported directly -- fixed at screen-center over the map (you pan the map under
    it; there is no draggable pin), fusing the exact-position crosshair with the travel-direction
    control in one element, matching native's own fused control instead of a separate chip-grid
-   substitute. Sized a little larger than the SVG's own ring so the pin (which extends above the
-   ring) and a comfortable drag-hit-area both fit without clipping. */
+   substitute. The 150x150 box is larger than the ring's own ~116px visual diameter purely for a
+   comfortable drag-hit-area -- item 66 removed the decorative pin that used to also need room
+   here, re-centering the ring/crosshair/needle to this box's true center in the process (see
+   index.html's own item-66 comment on the drag-pivot mismatch that fixed). */
 .bearing-dial-wrap {
   position: absolute;
   top: 50%;
@@ -1527,32 +1545,15 @@ button.camera-status.secondary {
   pointer-events: none;
 }
 
-/* :not(.bearing-dial-pin) matters -- the pin below is ALSO an <svg> inside .bearing-dial, so
-   without the exclusion this width:100%/height:100% (meant only for the main ring svg) wins over
-   .bearing-dial-pin's own 30x30 sizing anyway: a bare-class selector (0,1,0) loses to this
-   class+type selector's higher specificity (0,1,1) regardless of source order. That's what made
-   the decorative pin balloon up to the dial's own full 150x150 box instead of staying pinhead-
-   sized (DIAGNOSED item 27d). */
-.bearing-dial svg:not(.bearing-dial-pin) {
+/* Item 66: was ".bearing-dial svg:not(.bearing-dial-pin)" -- the exclusion existed only because
+   the now-removed decorative pin was ALSO an <svg> inside .bearing-dial and needed to keep its
+   own 30x30 sizing instead of ballooning up to this rule's 100%/100% (DIAGNOSED item 27d). With
+   the pin gone, .bearing-dial has exactly one svg child again, so the plain selector is correct
+   on its own. */
+.bearing-dial svg {
   display: block;
   width: 100%;
   height: 100%;
-}
-
-/* Fixed at the ring's own north point -- decorative only, never rotates with the dragged
-   bearing (see BearingDial's own doc comment on why: it's what used to be the standalone map pin,
-   kept here purely as a visual anchor). Explicit width/height (matching the SVG's own 30x30
-   attributes, ~23% of the ring's diameter -- BearingDial.kt's own BEARING_DIAL_PIN_SIZE/
-   BEARING_DIAL_OUTER_RADIUS*2 ratio) so nothing upstream can stretch it again the way the
-   unscoped .bearing-dial svg rule just did. */
-.bearing-dial-pin {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  width: 30px;
-  height: 30px;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
 }
 
 .bearing-dial-unknown-btn {
@@ -1900,10 +1901,13 @@ button.secondary {
 
 /* --- Playback / time-lapse + date-range (SightingsMapScreen.kt's own scrub slider + quick-range
    chips, one Surface/Column natively -- ported as one panel here too, see map-view.js). --- */
+/* Item 67b: --presence-banner-height folded into the safe-area offset -- the presence banner is
+   position:fixed at z-index:970 (both of these sit at 500), so whenever it's showing it would
+   otherwise paint directly over the FAB/panel rather than just sitting near them. */
 .playback-fab-btn {
   position: absolute;
   right: 16px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--presence-banner-height, 0px) + 16px);
   z-index: 500;
   width: 52px;
   height: 52px;
@@ -1919,7 +1923,7 @@ button.secondary {
   position: absolute;
   left: 16px;
   right: 16px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--presence-banner-height, 0px) + 16px);
   z-index: 500;
   max-height: 70vh;
   overflow-y: auto;
@@ -1927,6 +1931,16 @@ button.secondary {
   border-radius: 14px;
   padding: 12px 14px;
   color: #ffffff;
+}
+
+/* Item 67b: Leaflet's own bottom-anchored chrome (attribution; zoom, if ever repositioned there --
+   this app's own zoom control is top-left by default, not currently affected, but nothing stops a
+   future change) gets the same reservation -- it's the map library's own UI, but still visually
+   part of this screen's bottom edge and still covered by the presence banner otherwise. No
+   !important needed: this stylesheet loads after leaflet.min.css (index.html), so an equal-
+   specificity single-class selector already wins on source order alone. */
+.leaflet-bottom {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--presence-banner-height, 0px));
 }
 
 .playback-panel-header {

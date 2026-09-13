@@ -49,14 +49,20 @@ function switchTab(tabName) {
   // needed here.
 
   // Matches App.kt's wantsLandscape -- forced landscape for the whole Report tab (camera step +
-  // review step, either mode), released for every other tab.
+  // review step, either mode), released for every other tab. Item 67a: Map gets its own
+  // best-effort fullscreen (no rotate hint, unlike Report) rather than falling into the "every
+  // other tab" unlock branch -- switching AWAY from Map to anything but Report still lands there
+  // and correctly exits fullscreen.
+  const isMapTab = tabName === "map";
   if (isReportTab) {
     lockLandscapeForReportTab();
+  } else if (isMapTab) {
+    lockFullscreenForMapTab();
   } else {
     unlockOrientationForOtherTabs();
   }
 
-  if (tabName === "map") {
+  if (isMapTab) {
     invalidateMapSize();
   } else if (playbackIsPlaying) {
     // No native equivalent to defer to here (SightingsMapScreen's own playback state is torn down

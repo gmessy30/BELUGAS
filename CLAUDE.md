@@ -115,3 +115,21 @@ project (via `supabase db query --linked --file <path>`) — don't tell the user
   landing on it would otherwise fire an irreversible (3h) report with no chance to back out.
   `TierClaimScreen.kt`'s own "WHALES LEFT?" button has no equivalent confirmation step yet — worth
   adding the same two-step gate there for parity.
+- **Native-side parity item (item 65, web-only so far)**: Resources' "HOW TO USE THIS APP" section
+  (`webapp/index.html`, mirrored in `ResourcesScreen.kt`) was rewritten for item 60's unified
+  reporting flow (photo optional, then the same map+crosshair+BearingDial for both entry points)
+  and gained a short paragraph on the credentialed-observer concept. About gained a plain "WHAT'S
+  NEW — {date}" section (`webapp/index.html`'s About-page content, no equivalent in
+  `AboutScreen.kt` yet) with a handful of short lines on today's user-visible changes. Apply the
+  same text to `ResourcesScreen.kt`/`AboutScreen.kt` for parity, alongside the other pending items
+  above.
+- **Native-side parity item (item 66, web-only so far)**: the PWA's BearingDial no longer draws
+  the decorative teardrop pin at the ring's north point — the crosshair was always the sole
+  position marker (both here and in `BearingDial.kt`), so the pin was pure decoration removed to
+  stop competing with it. `PinGraphic`/its `BearingDial` call site (`ManualLoggingScreen.kt`) still
+  draw it natively — worth removing there too for parity, alongside the other pending items above.
+  (No native equivalent needed for the drag-pivot re-centering this same item fixed on the web
+  side — that mismatch was specific to this app's own CSS/SVG implementation, between
+  `bearingFromPointerEvent`'s element-center assumption and the ring's own off-center SVG
+  coordinates; native's `detectDragGestures`/Canvas both already operate in the same coordinate
+  space with no equivalent offset to begin with.)

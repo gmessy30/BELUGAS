@@ -14,11 +14,16 @@
 // matches App.kt's showPresenceBanner excluding CAPTURE/PHOTO_LOGGING/MANUAL_LOGGING/
 // ACKNOWLEDGEMENT_GATE. Otherwise it's a fixed bottom overlay above Map/List/the menu/About/
 // Resources/News Feed/Alerts, same as native drawing it in the same Box as whatever screen is
-// current. Native additionally reserves bottom padding on every AppBackground screen equal to
-// the banner's own measured height (LocalBottomContentInset) so it never covers their bottommost
-// content -- not reproduced here (a fixed ~50px bar has a small footprint, and dynamically
-// measuring/reserving that inset for every screen was judged not worth the complexity for this
-// pass); flagged as a known simplification, not an oversight.
+// current.
+//
+// Item 67b: native reserves bottom padding on every AppBackground screen equal to the banner's
+// own measured height (LocalBottomContentInset) so it never covers their bottommost content --
+// this now does the same via --presence-banner-height (see initPresenceBannerHeightTracking/
+// updatePresenceBannerHeightVar below), a CSS custom property every bottom-anchored control folds
+// into its own offset (Map's playback FAB/panel and Leaflet's own attribution corner, List's own
+// bottom padding). Previously flagged as a known simplification/not reproduced at all -- Map's
+// playback controls actually being covered by the banner is what made that gap real rather than
+// theoretical.
 let presenceBannerCards = [];
 let presenceBannerCurrentIndex = 0;
 let presenceBannerOrderKey = "";
@@ -49,11 +54,33 @@ function isReportScreenShowing() {
   return !document.getElementById("submit-view").hidden;
 }
 
+// Item 67b: --presence-banner-height on documentElement, matching native's
+// LocalBottomContentInset -- 0px whenever the banner is actually hidden (a ResizeObserver alone
+// isn't guaranteed to fire promptly, or at all, for a display:none transition, the same reasoning
+// item 60's own removed review-panel-height tracking documented), the banner's real measured
+// height otherwise. Every bottom-anchored control that could otherwise sit under this fixed,
+// high-z-index (970) banner folds this into its own bottom offset (style.css).
+function updatePresenceBannerHeightVar() {
+  const banner = document.getElementById("presence-banner");
+  const height = banner.hidden ? 0 : banner.getBoundingClientRect().height;
+  document.documentElement.style.setProperty("--presence-banner-height", `${Math.ceil(height)}px`);
+}
+
+// ResizeObserver alone covers every LIVE size change while the banner stays visible (a warnings
+// line appearing, the multi-card dot row toggling) -- observing #presence-banner itself, not
+// -main, since -dots is -main's own sibling and both contribute to the banner's own total height.
+function initPresenceBannerHeightTracking() {
+  if (typeof ResizeObserver === "undefined") return;
+  const observer = new ResizeObserver(updatePresenceBannerHeightVar);
+  observer.observe(document.getElementById("presence-banner"));
+}
+
 function initPresenceBanner() {
   document.getElementById("presence-banner-main").addEventListener("click", handlePresenceBannerTap);
 
   onPresenceStateChanged(rebuildPresenceBannerCards);
   rebuildPresenceBannerCards();
+  initPresenceBannerHeightTracking();
 
   // Rather than chasing down every place that shows/hides the menu or a full-screen page and
   // pairing it with a manual refresh call (the exact kind of pairing that just drifted out of
@@ -166,9 +193,15 @@ function renderPresenceBannerCard() {
 
   if (isReportScreenShowing() || presenceBannerCards.length === 0) {
     banner.hidden = true;
+    updatePresenceBannerHeightVar();
     return;
   }
   banner.hidden = false;
+  // Belt-and-suspenders alongside the ResizeObserver: a hidden-to-visible transition (exactly
+  // what just happened) is the one case it isn't guaranteed to fire promptly/at all for -- one
+  // rAF after unhiding, not the same tick, since the browser hasn't computed the real box yet at
+  // the moment `hidden` is cleared.
+  requestAnimationFrame(updatePresenceBannerHeightVar);
 
   const safeIndex = Math.min(presenceBannerCurrentIndex, presenceBannerCards.length - 1);
   const card = presenceBannerCards[safeIndex];

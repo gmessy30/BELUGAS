@@ -694,7 +694,11 @@ function updateBearingDialNeedle(degrees) {
     return;
   }
   setSvgElementHidden(needle, false);
-  const cx = 75, cy = 85, radius = 58; // must match the SVG geometry in index.html
+  // Item 66: cy was 85 (off true-center, to leave headroom for the now-removed decorative pin) --
+  // must match both the SVG's own re-centered geometry (index.html) AND bearingFromPointerEvent's
+  // own assumption (the dial element's true geometric center), which is what actually fixed the
+  // drag-pivot mismatch that offset caused.
+  const cx = 75, cy = 75, radius = 58; // must match the SVG geometry in index.html
   const radians = (degrees * Math.PI) / 180;
   const endX = cx + Math.sin(radians) * radius;
   const endY = cy - Math.cos(radians) * radius;
