@@ -61,35 +61,44 @@ function isReportScreenShowing() {
   return !document.getElementById("submit-view").hidden;
 }
 
-// Item 75: which element the banner should be reparented INTO right now, or null if it should
-// sit back at its original position (document.body) as a plain position:fixed overlay. Only Map
-// and List ever return a container here -- every other topmost screen (an overlay page, the
-// menu, or the Report tab) keeps the original fixed-overlay behavior untouched, matching "other
-// pages can stay as-is."
+// Item 75 FOLLOW-UP FIX: the first pass reparented the banner INTO #map-canvas/.list-canvas
+// themselves, which looked right on paper but rendered as NO banner at all on a real device.
+// Root cause, found by re-deriving what that actually does to the DOM/layout rather than
+// re-guessing: #map-canvas is the element Leaflet's own L.map() call owns outright -- Leaflet
+// fills it with its own position:absolute panes (tiles, markers, controls), which paint OVER any
+// plain in-flow sibling content appended alongside them regardless of DOM order (positioned
+// content always paints above non-positioned in-flow content). Worse, #map-canvas still got
+// flex:1 (100% of whatever's left in #map-view) whether or not the banner was inside it -- a
+// plain block child appended into a non-flex container doesn't shrink that container's own
+// flex-basis, so the map never actually gave up any space for it either. Net effect: the banner
+// existed in the DOM with real content, entirely invisible, while the map still filled the whole
+// screen right over top of the FAB/panel's own intended clearance.
 //
-// Explicitly re-checks isAnyPresenceBannerOverlayOpen() here, not just isReportScreenShowing():
-// getActiveTabName() only looks at which .view is un-hidden underneath, with no idea whether an
-// overlay (About, Menu, Resources, ...) is currently drawn on top of it. isReportScreenShowing()
-// deliberately returns false in that case (the banner must still SHOW, unlike over the Report
-// tab) -- but showing it doesn't mean reparenting it into the now-visually-covered map/list
-// canvas is safe: those overlays' own z-index (900-960) sits BELOW the fixed banner's 970, so a
-// banner still living at document.body renders correctly above them same as always, but one
-// moved inside #map-canvas/.list-canvas would be trapped under that container's own stacking
-// context and disappear behind the overlay instead. So: overlay open -> stay fixed, full stop.
+// Fix: reparent into the OUTER flex columns (#map-view/#list-view) instead, making the banner a
+// SIBLING of .map-canvas/.list-canvas, not a child of it. That's what actually shrinks the map's
+// flex:1 share (the #map-view column's total height is fixed at 100dvh; the banner sibling
+// claiming its own content height is exactly what leaves .map-canvas less room), and it's
+// unambiguously visible (no Leaflet-owned absolutely-positioned pane can paint over a sibling
+// it's not a container of). Same reasoning fixes a second, milder bug on List: the banner was
+// previously appended inside .list-canvas's own overflow-y:auto scroll region, so scrolling the
+// sighting list could carry the banner off-screen with it -- as a sibling of .list-canvas instead,
+// it now stays pinned below the scrollable region, never scrollable away.
 function presenceBannerInFlowContainerId() {
   if (isReportScreenShowing() || isAnyPresenceBannerOverlayOpen()) return null;
   const activeTab = getActiveTabName();
-  if (activeTab === "map") return "map-canvas";
-  if (activeTab === "list") return "list-canvas";
+  if (activeTab === "map") return "map-view";
+  if (activeTab === "list") return "list-view";
   return null;
 }
 
 // Moves the banner element itself (not a clone -- appendChild on a node already in the DOM
 // relocates it, keeping every event listener/bound reference intact) to sit as the last flex
-// child of #map-canvas/.list-canvas, or back to <body> (its original position:fixed home) once
-// neither applies. The .in-flow class (style.css) is what actually swaps its own CSS from fixed-
-// overlay to a plain flex sibling; this function just decides which one should be true right now
-// and moves the DOM node to match.
+// child of #map-view/#list-view (a sibling of .map-canvas/.list-canvas, see
+// presenceBannerInFlowContainerId's own comment above for why it's the OUTER container and not
+// the inner one), or back to <body> (its original position:fixed home) once neither applies. The
+// .in-flow class (style.css) is what actually swaps its own CSS from fixed-overlay to a plain
+// flex sibling; this function just decides which one should be true right now and moves the DOM
+// node to match.
 function updatePresenceBannerParent() {
   const banner = document.getElementById("presence-banner");
   const targetId = presenceBannerInFlowContainerId();
@@ -103,12 +112,13 @@ function updatePresenceBannerParent() {
     banner.classList.remove("in-flow");
   }
 
-  // Map's own flex-item share of the screen (#map-canvas) changes size whenever the banner
-  // joins/leaves it as a sibling, or flips hidden while already there (a routine presence-state
-  // refresh) -- Leaflet has no way to notice that on its own, unlike a plain CSS reflow. A no-op
-  // call whenever nothing actually changed is harmless (Leaflet's own invalidateSize() is cheap),
-  // so this doesn't try to track whether the size genuinely changed since last time.
-  if (targetId === "map-canvas" && typeof invalidateMapSize === "function") {
+  // .map-canvas's own flex-item share of #map-view changes size whenever the banner (now its
+  // sibling) joins/leaves the column, or flips hidden while already there (a routine
+  // presence-state refresh) -- Leaflet has no way to notice that on its own, unlike a plain CSS
+  // reflow. A no-op call whenever nothing actually changed is harmless (Leaflet's own
+  // invalidateSize() is cheap), so this doesn't try to track whether the size genuinely changed
+  // since last time.
+  if (targetId === "map-view" && typeof invalidateMapSize === "function") {
     requestAnimationFrame(invalidateMapSize);
   }
 }
