@@ -6,7 +6,7 @@
 // the only thing that makes the activate handler below actually replace the old cached shell.
 // Without a version bump, a returning visitor's already-installed service worker sees byte-
 // identical install/activate logic and never even attempts an update.
-const CACHE_NAME = "belugas-shell-v65";
+const CACHE_NAME = "belugas-shell-v66";
 
 // Web Push (FCM) background-message handling -- coordinates with the app-shell caching below by
 // living in this SAME service worker file rather than a separate firebase-messaging-sw.js (the

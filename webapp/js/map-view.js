@@ -423,16 +423,27 @@ function thisSeasonRange(nowMs) {
   return [springStart, springEnd];
 }
 
+// Item 82: TODAY's own start and YESTERDAY's own end are the SAME instant (today's local
+// midnight, America/Anchorage) -- pulled into one explicitly shared, named calculation rather
+// than two independent-looking anchorageMidnightEpochMs(...) calls that happen to agree today but
+// could silently drift into disagreeing (e.g. one accidentally becoming a rolling last-24h
+// window instead of a real midnight boundary) if either call site is ever edited alone.
+function anchorageTodayMidnightEpochMs(nowMs) {
+  const [y, m, d] = anchorageDateParts(nowMs);
+  return anchorageMidnightEpochMs(y, m, d);
+}
+
 // QuickRange.resolve's per-shortcut window (the clamp-to-data-range + never-inverted guard lives
 // in recomputePlaybackRange below, matching resolve()'s own trailing coerceIn/fallback).
 function resolveQuickRange(key, dataMinMs, dataMaxMs, nowMs) {
   if (key === "TODAY") {
-    const [y, m, d] = anchorageDateParts(nowMs);
-    return [anchorageMidnightEpochMs(y, m, d), nowMs];
+    // Since local midnight, open end at "now" -- NOT a rolling last-24h window. See
+    // anchorageTodayMidnightEpochMs above: this is the exact same boundary YESTERDAY's own end
+    // uses, so the two can't silently disagree about where "today" actually starts.
+    return [anchorageTodayMidnightEpochMs(nowMs), nowMs];
   }
   if (key === "YESTERDAY") {
-    const [ty, tm, td] = anchorageDateParts(nowMs);
-    const todayMidnight = anchorageMidnightEpochMs(ty, tm, td);
+    const todayMidnight = anchorageTodayMidnightEpochMs(nowMs);
     const [yy, ym, yd] = anchorageDateParts(todayMidnight - HALF_DAY_MS);
     return [anchorageMidnightEpochMs(yy, ym, yd), todayMidnight - 1];
   }
@@ -515,6 +526,12 @@ function closePlaybackPanel() {
   drawMapMarkers();
 }
 
+// Item 82: the ONLY function that ever computes playbackRangeStart/End -- called from
+// openPlaybackPanel (the panel's own "default on load" moment, before any chip has been tapped)
+// AND onPlaybackFilterChanged (every later chip tap), both routing through the exact same
+// resolveQuickRange/anchorageTodayMidnightEpochMs above either way. There is no separate
+// "default" date-range calculation anywhere else in this file for TODAY/YESTERDAY to drift
+// against -- confirmed by grepping the whole webapp for both quick-range keys.
 function recomputePlaybackRange() {
   const timestamps = lastCombinedSightings
     .map((s) => s.observed_at_epoch_ms)
