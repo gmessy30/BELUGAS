@@ -1684,6 +1684,44 @@ button.camera-status.secondary {
   padding: 6px 14px;
 }
 
+/* Item 90 landscape fix, v4: v3 (below) made ACTIVITY "normal sized" and moved it into
+   .bearing-dial-wrap's own centered column, right under "Unknown Direction" -- confirmed on
+   device this reads fine in PORTRAIT (plenty of vertical room), but in LANDSCAPE the wrap's now-
+   taller column still reached down far enough to paint both pills directly over the two middle
+   whale illustrations (screenshot-confirmed, not just bounding-box math). Fix: in landscape only,
+   both buttons are pulled OUT of the wrap's flow entirely (position:fixed, same "item 64"
+   mechanism SET DATE/TIME already uses on the right) into their own small stack on the LEFT, under
+   the SELF/OTHER chips -- mirroring the right side's own established rhythm (RECENTER@64,
+   SET DATE/TIME@112, 48px apart; .manual-photo-thumb-row already claims left@64 for the camera
+   path's photo thumb, so this stack starts at 112 to never collide with it on that path). Portrait
+   is untouched (this whole block is landscape-only) -- keeps v3's placement, which already reads
+   correctly there. */
+@media (orientation: landscape) {
+  #bearing-dial-unknown-btn {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 112px);
+    left: 16px;
+    z-index: 5;
+    margin: 0;
+  }
+  #manual-activity-btn {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 152px);
+    left: 16px;
+    z-index: 5;
+    margin: 0;
+  }
+  /* ~20% smaller so the row (and its +/- touch targets) sit in a narrower band clear of the
+     left/right control clusters instead of spanning the full width -- scaled from its own bottom
+     edge (not center) so the shrink only reclaims space ABOVE the row (more clearance from the
+     dial/the new left stack above it), not below (where it's already flush with the panel's own
+     bottom padding). */
+  #manual-log-step .whale-count-row {
+    transform: scale(0.8);
+    transform-origin: 50% 100%;
+  }
+}
+
 .manual-menu-btn {
   background: rgba(255, 152, 0, 0.9);
   color: #000000;
@@ -1823,36 +1861,23 @@ button.camera-status.secondary {
   }
 }
 
-/* Item 90 landscape fix, v2: v1 (above history/commit only, not in this file any more) gave
-   ACTIVITY its own CSS Grid cell alongside .whale-count-row as a sibling grid column -- that
-   squeezed the whale row's own 4-equal-flex-1 children into a narrower cell than before, and on
-   device this shifted the CALF column far enough that its own "+" landed under the BearingDial
-   (higher z-index, so the tap never reached it -- confirmed by an actual on-device report, not
-   just theory). Fix: ACTIVITY is now a genuine flex CHILD of .whale-count-row itself (see
-   index.html -- physically moved into the DOM between the greys/calves columns), so the squeeze
-   is distributed evenly across all 4 whale-count-col children (ordinary flexbox behavior for
-   flex:1 siblings alongside a new flex:0-auto item) rather than concentrated into a narrower cell
-   on one side -- the row's own LEFT/RIGHT bounds (where unknown/whites sit) don't move at all,
-   only the internal boundaries between columns shift slightly inward. Portrait keeps its original
-   look (ACTIVITY as its own full-width row, ABOVE the whale images, same as SET DATE/TIME's own
-   row) via flex-wrap+order immediately below; the landscape override further down just lets it
-   drop inline instead, in its natural DOM position between greys and calves. (flex-wrap:wrap
-   itself lives on .whale-count-row's own base rule further down, alongside its other properties.) */
+/* Item 90 landscape fix, v3 (portrait base layout): v1 gave ACTIVITY its own grid cell beside
+   .whale-count-row (squeezed the row, landed CALF's "+" under the dial); v2 nested it INSIDE
+   .whale-count-row as a flex child (fixed the squeeze, but the button rendered at "way too large"
+   a size fighting the whale columns for width, per direct on-device feedback). v3 drops it out of
+   the bottom panel/whale row entirely -- it's the third item in .bearing-dial-wrap's own centered
+   column (dial ring, then "Unknown Direction", then this), right below it, reusing that stack's
+   existing gap:10px spacing. Sized like its new sibling #bearing-dial-unknown-btn (button.
+   secondary's own pill shape, just smaller padding/font) rather than a full-width panel control --
+   "normal sized", not a whole row. This placement is what PORTRAIT actually uses (confirmed fine
+   on device -- plenty of vertical room there); v4 (see the landscape media query right above
+   .bearing-dial-unknown-btn's own base rule) pulls both this button and Unknown Direction OUT of
+   this centered column in LANDSCAPE specifically, since the taller column still reached down over
+   the whale artwork there. */
 .manual-activity-btn {
-  order: -1;
-  flex: 1 0 100%;
-  margin: 0 0 8px;
-}
-
-@media (orientation: landscape) {
-  #manual-log-step .whale-count-row {
-    flex-wrap: nowrap;
-  }
-  #manual-log-step .manual-activity-btn {
-    order: 0;
-    flex: 0 0 auto;
-    margin: 0 4px;
-  }
+  pointer-events: auto;
+  font-size: 0.75rem;
+  padding: 6px 14px;
 }
 
 /* Item 60: mirrors .manual-locate-row's own position (same top offset, opposite side) -- the
@@ -1938,12 +1963,9 @@ button.camera-status.secondary {
 /* WhaleCountControls.kt: each whale image IS the button, a bare "+" above and "−" below (both a
    real 44px touch target despite the small glyph), the running count overlaid on the artwork
    itself -- no card/box around any of it, unlike a generic stepper control. Order (Unknown/Grey/
-   Calf/White) matches WhaleCountRow's own left-to-right order exactly. flex-wrap here is item 90's
-   own addition (see that rule's comment above) -- lets #manual-activity-btn, now a genuine child of
-   this row, force itself onto its own leading line in portrait via flex-basis:100%. */
+   Calf/White) matches WhaleCountRow's own left-to-right order exactly. */
 .whale-count-row {
   display: flex;
-  flex-wrap: wrap;
   gap: 4px;
 }
 

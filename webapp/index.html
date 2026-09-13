@@ -979,6 +979,20 @@
             </svg>
           </div>
           <button id="bearing-dial-unknown-btn" class="secondary bearing-dial-unknown-btn" type="button">Unknown Direction</button>
+
+          <!-- Item 90 landscape fix v3: moved here (a third item in this already-centered,
+               already-above-the-panel column, right below "Unknown Direction") after v2's
+               placement inside .whale-count-row rendered "way too large" on device -- see
+               .manual-activity-btn's own CSS comment for the full history. Opens
+               #activity-picker-modal below. Optional -- a sighting can be submitted with no
+               activities selected at all, same as travel direction already is. Badge shows a
+               count whenever any are selected; hidden (not "0") otherwise, matching the
+               queue-banner's own count-badge convention elsewhere in this app. Shared between both
+               entry points into this screen (camera-with-photo and plain Report Manually, see item
+               60) -- one button, one modal, no separate copy for each. -->
+          <button id="manual-activity-btn" class="secondary manual-activity-btn" type="button">
+            🐋 ACTIVITY<span id="manual-activity-badge" class="manual-activity-badge" hidden></span>
+          </button>
         </div>
 
         <!-- Item 39: on-screen counterpart to item 37's console.log diagnostics -- a phone has no
@@ -1048,22 +1062,6 @@
               </div>
               <button class="whale-count-dec outlined-text" type="button">−</button>
             </div>
-
-            <!-- Item 90 landscape fix v2: physically nested here (between greys/calves, "the gap
-                 at the centre of the whale row") rather than as a sibling row above -- see
-                 .manual-activity-btn's own CSS comment for why. Opens #activity-picker-modal
-                 below. Optional -- a sighting can be submitted with no activities selected at
-                 all, same as travel direction already is. Badge shows a count whenever any are
-                 selected; hidden (not "0") otherwise, matching the queue-banner's own count-badge
-                 convention elsewhere in this app. Shared between both entry points into this
-                 screen (camera-with-photo and plain Report Manually, see item 60) -- one button,
-                 one modal, no separate copy for each. initWhaleCountWiring/resetWhaleCountUi
-                 (submit-view.js) only ever query `.whale-count-col`, so this sibling doesn't
-                 confuse that wiring. -->
-            <button id="manual-activity-btn" class="secondary manual-activity-btn" type="button">
-              🐋 ACTIVITY<span id="manual-activity-badge" class="manual-activity-badge" hidden></span>
-            </button>
-
             <div class="whale-count-col" data-count="calves">
               <button class="whale-count-inc outlined-text" type="button">+</button>
               <div class="whale-count-art">
