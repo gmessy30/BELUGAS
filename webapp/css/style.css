@@ -2077,19 +2077,27 @@ button.secondary {
 /* Item 81: no `bottom`, no --presence-banner-height, no position:absolute of its own anymore --
    this is now a flex child of .map-top-controls (index.html), which is what actually anchors the
    whole area to the top and reserves the space above the banner (see that class's own comment).
-   flex:1/min-height:0 is what makes it take exactly whatever room the wrapper's fixed bottom
-   inset leaves after the VERIFIED ONLY/FAB stack's own height, whatever that turns out to be;
-   overflow-y:auto is the scroll fallback for real content taller than even that. align-self:
-   stretch spans the wrapper's full width in portrait ("full width" per the request) --
+   align-self:stretch spans the wrapper's full width in portrait ("full width" per the request) --
    overridden to a fixed ~60%, right-aligned, in landscape just below. Same rule covers the
    collapsed (minimized) player bar too -- it's the exact same element (map-view.js's
-   updatePlaybackPanelUi), just with #playback-full-controls hidden inside it. */
+   updatePlaybackPanelUi), just with #playback-full-controls hidden inside it. Item 83c changed
+   the HEIGHT behavior specifically (flex:1 -> flex:0 1 auto) -- see that rule's own comment. */
+/* Item 83c: was flex:1 (always fills whatever room the wrapper leaves after the top-right stack,
+   however much that is), which made the panel a near-full-height opaque slab covering most of
+   the map underneath -- flex:0 1 auto sizes it to its own CONTENT instead (natural height when
+   there's room; still ALLOWED to shrink -- the `1` -- if the wrapper's own remaining space is
+   tighter than that, with overflow-y:auto as the scroll fallback for whatever doesn't fit even
+   then). Background dropped from ~92% to 85% opacity plus a backdrop blur (both prefixed and
+   unprefixed; a plain no-op wherever backdrop-filter isn't supported, "if supported" per the
+   request needs nothing beyond that) so the map stays visibly present behind it while choosing,
+   rather than being fully hidden under a near-opaque card. */
 .playback-panel {
   align-self: stretch;
-  flex: 1;
-  min-height: 0;
+  flex: 0 1 auto;
   overflow-y: auto;
-  background: rgba(20, 30, 30, 0.92);
+  background: rgba(20, 30, 30, 0.85);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   border-radius: 14px;
   padding: 12px 14px;
   color: #ffffff;

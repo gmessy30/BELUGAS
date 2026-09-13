@@ -100,6 +100,16 @@ reloads instead of returning), so this is a rough edge, not a dead end.
 
 ### Open items / not yet done
 
+- **Native-side BUG (item 83a, not yet fixed there)**: `PlaybackRange.kt`'s `QuickRange.resolve()`
+  has the identical bug the webapp just fixed in `map-view.js`'s `recomputePlaybackRange` —
+  `start.coerceIn(dataMinMs, dataMaxMs)`/`end.coerceIn(...)` clamp TODAY/YESTERDAY/THIS_SEASON's
+  own well-defined calendar boundaries against the loaded sighting data's own min/max, which
+  silently pulls TODAY's start backward into an earlier window whenever nothing has been observed
+  yet today (the most recent sighting overall landing on yesterday's data clamps TODAY's start
+  down to yesterday's timestamp). This is a real, faithfully-ported bug, not a web-only
+  divergence — worth fixing in `PlaybackRange.kt` too: only clamp ALL_TIME/CUSTOM to the data
+  range; leave TODAY/YESTERDAY/THIS_SEASON's calendar boundaries unclamped (an empty result is
+  correct when nothing's been observed in that window yet).
 - Web Push via FCM: needs the real Firebase Web config + VAPID key pasted into
   `webapp/js/firebase-config.js` (currently placeholder values) before it can work at all.
 - Self-service re-verification by email (deferred to after the Sunday deadline).

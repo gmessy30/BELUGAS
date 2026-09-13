@@ -28,6 +28,18 @@ let mapVerifiedOnly = false;
 // NOTE: .map-canvas does not exist in the current code -- item 75 (which introduced it) was
 // fully reverted (see fdab633). The Leaflet map container is #map-view itself again, so "inside
 // .map-canvas" below is checked against #map-view, the closest live equivalent.
+// Item 83a: readable Anchorage-local timestamp (plus the raw epoch ms, for exact comparison)
+// used by the date-range debug lines below -- so a reported range can be read directly off the
+// phone instead of guessed at from raw milliseconds.
+function fmtAnchorageTime(ms) {
+  if (ms == null) return "—";
+  const formatted = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Anchorage", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+  }).format(new Date(ms));
+  return `${formatted} (${ms})`;
+}
+
 function renderMapDebugOverlay() {
   const el = document.getElementById("map-debug-overlay");
   if (!el) return;
@@ -54,7 +66,13 @@ function renderMapDebugOverlay() {
     `computed display: ${getComputedStyle(fab).display}`,
     "--- viewport / map ---",
     `window.innerHeight: ${window.innerHeight}`,
-    `#map-view rect: ${fmt(mapView.getBoundingClientRect())}`
+    `#map-view rect: ${fmt(mapView.getBoundingClientRect())}`,
+    "--- item 83a: time-lapse date range ---",
+    `panel open: ${playbackIsOpen}`,
+    `selected quick range: ${playbackSelectedQuickRange}`,
+    `now: ${fmtAnchorageTime(Date.now())}`,
+    `computed range start: ${fmtAnchorageTime(playbackRangeStart)}`,
+    `computed range end: ${fmtAnchorageTime(playbackRangeEnd)}`
   ].join("\n");
 }
 
@@ -455,6 +473,64 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+// Item 83b: persists the panel's own date range/fade window/speed choices across both a close
+// (see closePlaybackPanel's own comment on why it no longer resets these) and a real page reload.
+// DELIBERATE DEVIATION FROM NATIVE: SightingsMapScreen's own playback state is `remember`ed --
+// it's genuinely gone the instant the screen (and its Composable state) is torn down, same as any
+// other `remember`. This web app's Map view is never torn down at all (a single persistent .view
+// toggled hidden/visible, not a real navigation destroy/recreate), so simply NOT resetting on
+// close already made these choices outlive one open/close cycle -- localStorage extends that the
+// one further step to outliving a real reload too, matching "the panel is a control surface, not
+// a modal" rather than inventing a native equivalent that doesn't exist.
+const PLAYBACK_SETTINGS_STORAGE_KEY = "belugas_playback_settings";
+
+function loadPlaybackSettings() {
+  try {
+    const raw = localStorage.getItem(PLAYBACK_SETTINGS_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (QUICK_RANGES.some((r) => r.key === parsed.quickRange)) playbackSelectedQuickRange = parsed.quickRange;
+    if (typeof parsed.customFromMs === "number") playbackCustomFromMs = parsed.customFromMs;
+    if (typeof parsed.customToMs === "number") playbackCustomToMs = parsed.customToMs;
+    if (FADE_WINDOW_OPTIONS.some((f) => f.key === parsed.fadeWindow)) playbackFadeWindowKey = parsed.fadeWindow;
+    if (PLAYBACK_SPEED_OPTIONS.includes(parsed.speed)) playbackSpeedMultiplier = parsed.speed;
+  } catch (e) {
+    console.warn("PLAYBACK_SETTINGS_LOAD_ERROR", e);
+  }
+}
+
+function savePlaybackSettings() {
+  try {
+    localStorage.setItem(PLAYBACK_SETTINGS_STORAGE_KEY, JSON.stringify({
+      quickRange: playbackSelectedQuickRange,
+      customFromMs: playbackCustomFromMs,
+      customToMs: playbackCustomToMs,
+      fadeWindow: playbackFadeWindowKey,
+      speed: playbackSpeedMultiplier
+    }));
+  } catch (e) {
+    console.warn("PLAYBACK_SETTINGS_SAVE_ERROR", e);
+  }
+}
+
+// Item 83b: keeps the custom from/to <input type=date> fields (and whether that row is even
+// shown at all) in sync with whatever playbackSelectedQuickRange/playbackCustomFromMs/ToMs
+// actually are -- called from renderDateRangeChips itself so both the chip-tap path and the
+// startup/restore-from-storage path stay correct with no separate wiring needed for either.
+function syncCustomDateRangeUi() {
+  const isCustom = playbackSelectedQuickRange === "CUSTOM";
+  document.getElementById("date-range-custom").hidden = !isCustom;
+  document.getElementById("date-range-from-input").value =
+    playbackCustomFromMs != null ? formatEpochMsForDateInput(playbackCustomFromMs) : "";
+  document.getElementById("date-range-to-input").value =
+    playbackCustomToMs != null ? formatEpochMsForDateInput(playbackCustomToMs) : "";
+}
+
+function formatEpochMsForDateInput(epochMs) {
+  const [y, m, d] = anchorageDateParts(epochMs);
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
 function initPlaybackPanel() {
   document.getElementById("playback-fab-btn").addEventListener("click", openPlaybackPanel);
   document.getElementById("playback-close-btn").addEventListener("click", () => navigateBack());
@@ -475,13 +551,16 @@ function initPlaybackPanel() {
 
   document.getElementById("date-range-from-input").addEventListener("change", (event) => {
     playbackCustomFromMs = event.target.value ? parseDateInputToStartOfDayMs(event.target.value) : null;
+    savePlaybackSettings();
     onPlaybackFilterChanged();
   });
   document.getElementById("date-range-to-input").addEventListener("change", (event) => {
     playbackCustomToMs = event.target.value ? (parseDateInputToStartOfDayMs(event.target.value) + DAY_MS - 1) : null;
+    savePlaybackSettings();
     onPlaybackFilterChanged();
   });
 
+  loadPlaybackSettings(); // item 83b: restore the persisted date range/fade window/speed BEFORE the first render
   renderDateRangeChips();
   renderFadeWindowChips();
   renderPlaybackSpeedChips();
@@ -504,25 +583,22 @@ function openPlaybackPanel() {
   pushNavLayer("playback-panel", closePlaybackPanel);
 }
 
+// Item 83b BUG FIX: this used to reset every setting (quick range, custom dates, fade window,
+// speed) back to defaults on close -- reasoned at the time as matching native's own `remember`ed
+// state getting torn down alongside the screen itself. But this web app's Map view is never
+// actually torn down (a persistent .view, just hidden/shown), so that reset had no real native
+// equivalent to justify it -- it just made the panel behave like a modal dialog you configure
+// fresh every time, rather than a control surface whose settings stick until deliberately
+// changed. Closing now only stops playback and hides the panel; every setting is left exactly as
+// chosen (and persisted to localStorage -- see loadPlaybackSettings/savePlaybackSettings above --
+// so it survives a reload too, not just a close/reopen within one session). The map itself still
+// reverts to showing everything unfiltered the instant the panel closes regardless (drawMapMarkers'
+// own playbackIsOpen check), same as before -- only the panel's REMEMBERED settings changed here.
 function closePlaybackPanel() {
   stopPlaybackTicker();
   playbackIsPlaying = false;
   playbackIsOpen = false;
   document.getElementById("playback-panel").hidden = true;
-  // Reset to defaults -- native's own playback state is `remember`ed per screen-entry, so this
-  // app's persistent (never-torn-down) Map view resets it here instead, at the equivalent
-  // "leaving the feature" boundary.
-  playbackSelectedQuickRange = "ALL_TIME";
-  playbackCustomFromMs = null;
-  playbackCustomToMs = null;
-  playbackFadeWindowKey = "ALL";
-  playbackSpeedMultiplier = 1;
-  document.getElementById("date-range-from-input").value = "";
-  document.getElementById("date-range-to-input").value = "";
-  document.getElementById("date-range-custom").hidden = true;
-  renderDateRangeChips();
-  renderFadeWindowChips();
-  renderPlaybackSpeedChips();
   drawMapMarkers();
 }
 
@@ -548,9 +624,26 @@ function recomputePlaybackRange() {
     [start, end] = resolveQuickRange(playbackSelectedQuickRange, dataMinMs, dataMaxMs, nowMs);
   }
 
-  start = clamp(start, dataMinMs, dataMaxMs);
-  end = clamp(end, dataMinMs, dataMaxMs);
-  if (end <= start) end = Math.min(start + 1000, dataMaxMs);
+  // BUG FIX (item 83a): the actual reported cause of "TODAY behaves like last 24h" -- clamping
+  // start/end to the loaded data's own min/max is only meaningful for ALL_TIME/CUSTOM (where the
+  // window is otherwise unbounded or user-typed and could extend well past any real data).
+  // TODAY/YESTERDAY/THIS_SEASON already resolve to well-defined ABSOLUTE calendar boundaries that
+  // must not be adjusted by what data happens to exist. Clamping them anyway (this was a faithful
+  // port of native's own PlaybackRange.kt QuickRange.resolve, which has the identical
+  // start.coerceIn(dataMinMs, dataMaxMs) call -- a real bug there too, not a web-only issue, see
+  // CLAUDE.md's open items) silently pulled TODAY's start backward into an EARLIER window
+  // whenever there was no data yet inside the requested one: with no sightings logged yet today,
+  // dataMaxMs (the most recent sighting overall) lands on yesterday's data, and
+  // coerceIn/clamp(todayMidnight, dataMinMs, dataMaxMs=yesterday) clamps start DOWN to
+  // yesterday's own timestamp -- exactly the reported symptom. Only ALL_TIME/CUSTOM get the data
+  // clamp now; calendar-boundary ranges are used exactly as resolved. An empty (zero-sighting)
+  // result is the CORRECT outcome when nothing has been observed in that window yet, not
+  // something to paper over by silently substituting a different window.
+  if (playbackSelectedQuickRange === "ALL_TIME" || playbackSelectedQuickRange === "CUSTOM") {
+    start = clamp(start, dataMinMs, dataMaxMs);
+    end = clamp(end, dataMinMs, dataMaxMs);
+  }
+  if (end <= start) end = start + 1000;
 
   playbackRangeStart = start;
   playbackRangeEnd = end;
@@ -648,12 +741,13 @@ function renderDateRangeChips() {
     chip.textContent = r.label;
     chip.addEventListener("click", () => {
       playbackSelectedQuickRange = r.key;
-      document.getElementById("date-range-custom").hidden = r.key !== "CUSTOM";
       renderDateRangeChips();
+      savePlaybackSettings();
       onPlaybackFilterChanged();
     });
     container.appendChild(chip);
   });
+  syncCustomDateRangeUi();
 }
 
 function renderFadeWindowChips() {
@@ -667,6 +761,7 @@ function renderFadeWindowChips() {
     chip.addEventListener("click", () => {
       playbackFadeWindowKey = f.key;
       renderFadeWindowChips();
+      savePlaybackSettings();
       drawMapMarkers(true);
     });
     container.appendChild(chip);
@@ -684,6 +779,7 @@ function renderPlaybackSpeedChips() {
     chip.addEventListener("click", () => {
       playbackSpeedMultiplier = speed;
       renderPlaybackSpeedChips();
+      savePlaybackSettings();
     });
     container.appendChild(chip);
   });
