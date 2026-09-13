@@ -19,7 +19,11 @@ let mapVerifiedOnly = false;
 function initMap() {
   if (mapInstance) return;
 
-  mapInstance = L.map("map-view", { zoomControl: true }).setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
+  // Item 75: "map-canvas" (was "map-view") -- Leaflet needs a dedicated element it fully owns
+  // (its own tile/overlay/marker panes become direct children of whatever's passed here), which
+  // is now the flex-item map area INSIDE #map-view, not #map-view itself -- see index.html's own
+  // comment on why (the presence banner is a real flex sibling of this now, not an overlay).
+  mapInstance = L.map("map-canvas", { zoomControl: true }).setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -433,8 +437,11 @@ function openPlaybackPanel() {
   playbackIsMinimized = false;
   document.getElementById("playback-panel").hidden = false;
   // Item 74: frees up more of a short landscape viewport for the panel itself -- a no-op in
-  // portrait (style.css's own .compact rule is landscape-only).
+  // portrait (style.css's own .compact rule is landscape-only). Item 75: this changes
+  // .map-canvas's own real flex height (the banner is a sibling of it, not an overlay anymore),
+  // so Leaflet needs telling -- see the invalidateMapSize() call right after it.
   setPresenceBannerCompact(true);
+  requestAnimationFrame(invalidateMapSize);
   updatePlaybackPanelUi();
   recomputePlaybackRange();
   playbackTimeMs = playbackRangeStart; // matches native: opening the panel resets the scrub to the range start
@@ -449,6 +456,7 @@ function closePlaybackPanel() {
   playbackIsOpen = false;
   document.getElementById("playback-panel").hidden = true;
   setPresenceBannerCompact(false);
+  requestAnimationFrame(invalidateMapSize);
   // Reset to defaults -- native's own playback state is `remember`ed per screen-entry, so this
   // app's persistent (never-torn-down) Map view resets it here instead, at the equivalent
   // "leaving the feature" boundary.

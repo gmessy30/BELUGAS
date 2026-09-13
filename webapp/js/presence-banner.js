@@ -12,18 +12,22 @@
 //
 // Hidden entirely while the Report tab (camera/logging) is showing (app.js's switchTab) --
 // matches App.kt's showPresenceBanner excluding CAPTURE/PHOTO_LOGGING/MANUAL_LOGGING/
-// ACKNOWLEDGEMENT_GATE. Otherwise it's a fixed bottom overlay above Map/List/the menu/About/
-// Resources/News Feed/Alerts, same as native drawing it in the same Box as whatever screen is
-// current.
+// ACKNOWLEDGEMENT_GATE. Otherwise it's a fixed bottom overlay above the menu/About/Resources/
+// News Feed/Alerts/Share, same as native drawing it in the same Box as whatever screen is
+// current -- native reserves bottom padding on every AppBackground screen equal to the banner's
+// own measured height (LocalBottomContentInset) so it never covers their bottommost content;
+// this app never reproduced that for those screens (flagged as a known simplification, not an
+// oversight -- "other pages can stay as-is" per item 75).
 //
-// Item 67b: native reserves bottom padding on every AppBackground screen equal to the banner's
-// own measured height (LocalBottomContentInset) so it never covers their bottommost content --
-// this now does the same via --presence-banner-height (see initPresenceBannerHeightTracking/
-// updatePresenceBannerHeightVar below), a CSS custom property every bottom-anchored control folds
-// into its own offset (Map's playback FAB/panel and Leaflet's own attribution corner, List's own
-// bottom padding). Previously flagged as a known simplification/not reproduced at all -- Map's
-// playback controls actually being covered by the banner is what made that gap real rather than
-// theoretical.
+// Map and List are the exception, and have been through two failed measured-offset attempts
+// (67b's --presence-banner-height CSS var, 74's landscape max-height tweak) before item 75:
+// both looked correct in source and both still failed on a real device (the playback FAB fully
+// hidden in portrait, mostly hidden in landscape; the open panel's own bottom cut off under the
+// banner in landscape). Item 75 replaces measuring entirely -- see
+// presenceBannerInFlowContainerId/updatePresenceBannerParent below -- by making the banner a
+// genuine flex sibling below #map-canvas/.list-canvas whenever Map or List is the topmost
+// screen, so its own bottom edge (and everything anchored to it) sits above the banner BY
+// CONSTRUCTION, no measurement of anything involved.
 let presenceBannerCards = [];
 let presenceBannerCurrentIndex = 0;
 let presenceBannerOrderKey = "";
@@ -48,40 +52,75 @@ const PRESENCE_BANNER_OVERLAY_IDS = [
 // (PRESENCE_BANNER_OVERLAY_IDS) sit on top of whichever tab and are themselves valid
 // banner-visible screens regardless of what's hidden under them (matches App.kt's
 // showPresenceBanner exclusion: CAPTURE/PHOTO_LOGGING/MANUAL_LOGGING/ACKNOWLEDGEMENT_GATE only).
+function isAnyPresenceBannerOverlayOpen() {
+  return PRESENCE_BANNER_OVERLAY_IDS.some((id) => !document.getElementById(id).hidden);
+}
+
 function isReportScreenShowing() {
-  const anyOverlayOpen = PRESENCE_BANNER_OVERLAY_IDS.some((id) => !document.getElementById(id).hidden);
-  if (anyOverlayOpen) return false;
+  if (isAnyPresenceBannerOverlayOpen()) return false;
   return !document.getElementById("submit-view").hidden;
 }
 
-// Item 67b: --presence-banner-height on documentElement, matching native's
-// LocalBottomContentInset -- 0px whenever the banner is actually hidden (a ResizeObserver alone
-// isn't guaranteed to fire promptly, or at all, for a display:none transition, the same reasoning
-// item 60's own removed review-panel-height tracking documented), the banner's real measured
-// height otherwise. Every bottom-anchored control that could otherwise sit under this fixed,
-// high-z-index (970) banner folds this into its own bottom offset (style.css).
-function updatePresenceBannerHeightVar() {
-  const banner = document.getElementById("presence-banner");
-  const height = banner.hidden ? 0 : banner.getBoundingClientRect().height;
-  document.documentElement.style.setProperty("--presence-banner-height", `${Math.ceil(height)}px`);
+// Item 75: which element the banner should be reparented INTO right now, or null if it should
+// sit back at its original position (document.body) as a plain position:fixed overlay. Only Map
+// and List ever return a container here -- every other topmost screen (an overlay page, the
+// menu, or the Report tab) keeps the original fixed-overlay behavior untouched, matching "other
+// pages can stay as-is."
+//
+// Explicitly re-checks isAnyPresenceBannerOverlayOpen() here, not just isReportScreenShowing():
+// getActiveTabName() only looks at which .view is un-hidden underneath, with no idea whether an
+// overlay (About, Menu, Resources, ...) is currently drawn on top of it. isReportScreenShowing()
+// deliberately returns false in that case (the banner must still SHOW, unlike over the Report
+// tab) -- but showing it doesn't mean reparenting it into the now-visually-covered map/list
+// canvas is safe: those overlays' own z-index (900-960) sits BELOW the fixed banner's 970, so a
+// banner still living at document.body renders correctly above them same as always, but one
+// moved inside #map-canvas/.list-canvas would be trapped under that container's own stacking
+// context and disappear behind the overlay instead. So: overlay open -> stay fixed, full stop.
+function presenceBannerInFlowContainerId() {
+  if (isReportScreenShowing() || isAnyPresenceBannerOverlayOpen()) return null;
+  const activeTab = getActiveTabName();
+  if (activeTab === "map") return "map-canvas";
+  if (activeTab === "list") return "list-canvas";
+  return null;
 }
 
-// ResizeObserver alone covers every LIVE size change while the banner stays visible (a warnings
-// line appearing, the multi-card dot row toggling) -- observing #presence-banner itself, not
-// -main, since -dots is -main's own sibling and both contribute to the banner's own total height.
-function initPresenceBannerHeightTracking() {
-  if (typeof ResizeObserver === "undefined") return;
-  const observer = new ResizeObserver(updatePresenceBannerHeightVar);
-  observer.observe(document.getElementById("presence-banner"));
+// Moves the banner element itself (not a clone -- appendChild on a node already in the DOM
+// relocates it, keeping every event listener/bound reference intact) to sit as the last flex
+// child of #map-canvas/.list-canvas, or back to <body> (its original position:fixed home) once
+// neither applies. The .in-flow class (style.css) is what actually swaps its own CSS from fixed-
+// overlay to a plain flex sibling; this function just decides which one should be true right now
+// and moves the DOM node to match.
+function updatePresenceBannerParent() {
+  const banner = document.getElementById("presence-banner");
+  const targetId = presenceBannerInFlowContainerId();
+  const target = targetId ? document.getElementById(targetId) : null;
+
+  if (target) {
+    if (banner.parentElement !== target) target.appendChild(banner);
+    banner.classList.add("in-flow");
+  } else {
+    if (banner.parentElement !== document.body) document.body.appendChild(banner);
+    banner.classList.remove("in-flow");
+  }
+
+  // Map's own flex-item share of the screen (#map-canvas) changes size whenever the banner
+  // joins/leaves it as a sibling, or flips hidden while already there (a routine presence-state
+  // refresh) -- Leaflet has no way to notice that on its own, unlike a plain CSS reflow. A no-op
+  // call whenever nothing actually changed is harmless (Leaflet's own invalidateSize() is cheap),
+  // so this doesn't try to track whether the size genuinely changed since last time.
+  if (targetId === "map-canvas" && typeof invalidateMapSize === "function") {
+    requestAnimationFrame(invalidateMapSize);
+  }
 }
 
 // Item 74: called from map-view.js while the Map's playback panel is open/closes, on a short
 // landscape viewport where every bit of vertical room matters -- collapses the banner to one
-// compact line (style.css's own .compact rule, landscape-only) so its measured height shrinks,
-// which the ResizeObserver above already picks up and propagates through
-// --presence-banner-height automatically -- no separate re-measure call needed here. A no-op in
-// portrait (or anywhere else the class has no matching CSS rule), so this is safe to call
-// unconditionally regardless of orientation/screen.
+// compact line (style.css's own .compact rule, landscape-only) so its real height shrinks.
+// Since item 75 made the banner a genuine flex sibling of #map-canvas while Map is showing,
+// that's an immediate, live CSS reflow giving .map-canvas (and the playback panel/FAB inside it)
+// back that same space -- no separate propagation step needed. A no-op in portrait (or anywhere
+// else the class has no matching CSS rule), so this is safe to call unconditionally regardless
+// of orientation/screen.
 function setPresenceBannerCompact(isCompact) {
   document.getElementById("presence-banner").classList.toggle("compact", isCompact);
 }
@@ -91,7 +130,6 @@ function initPresenceBanner() {
 
   onPresenceStateChanged(rebuildPresenceBannerCards);
   rebuildPresenceBannerCards();
-  initPresenceBannerHeightTracking();
 
   // Rather than chasing down every place that shows/hides the menu or a full-screen page and
   // pairing it with a manual refresh call (the exact kind of pairing that just drifted out of
@@ -118,8 +156,7 @@ function handlePresenceBannerTap() {
   const card = presenceBannerCards[safeIndex];
 
   if (card && card.status === PRESENCE_RED) {
-    const anyOverlayOpen = PRESENCE_BANNER_OVERLAY_IDS.some((id) => !document.getElementById(id).hidden);
-    if (getActiveTabName() === "map" && !anyOverlayOpen) {
+    if (getActiveTabName() === "map" && !isAnyPresenceBannerOverlayOpen()) {
       return; // Already looking at the map -- nothing to do.
     }
     const previousTab = getActiveTabName();
@@ -201,18 +238,17 @@ function rebuildPresenceBannerCards() {
 
 function renderPresenceBannerCard() {
   const banner = document.getElementById("presence-banner");
+  // Item 75: keeps the banner correctly parented (in-flow under Map/List, or back at its
+  // original fixed-overlay home everywhere else) regardless of whether it ends up hidden or
+  // shown below -- so it's already in the right place the instant a card actually exists, with
+  // no separate reparent-on-first-show step needed.
+  updatePresenceBannerParent();
 
   if (isReportScreenShowing() || presenceBannerCards.length === 0) {
     banner.hidden = true;
-    updatePresenceBannerHeightVar();
     return;
   }
   banner.hidden = false;
-  // Belt-and-suspenders alongside the ResizeObserver: a hidden-to-visible transition (exactly
-  // what just happened) is the one case it isn't guaranteed to fire promptly/at all for -- one
-  // rAF after unhiding, not the same tick, since the browser hasn't computed the real box yet at
-  // the moment `hidden` is cleared.
-  requestAnimationFrame(updatePresenceBannerHeightVar);
 
   const safeIndex = Math.min(presenceBannerCurrentIndex, presenceBannerCards.length - 1);
   const card = presenceBannerCards[safeIndex];

@@ -23,12 +23,6 @@
   --dark-card-bg: #1E1E1E;
   --dark-card-border: #333333;
   --dark-card-alt-bg: #2A2A2A;
-
-  /* Item 67b: kept updated live by presence-banner.js's updatePresenceBannerHeightVar (0 whenever
-     the banner is actually hidden) -- matches native's LocalBottomContentInset. Defaulted here so
-     every bottom-anchored control below has a real value (not an unresolved var()) before that
-     script's first run, and via var()'s own fallback wherever JS hasn't loaded at all. */
-  --presence-banner-height: 0px;
 }
 
 * {
@@ -137,11 +131,32 @@ main {
    now also attempts fullscreen (orientation-lock.js's lockFullscreenForMapTab), and needs the
    same iOS Safari fallback (no real fullscreen support there at all): 100dvh tracks the
    viewport's CURRENT size as the browser's own address bar shows/hides, instead of 100vh/.view's
-   own inset:0-derived height resolving against the LARGE (chrome-hidden-assumed) viewport size. */
+   own inset:0-derived height resolving against the LARGE (chrome-hidden-assumed) viewport size.
+   ITEM 75: also now a flex column -- .map-canvas (the actual Leaflet container) on top, with the
+   presence banner reparented in as a genuine flex sibling below it whenever Map is the topmost
+   screen (presence-banner.js's updatePresenceBannerParent). */
 #map-view {
   padding: 0;
   height: 100vh;
   height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ITEM 75: Leaflet binds to THIS element now (map-view.js's L.map("map-canvas", ...)), not
+   #map-view directly -- #map-view is the outer flex column above, .map-canvas is just the map's
+   own share of it (flex:1, whatever's left after the banner). isolation:isolate moved here from
+   .view's own copy for the same reason .view's own comment gives (Leaflet's internal pane
+   z-indexes need a stacking context of their own to stay trapped in) -- this is now the element
+   Leaflet's internal panes actually descend from. position:relative is what
+   #map-verified-toggle-btn/#playback-fab-btn/#playback-panel (moved to be its children in
+   index.html) position themselves against, so their bottom offsets resolve against the space
+   ACTUALLY left for the map, not the banner underneath it. */
+.map-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  isolation: isolate;
 }
 
 /* List gets AppBackground's real default backdrop (.mae-background, applied via HTML class) --
@@ -150,11 +165,23 @@ main {
    plain black fallback, as their own backgrounds -- neither of those goes through AppBackground
    natively either (LoggingScreen draws the real photo itself; CaptureScreen/SightingsMapScreen
    render their own full-bleed content). */
-/* Item 67b: bottom padding grows by --presence-banner-height so the banner (fixed, z-index:970)
-   never sits over the last sighting row -- #list-view's own overflow:auto scroll (.view) means
-   this just adds scrollable room rather than clipping anything. */
+/* ITEM 75: #list-view is now a flex column -- .list-canvas (the real scrolling region, moved
+   down from #list-view itself) on top, with the presence banner reparented in as a genuine flex
+   sibling below it whenever List is the topmost screen (presence-banner.js's
+   updatePresenceBannerParent). Replaces item 67b's own --presence-banner-height padding
+   addition entirely -- an in-flow sibling can't ever be covered regardless of its own real
+   height, so there's nothing left to measure or add back in. */
 #list-view {
-  padding: 12px 16px calc(24px + var(--presence-banner-height, 0px));
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.list-canvas {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px 24px;
 }
 
 #submit-view {
@@ -1090,6 +1117,23 @@ button.text-link {
   z-index: 970;
 }
 
+/* ITEM 75: reparented as a genuine flex sibling below #map-canvas/.list-canvas (see
+   presence-banner.js's updatePresenceBannerParent) whenever Map or List is the topmost screen,
+   instead of a position:fixed overlay -- two prior attempts at a MEASURED offset (67b, 74) both
+   looked correct in source and still failed on a real device, so this removes the measurement
+   entirely: an in-flow sibling can't ever be covered, full stop, regardless of what its own real
+   height turns out to be on any given device. Every other screen (Menu, About, Resources, News
+   Feed, Alerts, Share, Report tab) never gets this class and keeps the original fixed-overlay
+   rule above, unchanged. */
+.presence-banner.in-flow {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  flex-shrink: 0;
+  z-index: auto;
+}
+
 .presence-banner-main {
   display: flex;
   flex-direction: column;
@@ -1191,14 +1235,14 @@ button.text-link {
 }
 
 /* Item 74: one-line compact variant, toggled by map-view.js (setPresenceBannerCompact,
-   presence-banner.js) while the Map's playback panel is open -- gives the panel back more of a
-   short landscape viewport by shrinking the banner's own measured height, which
-   --presence-banner-height (item 67b) automatically propagates everywhere that reads it, live,
-   with no further plumbing. Landscape-only: portrait always has enough room, and this class
-   existing with no matching rule there keeps portrait's own banner untouched, exactly as before.
-   Padding shrinks, but the label itself (the actual gate-time/"next window" text) is never
-   hidden -- only the warnings line and the multi-card dot row, neither of which carry that text,
-   are. */
+   presence-banner.js) while the Map's playback panel is open -- since item 75 made the banner a
+   genuine flex sibling of #map-canvas rather than an overlay, shrinking its own real height here
+   directly gives .map-canvas (and the playback panel/FAB inside it) back that same amount of
+   flex space, live, with no separate propagation step needed. Landscape-only: portrait always
+   has enough room, and this class existing with no matching rule there keeps portrait's own
+   banner untouched, exactly as before. Padding shrinks, but the label itself (the actual
+   gate-time/"next window" text) is never hidden -- only the warnings line and the multi-card dot
+   row, neither of which carry that text, are. */
 @media (orientation: landscape) {
   .presence-banner.compact .presence-banner-main {
     padding-top: 4px;
@@ -1960,13 +2004,15 @@ button.secondary {
 
 /* --- Playback / time-lapse + date-range (SightingsMapScreen.kt's own scrub slider + quick-range
    chips, one Surface/Column natively -- ported as one panel here too, see map-view.js). --- */
-/* Item 67b: --presence-banner-height folded into the safe-area offset -- the presence banner is
-   position:fixed at z-index:970 (both of these sit at 500), so whenever it's showing it would
-   otherwise paint directly over the FAB/panel rather than just sitting near them. */
+/* ITEM 75: --presence-banner-height removed from this and the two rules below -- both now
+   position themselves against .map-canvas (their real parent as of this item, not #map-view),
+   whose own box already excludes whatever space the banner is currently taking, structurally, as
+   a flex sibling. Nothing left here to measure or add back in for the banner specifically --
+   just the device's own safe-area inset, unrelated to the banner either way. */
 .playback-fab-btn {
   position: absolute;
   right: 16px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--presence-banner-height, 0px) + 16px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
   z-index: 500;
   width: 52px;
   height: 52px;
@@ -1978,13 +2024,21 @@ button.secondary {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
+/* Item 74's own landscape max-height override (subtracting --presence-banner-height from 100dvh)
+   is gone too, superseded by this one universal rule -- max-height as a PERCENTAGE of
+   .map-canvas's own real height (its positioned ancestor) is correct in EITHER orientation
+   without needing to know anything about the banner or the viewport at all: whatever the banner
+   is currently costing has already been subtracted out of that 100% by the flex layout itself. 76px
+   covers the VERIFIED ONLY toggle's own footprint up top (60px) plus this panel's own 16px
+   bottom margin; overflow-y:auto below still scrolls internally past that for a genuinely tall
+   panel (e.g. every date-range/fade/speed chip row expanded at once on a short screen). */
 .playback-panel {
   position: absolute;
   left: 16px;
   right: 16px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--presence-banner-height, 0px) + 16px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
   z-index: 500;
-  max-height: 70vh;
+  max-height: calc(100% - 76px);
   overflow-y: auto;
   background: rgba(20, 30, 30, 0.92);
   border-radius: 14px;
@@ -1992,30 +2046,8 @@ button.secondary {
   color: #ffffff;
 }
 
-/* Item 74: 70vh (portrait's own value above, untouched -- there's always enough room there) can
-   still be taller than what's actually free on a short LANDSCAPE viewport once both the
-   VERIFIED ONLY toggle up top and the presence banner's own reserved space at the bottom are
-   subtracted -- the panel grows UPWARD from its bottom-anchored position (above), so an
-   unconstrained max-height can push its own top edge above the top toggle even though its bottom
-   edge is correctly clear of the banner. 100dvh (not vh -- the CURRENT, chrome-aware viewport
-   height, same reasoning as item 61/67a) minus the exact same three offsets the panel's own
-   `bottom` already reserves (safe-area + banner height + 16px gap), minus a further ~60px for the
-   VERIFIED ONLY button's own footprint, is the true ceiling; overflow-y:auto above still scrolls
-   internally whenever the panel's real content is taller than even that. */
-@media (orientation: landscape) {
-  .playback-panel {
-    max-height: calc(100dvh - env(safe-area-inset-bottom, 0px) - var(--presence-banner-height, 0px) - 16px - 60px);
-  }
-}
-
-/* Item 67b: Leaflet's own bottom-anchored chrome (attribution; zoom, if ever repositioned there --
-   this app's own zoom control is top-left by default, not currently affected, but nothing stops a
-   future change) gets the same reservation -- it's the map library's own UI, but still visually
-   part of this screen's bottom edge and still covered by the presence banner otherwise. No
-   !important needed: this stylesheet loads after leaflet.min.css (index.html), so an equal-
-   specificity single-class selector already wins on source order alone. */
 .leaflet-bottom {
-  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--presence-banner-height, 0px));
+  bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .playback-panel-header {
