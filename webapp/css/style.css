@@ -386,6 +386,28 @@ main {
 /* Matches AboutScreen.kt's own "← BACK" convention (Color.Yellow, bold) -- the app's real
    dismiss-this-screen idiom, reused here since this overlay has no native equivalent to copy a
    close affordance from directly. */
+/* Item 87 preview control: a small secondary tap beside the toggle to re-hear the alert sound any
+   time, not just on the moment it's switched on. .menu-overlay is a flex column with
+   align-items:flex-end -- this row is one flex item in that column, laid out internally as its
+   own tiny flex row so the preview button and the toggle's own text sit side by side rather than
+   stacking as two separate rows. */
+.menu-presence-alert-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.menu-presence-alert-preview-btn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 4px 10px;
+}
+
 .menu-close-item {
   background: none;
   border: none;
@@ -1801,38 +1823,35 @@ button.camera-status.secondary {
   }
 }
 
-/* Item 90 landscape fix: ACTIVITY (added after item 64's own fix, so it never got a landscape
-   treatment of its own) stacked as its own full-width row directly above .whale-count-row --
-   that extra row's height was enough on a short landscape viewport to push .review-bottom-panel's
-   top edge up into the vertically-centered BearingDial's drag region, landing the button dead
-   center over the ring. Rather than reusing SET DATE/TIME's own top-right fixed-position treatment
-   (no room left up there without crowding RECENTER/the photo thumb), CSS Grid puts it on the SAME
-   line as whale-count-row instead -- explicit grid-area placement means the DOM order (unchanged;
-   still ACTIVITY-before-whale-count-row, so tab order is unaffected) doesn't have to match visual
-   order. Portrait is untouched (this whole block is landscape-only) -- reported "fine as-is". */
+/* Item 90 landscape fix, v2: v1 (above history/commit only, not in this file any more) gave
+   ACTIVITY its own CSS Grid cell alongside .whale-count-row as a sibling grid column -- that
+   squeezed the whale row's own 4-equal-flex-1 children into a narrower cell than before, and on
+   device this shifted the CALF column far enough that its own "+" landed under the BearingDial
+   (higher z-index, so the tap never reached it -- confirmed by an actual on-device report, not
+   just theory). Fix: ACTIVITY is now a genuine flex CHILD of .whale-count-row itself (see
+   index.html -- physically moved into the DOM between the greys/calves columns), so the squeeze
+   is distributed evenly across all 4 whale-count-col children (ordinary flexbox behavior for
+   flex:1 siblings alongside a new flex:0-auto item) rather than concentrated into a narrower cell
+   on one side -- the row's own LEFT/RIGHT bounds (where unknown/whites sit) don't move at all,
+   only the internal boundaries between columns shift slightly inward. Portrait keeps its original
+   look (ACTIVITY as its own full-width row, ABOVE the whale images, same as SET DATE/TIME's own
+   row) via flex-wrap+order immediately below; the landscape override further down just lets it
+   drop inline instead, in its natural DOM position between greys and calves. (flex-wrap:wrap
+   itself lives on .whale-count-row's own base rule further down, alongside its other properties.) */
+.manual-activity-btn {
+  order: -1;
+  flex: 1 0 100%;
+  margin: 0 0 8px;
+}
+
 @media (orientation: landscape) {
-  #manual-log-step .review-bottom-panel {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    grid-template-areas:
-      "chip chip"
-      "counts activity"
-      "status status";
-    align-items: center;
-    column-gap: 8px;
-  }
-  #manual-log-step .chip-row {
-    grid-area: chip;
-  }
   #manual-log-step .whale-count-row {
-    grid-area: counts;
+    flex-wrap: nowrap;
   }
   #manual-log-step .manual-activity-btn {
-    grid-area: activity;
-    margin: 0;
-  }
-  #manual-log-step #manual-submit-status {
-    grid-area: status;
+    order: 0;
+    flex: 0 0 auto;
+    margin: 0 4px;
   }
 }
 
@@ -1868,14 +1887,6 @@ button.camera-status.secondary {
   display: block;
   width: fit-content;
   margin: 0 auto 4px;
-}
-
-/* Item 90: same fit-content/centered treatment as .manual-datetime-btn right above -- one of a
-   row of auxiliary per-sighting settings buttons, not a full-width control. */
-.manual-activity-btn {
-  display: block;
-  width: fit-content;
-  margin: 0 auto 8px;
 }
 
 /* Count of currently-selected activities -- hidden entirely (not shown as "0") whenever none are
@@ -1927,9 +1938,12 @@ button.camera-status.secondary {
 /* WhaleCountControls.kt: each whale image IS the button, a bare "+" above and "−" below (both a
    real 44px touch target despite the small glyph), the running count overlaid on the artwork
    itself -- no card/box around any of it, unlike a generic stepper control. Order (Unknown/Grey/
-   Calf/White) matches WhaleCountRow's own left-to-right order exactly. */
+   Calf/White) matches WhaleCountRow's own left-to-right order exactly. flex-wrap here is item 90's
+   own addition (see that rule's comment above) -- lets #manual-activity-btn, now a genuine child of
+   this row, force itself onto its own leading line in portrait via flex-basis:100%. */
 .whale-count-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 

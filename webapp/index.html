@@ -156,7 +156,10 @@
          toggle wiring. Always visible (unlike the fullscreen toggle above, this has no
          device/mode gate -- sound+vibrate+notification all degrade gracefully on their own if
          unsupported). Default ON; label/active state reflect the persisted choice. -->
-    <button id="menu-presence-alert-toggle-item" class="menu-nav-item" type="button">🔔 Sound Alerts: On</button>
+    <div class="menu-presence-alert-row">
+      <button id="menu-presence-alert-preview-btn" class="menu-presence-alert-preview-btn" type="button" aria-label="Preview alert sound">▶ preview</button>
+      <button id="menu-presence-alert-toggle-item" class="menu-nav-item" type="button">🔔 Sound Alerts: On</button>
+    </div>
 
     <!-- Ports MainMenuDrawer's own "OPEN APP TO" FilterChip row (App.kt) -- launch-screen.js.
          DEFAULT ON FIRST LAUNCH IS A DELIBERATE DEVIATION: native's own getLaunchScreen()
@@ -1026,16 +1029,6 @@
           <button id="manual-datetime-btn" class="secondary manual-datetime-btn" type="button">📅 SET DATE / TIME</button>
           <input type="datetime-local" id="manual-datetime-input" class="manual-datetime-input-hidden" tabindex="-1" aria-hidden="true">
 
-          <!-- Item 90: opens #activity-picker-modal below. Optional -- a sighting can be
-               submitted with no activities selected at all, same as travel direction already is.
-               Badge shows a count whenever any are selected; hidden (not "0") otherwise, matching
-               the queue-banner's own count-badge convention elsewhere in this app. Shared between
-               both entry points into this screen (camera-with-photo and plain Report Manually,
-               see item 60) -- one button, one modal, no separate copy for each. -->
-          <button id="manual-activity-btn" class="secondary manual-activity-btn" type="button">
-            🐋 ACTIVITY<span id="manual-activity-badge" class="manual-activity-badge" hidden></span>
-          </button>
-
           <!-- No "Whale Count" label -- native's own WhaleCountRow has no preceding Text label at
                all; the artwork speaks for itself. -->
           <div class="whale-count-row">
@@ -1055,6 +1048,22 @@
               </div>
               <button class="whale-count-dec outlined-text" type="button">−</button>
             </div>
+
+            <!-- Item 90 landscape fix v2: physically nested here (between greys/calves, "the gap
+                 at the centre of the whale row") rather than as a sibling row above -- see
+                 .manual-activity-btn's own CSS comment for why. Opens #activity-picker-modal
+                 below. Optional -- a sighting can be submitted with no activities selected at
+                 all, same as travel direction already is. Badge shows a count whenever any are
+                 selected; hidden (not "0") otherwise, matching the queue-banner's own count-badge
+                 convention elsewhere in this app. Shared between both entry points into this
+                 screen (camera-with-photo and plain Report Manually, see item 60) -- one button,
+                 one modal, no separate copy for each. initWhaleCountWiring/resetWhaleCountUi
+                 (submit-view.js) only ever query `.whale-count-col`, so this sibling doesn't
+                 confuse that wiring. -->
+            <button id="manual-activity-btn" class="secondary manual-activity-btn" type="button">
+              🐋 ACTIVITY<span id="manual-activity-badge" class="manual-activity-badge" hidden></span>
+            </button>
+
             <div class="whale-count-col" data-count="calves">
               <button class="whale-count-inc outlined-text" type="button">+</button>
               <div class="whale-count-art">

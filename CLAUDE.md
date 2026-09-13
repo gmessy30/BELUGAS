@@ -193,6 +193,31 @@ Tear down forwards when done with `adb forward --remove tcp:<local-port>` (or `-
 they otherwise persist across adb server restarts until explicitly removed or the device
 disconnects.
 
+**Rotating the device from adb (no human needed to physically turn the phone)**:
+`adb -s <serial> shell settings put system accelerometer_rotation 0` (disables auto-rotate, so the
+next line sticks instead of the phone rotating back), then `adb -s <serial> shell settings put
+system user_rotation 1` for landscape or `0` for portrait. Prefer this over asking the user to
+rotate their phone by hand, or over emulating it purely in-page — this genuinely rotates the real
+device/Chrome viewport, so real `@media (orientation: ...)` rules and real element geometry both
+respond exactly as they would for an actual user. (`Emulation.setDeviceMetricsOverride` over CDP
+can also fake a landscape viewport size for a quick check without touching the real device
+orientation, but the adb rotation above is the more faithful option when both are available.)
+
+**Reaching a specific screen** (e.g. the manual logging screen) via CDP instead of asking the user
+to navigate there by hand: call the app's own real navigation functions through `Runtime.evaluate`
+(e.g. `openManualReportFlow()` for Report Manually with no camera/GPS involved), the same way a
+real tap would — never hand-write a substitute DOM state. See "drive the app directly" above.
+
+**Actually confirming a control is tappable** (not just that its bounding rect doesn't
+mathematically overlap another element's) — dispatch real pointer events at its own computed
+center via CDP's `Input.dispatchMouseEvent` (or `element.getBoundingClientRect()` center +
+`document.elementFromPoint(x, y)` to see what element would actually receive a tap there, which is
+the more direct check: if `elementFromPoint` at a button's own center returns something other than
+that button or its own descendant, a tap there will hit the wrong thing, e.g. an overlapping
+higher-z-index element like the BearingDial). Prefer this over pure bounding-rect-overlap math,
+which can miss a real conflict (or flag a false one) whenever z-index/`pointer-events` decide the
+outcome, not just geometry.
+
 ### Open items / not yet done
 
 - **Migration not yet applied**:

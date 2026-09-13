@@ -68,21 +68,35 @@ async function loadPresenceAlertBuffers() {
   presenceAlertBuffers.yellow = yellow;
 }
 
+// Shared by the passive pointerdown arming below AND the toggle-on/preview taps (item 87
+// follow-up) -- both need the SAME "create the context once, load the buffers once" logic, but
+// the toggle/preview cases need to actually AWAIT the buffers (so an immediate play right after
+// doesn't silently no-op while the fetch/decode is still in flight), where the passive pointerdown
+// listener just fires it and moves on.
+let presenceAlertBuffersLoadingPromise = null;
+
+function ensurePresenceAlertAudioContext() {
+  if (!presenceAlertAudioContext) {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      presenceAlertAudioContext = new Ctx();
+    } catch (e) {
+      console.warn("PRESENCE_ALERT_AUDIO_CONTEXT_ERROR", e);
+      return null;
+    }
+  }
+  if (presenceAlertAudioContext.state === "suspended") presenceAlertAudioContext.resume();
+  if (!presenceAlertBuffersLoadingPromise) {
+    presenceAlertBuffersLoadingPromise = loadPresenceAlertBuffers();
+  }
+  return presenceAlertBuffersLoadingPromise;
+}
+
 function armPresenceAlertAudioContext() {
-  if (presenceAlertAudioContext) return;
   document.addEventListener(
     "pointerdown",
-    () => {
-      try {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (!Ctx) return;
-        presenceAlertAudioContext = new Ctx();
-        if (presenceAlertAudioContext.state === "suspended") presenceAlertAudioContext.resume();
-        loadPresenceAlertBuffers();
-      } catch (e) {
-        console.warn("PRESENCE_ALERT_AUDIO_CONTEXT_ERROR", e);
-      }
-    },
+    () => ensurePresenceAlertAudioContext(),
     { capture: true, once: true }
   );
 }
@@ -96,6 +110,16 @@ function playAlertSound(quiet) {
   source.buffer = buffer;
   source.connect(ctx.destination);
   source.start(0);
+}
+
+// Toggle-on and the "▶ preview" button both need this: the tap that triggers it IS a user gesture
+// (it doubles as the audio-unlock for real future alerts, per the request), but the passive
+// pointerdown listener above may not have finished decoding the clips yet by the time playAlertSound
+// would otherwise silently skip -- awaiting ensurePresenceAlertAudioContext() first makes an
+// immediate play actually audible instead of racing that in-flight decode.
+async function playAlertSoundNow(quiet) {
+  await ensurePresenceAlertAudioContext();
+  playAlertSound(quiet);
 }
 
 function vibrateForTransition(quiet) {
@@ -169,8 +193,17 @@ function initPresenceAlert() {
   if (toggleBtn) {
     updatePresenceAlertToggleUi();
     toggleBtn.addEventListener("click", () => {
-      setPresenceAlertEnabled(!isPresenceAlertEnabled());
+      const wasEnabled = isPresenceAlertEnabled();
+      setPresenceAlertEnabled(!wasEnabled);
       updatePresenceAlertToggleUi();
+      // Only on the OFF->ON flip, not every tap (an ON->OFF tap shouldn't play anything) -- this
+      // tap is also the audio-unlock gesture for real future alerts, per the request.
+      if (!wasEnabled) playAlertSoundNow(false);
     });
+  }
+
+  const previewBtn = document.getElementById("menu-presence-alert-preview-btn");
+  if (previewBtn) {
+    previewBtn.addEventListener("click", () => playAlertSoundNow(false));
   }
 }
