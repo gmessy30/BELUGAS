@@ -1635,6 +1635,33 @@ button.camera-status.secondary {
   overflow: auto;
 }
 
+/* Item 76: fixed to the viewport (not any particular .view -- this reports on Map regardless of
+   which screen happens to be topmost, e.g. while an overlay page sits on top of it), pinned to
+   the TOP of the screen rather than the bottom so it never itself competes with the very
+   bottom-anchored elements (#presence-banner, #playback-fab-btn) it's reporting the real state
+   of. z-index 9999 -- deliberately higher than every other z-index in this app (highest prior use
+   was the presence banner's own 970) so this is never the thing that's covered. pointer-events:
+   none so it never blocks interaction with whatever's underneath. */
+.map-debug-overlay {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  left: 8px;
+  right: 8px;
+  z-index: 9999;
+  margin: 0;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #00ff00;
+  font-family: monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+  max-height: 45vh;
+  overflow: auto;
+}
+
 /* Directly under the top bar, not floating at the bottom edge -- .review-bottom-panel is tall
    enough (SELF/OTHER + date/time + whale count) to fully cover anything anchored to the bottom
    of the screen instead, in either orientation. Only RECENTER now -- "Get My Location" was

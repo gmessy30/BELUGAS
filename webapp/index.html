@@ -92,6 +92,16 @@
     <div id="presence-banner-dots" class="presence-banner-dots" hidden></div>
   </div>
 
+  <!-- Item 76: on-screen diagnostics for why #presence-banner/#playback-fab-btn aren't rendering
+       as expected on Map -- same ?debug=1 pattern as items 39/47. Reports REAL measured/computed
+       DOM state (map-view.js's renderMapDebugOverlay), not source-code reasoning, so a report of
+       "the banner's invisible" can be checked against actual numbers read off the phone instead
+       of guessed at again. Off/hidden by default. Fixed at the very top of the screen (not
+       bottom, to avoid competing with the banner/FAB it's reporting on) and above everything
+       else (z-index higher than the presence banner's own 970 and every overlay page's), so it's
+       never itself the thing that's hidden. -->
+  <pre id="map-debug-overlay" class="map-debug-overlay" hidden></pre>
+
   <!-- Ports App.kt's MainMenuDrawer -- see main-menu.js's own header comment for the item-set
        reasoning. Right-aligned, vertically centered, bold uppercase white text over the teal
        backdrop, exactly like the native menu column. -->

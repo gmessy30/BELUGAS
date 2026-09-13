@@ -16,8 +16,61 @@ let mapMarkersLayer = null;
 let lastCombinedSightings = [];
 let mapVerifiedOnly = false;
 
+// Item 76: on-screen diagnostics for why #presence-banner/#playback-fab-btn aren't rendering as
+// expected on Map -- same ?debug=1 pattern as items 39/47. Reports REAL measured/computed DOM
+// state, not source-code reasoning, so a report of "the banner's invisible" can be checked
+// against actual numbers read off the phone instead of guessed at again. Polled on an interval
+// (below) rather than hooked to every individual call site that could change this -- no single
+// event reliably covers every cause (orientation change, the browser address bar showing/hiding,
+// the banner's own async re-render, a tab switch) -- negligible cost, and this whole block is
+// meant to come out once item 76 is actually resolved.
+//
+// NOTE: .map-canvas does not exist in the current code -- item 75 (which introduced it) was
+// fully reverted (see fdab633). The Leaflet map container is #map-view itself again, so "inside
+// .map-canvas" below is checked against #map-view, the closest live equivalent.
+function renderMapDebugOverlay() {
+  const el = document.getElementById("map-debug-overlay");
+  if (!el) return;
+
+  const banner = document.getElementById("presence-banner");
+  const fab = document.getElementById("playback-fab-btn");
+  const mapView = document.getElementById("map-view");
+  if (!banner || !fab || !mapView) return;
+
+  const bannerStyle = getComputedStyle(banner);
+  const fmt = (r) => `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+
+  el.textContent = [
+    "--- #presence-banner ---",
+    `parent id: ${banner.parentElement ? (banner.parentElement.id || `(no id, <${banner.parentElement.tagName.toLowerCase()}>)`) : "(detached)"}`,
+    `computed display: ${bannerStyle.display}`,
+    `computed position: ${bannerStyle.position}`,
+    `offsetHeight: ${banner.offsetHeight}`,
+    `hidden attribute present: ${banner.hasAttribute("hidden")}`,
+    `bounding rect: ${fmt(banner.getBoundingClientRect())}`,
+    `inside #map-view (Leaflet container -- .map-canvas doesn't exist post-revert): ${mapView.contains(banner)}`,
+    "--- #playback-fab-btn ---",
+    `bounding rect: ${fmt(fab.getBoundingClientRect())}`,
+    `computed display: ${getComputedStyle(fab).display}`,
+    "--- viewport / map ---",
+    `window.innerHeight: ${window.innerHeight}`,
+    `#map-view rect: ${fmt(mapView.getBoundingClientRect())}`
+  ].join("\n");
+}
+
+function initMapDebugOverlay() {
+  if (!DEBUG_MODE_ENABLED) return;
+  const el = document.getElementById("map-debug-overlay");
+  if (!el) return;
+  el.hidden = false;
+  renderMapDebugOverlay();
+  setInterval(renderMapDebugOverlay, 500);
+}
+
 function initMap() {
   if (mapInstance) return;
+
+  initMapDebugOverlay();
 
   mapInstance = L.map("map-view", { zoomControl: true }).setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
 
