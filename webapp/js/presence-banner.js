@@ -22,7 +22,6 @@
 let presenceBannerCards = [];
 let presenceBannerCurrentIndex = 0;
 let presenceBannerOrderKey = "";
-let isReportTabActive = false;
 
 // Item 45: full-screen overlays the banner (z-index 970) renders above -- if it's tapped while
 // one of these is open, that overlay has to be closed too, not just left covering the map
@@ -32,11 +31,43 @@ const PRESENCE_BANNER_OVERLAY_IDS = [
   "main-menu", "resources-page", "news-feed-page", "about-page", "alerts-page", "share-page"
 ];
 
+// Item 58 REGRESSION FIX: this used to be a manually-toggled `isReportTabActive` flag, flipped
+// only by app.js's switchTab -- correct as long as EVERY way in or out of the Report tab went
+// through switchTab, which stopped being true the moment main-menu.js's generic .menu-trigger-btn
+// listener (CaptureScreen's own in-context "≡ MENU" button, not just the header's) started
+// showing the #main-menu OVERLAY on top of the submit tab without ever calling switchTab: the flag
+// stayed stuck true, so the banner never came back once the menu -- not Camera -- was what's
+// actually on screen, and nothing was left to notice. Computed fresh from the DOM instead: the
+// banner is hidden only while the Report tab is the ACTUAL foreground screen, not merely the
+// .view underneath something else -- the menu and every other full-screen overlay
+// (PRESENCE_BANNER_OVERLAY_IDS) sit on top of whichever tab and are themselves valid
+// banner-visible screens regardless of what's hidden under them (matches App.kt's
+// showPresenceBanner exclusion: CAPTURE/PHOTO_LOGGING/MANUAL_LOGGING/ACKNOWLEDGEMENT_GATE only).
+function isReportScreenShowing() {
+  const anyOverlayOpen = PRESENCE_BANNER_OVERLAY_IDS.some((id) => !document.getElementById(id).hidden);
+  if (anyOverlayOpen) return false;
+  return !document.getElementById("submit-view").hidden;
+}
+
 function initPresenceBanner() {
   document.getElementById("presence-banner-main").addEventListener("click", handlePresenceBannerTap);
 
   onPresenceStateChanged(rebuildPresenceBannerCards);
   rebuildPresenceBannerCards();
+
+  // Rather than chasing down every place that shows/hides the menu or a full-screen page and
+  // pairing it with a manual refresh call (the exact kind of pairing that just drifted out of
+  // sync above), watch the real `hidden` attribute on every screen isReportScreenShowing reads
+  // and re-evaluate straight from live DOM state on ANY change. Structurally can't drift again --
+  // there's no separate flag left to forget to flip. Scoped to exactly these elements rather than
+  // `document.body` with subtree:true -- this function's OWN writes below (banner/dots/warnings
+  // .hidden) live in that same subtree, and a subtree-wide observer would re-trigger itself on
+  // every render, forever.
+  const bannerVisibilityObserver = new MutationObserver(() => renderPresenceBannerCard());
+  [...PRESENCE_BANNER_OVERLAY_IDS, "map-view", "list-view", "submit-view"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) bannerVisibilityObserver.observe(el, { attributes: true, attributeFilter: ["hidden"] });
+  });
 }
 
 // Item 45 (field suggestion): RED's own label always ends in "CHECK MAP" -- tapping the banner
@@ -133,7 +164,7 @@ function rebuildPresenceBannerCards() {
 function renderPresenceBannerCard() {
   const banner = document.getElementById("presence-banner");
 
-  if (isReportTabActive || presenceBannerCards.length === 0) {
+  if (isReportScreenShowing() || presenceBannerCards.length === 0) {
     banner.hidden = true;
     return;
   }
@@ -185,10 +216,4 @@ function renderPresenceBannerCard() {
   } else {
     dotsEl.hidden = true;
   }
-}
-
-// Called from app.js's switchTab.
-function setPresenceBannerReportTabActive(active) {
-  isReportTabActive = active;
-  renderPresenceBannerCard();
 }

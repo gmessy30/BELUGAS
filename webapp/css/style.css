@@ -425,10 +425,21 @@ main {
    about. Estimated from the artwork's own proportions and this rule's own font metrics, not
    measured on an actual device -- worth a real visual check, and worth revisiting (nudge width
    down a few points, or resume the item-44 spacing tightening further) if the tail still visibly
-   crosses into the text on a real phone. */
+   crosses into the text on a real phone.
+
+   ITEM 58b UPDATE: Y moved from 5% (top-pinned) to 50% (vertically centered), per explicit
+   direction -- "still reads as pinned to the top" -- keeping X (left-anchored) unchanged. Flagged,
+   not silently reconciled: this reopens exactly the collision item 51's own Y=5% choice was
+   deliberately avoiding above -- her face (the artwork's own top ~35%) now sits in the SAME
+   vertical band as the text column's own vertical center, rather than above it, so the two are
+   back to sharing space horizontally at the height that matters most (her face, not just the
+   tail). Worth a real on-device check; if the face visibly collides with SIGHTINGS MAP/SIGHTINGS
+   LIST again, the fix is narrower than reverting Y -- shrink width a few more points so her
+   right edge clears the text's own left edge at ~42% instead of passing it, rather than pinning
+   back to the top. */
 .menu-overlay.mae-background {
   background-size: 48% auto, cover;
-  background-position: 3% 5%, center;
+  background-position: 3% 50%, center;
 }
 
 .subpage-top-row {

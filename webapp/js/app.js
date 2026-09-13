@@ -42,9 +42,11 @@ function switchTab(tabName) {
   } else {
     refreshQueueBadge();
   }
-  // Matches App.kt's showPresenceBanner exclusion (CAPTURE/PHOTO_LOGGING/MANUAL_LOGGING/
-  // ACKNOWLEDGEMENT_GATE) -- this tab covers the camera+logging equivalent.
-  setPresenceBannerReportTabActive(isReportTab);
+  // Item 58: the presence banner used to need an explicit nudge here to know the Report tab just
+  // became active/inactive -- it now watches every screen's own `hidden` attribute directly
+  // (presence-banner.js's initPresenceBanner) and re-evaluates from live DOM state on any change,
+  // so switching .view.hidden two lines up already triggers its own refresh with no separate call
+  // needed here.
 
   // Matches App.kt's wantsLandscape -- forced landscape for the whole Report tab (camera step +
   // review step, either mode), released for every other tab.
