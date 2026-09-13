@@ -1624,6 +1624,26 @@ button.camera-status.secondary {
   z-index: 5;
 }
 
+/* Item 64: SET DATE/TIME normally sits inside .review-bottom-panel (portrait -- "fine as-is" per
+   the report), but that panel is anchored to the screen BOTTOM and grows upward with its own
+   content; on a short LANDSCAPE viewport its top edge (SELF/OTHER row, then this button) can
+   reach into the vertically-centered BearingDial's own drag region, landing the button just above
+   dead-center, directly over the ring. position:fixed (not absolute) pulls it out of that flow
+   entirely regardless of the panel's own varying height, stacked below RECENTER in the same
+   top-right corner -- fixed positions relative to the VIEWPORT, so it isn't affected by
+   .review-bottom-panel's own bottom-anchored, content-driven top edge at all. z-index matches
+   .manual-locate-row's own (both sit above the panel, below the dial) so the two stay visually
+   consistent as a pair. */
+@media (orientation: landscape) {
+  #manual-datetime-btn {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 112px);
+    right: 16px;
+    z-index: 5;
+    margin: 0;
+  }
+}
+
 /* Item 60: mirrors .manual-locate-row's own position (same top offset, opposite side) -- the
    camera path's attached photo as a small corner thumbnail rather than the old full-bleed review
    step. Hidden by default (index.html) -- shown only once updateManualPhotoThumb (submit-view.js)
