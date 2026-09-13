@@ -98,6 +98,40 @@ two tabs within one ordinary browser instance. Not re-attempted for now: the sys
 gesture/button already returns correctly (it's specifically the in-page Back **button** that
 reloads instead of returning), so this is a rough edge, not a dead end.
 
+### Audio assets
+
+`webapp/audio/alert-red.mp3`/`.ogg` (~1.7s) and `alert-yellow.mp3`/`.ogg` (~1.0s, quieter/shorter)
+are the in-app presence-alert sounds (item 87, `webapp/js/presence-alert.js`) — real Cook Inlet
+beluga vocalizations, not a synthesized tone.
+
+- **Source**: NOAA Fisheries' "Beluga Whale Vocalizations" video —
+  https://videos.fisheries.noaa.gov/detail/video/6282639097001/beluga-whale-vocalizations
+  ("General vocalizations by Cook Inlet beluga whales coupled with audio spectrogram... multiple
+  beluga social vocalizations", per the video's own Brightcove metadata).
+- **License**: a U.S. federal government work — public domain in the United States (17 U.S.C.
+  § 105), no rights-holder permission needed. Credited anyway on the About page ("SOUND: Beluga
+  vocalizations — NOAA Fisheries") as a courtesy and to name the actual source, not because it's
+  legally required the way the app's own PolyForm/artwork terms are.
+- **How it was obtained**: the page embeds a Brightcove player (account `659677166001`, player
+  `4b3c8a9e-7bf7-43dd-b693-2614cc1ed6b7`, video id `6282639097001`). Fetched the player bundle
+  (`https://players.brightcove.net/659677166001/4b3c8a9e-7bf7-43dd-b693-2614cc1ed6b7_default/index.html?videoId=6282639097001`)
+  to extract its embedded `policyKey`, then called Brightcove's Playback API
+  (`https://edge.api.brightcove.com/playback/v1/accounts/659677166001/videos/6282639097001` with
+  header `Accept: application/json;pk=<policyKey>`), which returns a `sources` list including a
+  plain progressive MP4 (no HLS demuxing needed). Downloaded that MP4 directly.
+- **Processing**: extracted the audio track (ffmpeg — a static build via the `imageio-ffmpeg` pip
+  package, since no system `ffmpeg` is installed in this dev environment), analyzed short-time RMS
+  + high-frequency content across the ~18s clip to locate its most sustained, clearest click/
+  whistle activity (a plain first-difference energy ratio as a crude proxy for broadband
+  whistle/echolocation content vs. quieter background), and trimmed:
+  - `alert-red`: 6.45s–8.15s (1.70s) of the original clip, mono, fade in 0.08s / fade out 0.2s,
+    loudness-normalized (`loudnorm=I=-16:TP=-1.5:LRA=11`).
+  - `alert-yellow`: 6.60s–7.60s (1.00s, a touch earlier/shorter within the same clear passage),
+    mono, fade in 0.05s / fade out 0.2s, normalized quieter (`loudnorm=I=-23:TP=-3:LRA=11`) —
+    the "quieter" cut for a RED → YELLOW step-down, not a new emergency.
+  - Encoded to both `.mp3` (libmp3lame, 96kbps) and `.ogg` (libvorbis, q:a 4) — small files
+    (4–21KB each), `presence-alert.js` tries mp3 first, falls back to ogg.
+
 ### Live device inspection (adb + Chrome DevTools Protocol)
 
 Two physical Android phones are available over USB, USB debugging authorized: `adb` lives at

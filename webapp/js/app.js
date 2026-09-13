@@ -98,6 +98,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   initNewsFeedPage();
   initAlertsPage();
   initPresenceBanner();
+  // Item 87: must come AFTER initPresenceBanner -- both register an onPresenceStateChanged
+  // listener (presence-state.js), called in registration order on every notify, and this one's
+  // own checkPresenceAlertTransitions needs rebuildPresenceBannerCards to have already refreshed
+  // presenceBannerCards on that SAME tick before it reads it.
+  initPresenceAlert();
   initInstallPrompt();
   initOrientationLock();
   initMainMenu();

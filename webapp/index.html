@@ -151,6 +151,13 @@
          browser's own built-in exit affordance, etc.). -->
     <button id="menu-fullscreen-toggle-item" class="menu-nav-item" type="button" hidden>Enter Fullscreen</button>
 
+    <!-- Item 87: web-only, no native equivalent. Shares .menu-nav-item's text styling but isn't a
+         navigation destination -- doesn't close the menu on tap, see presence-alert.js's own
+         toggle wiring. Always visible (unlike the fullscreen toggle above, this has no
+         device/mode gate -- sound+vibrate+notification all degrade gracefully on their own if
+         unsupported). Default ON; label/active state reflect the persisted choice. -->
+    <button id="menu-presence-alert-toggle-item" class="menu-nav-item" type="button">🔔 Sound Alerts: On</button>
+
     <!-- Ports MainMenuDrawer's own "OPEN APP TO" FilterChip row (App.kt) -- launch-screen.js.
          DEFAULT ON FIRST LAUNCH IS A DELIBERATE DEVIATION: native's own getLaunchScreen()
          fallback is actually CAMERA (confirmed directly in AppPreferences.android.kt/.ios.kt --
@@ -223,6 +230,17 @@
              separately copyrighted, NOT covered by the software's own PolyForm license, so its
              own line says so directly rather than relying on a single blanket line below. -->
         <p class="copyright-line">© 2026 Luna Montgomery · All rights reserved</p>
+      </div>
+      <hr class="section-divider">
+
+      <!-- Item 88: the RED/RED->YELLOW in-app alert sound (presence-alert.js) is a real Cook
+           Inlet beluga recording, not a synthesized tone -- a U.S. government work (NOAA
+           Fisheries), public domain, no rights-holder permission needed, but credited anyway as
+           a courtesy and to name the actual source. See CLAUDE.md for the exact source URL and
+           license status, and the trim/processing applied to the original clip. -->
+      <div class="subpage-section">
+        <div class="section-title">SOUND</div>
+        <p class="copyright-line">Beluga vocalizations: NOAA Fisheries</p>
       </div>
       <hr class="section-divider">
 
@@ -1055,6 +1073,7 @@
   <script src="js/news-feed.js"></script>
   <script src="js/subscriptions.js"></script>
   <script src="js/presence-banner.js"></script>
+  <script src="js/presence-alert.js"></script>
   <script src="js/main-menu.js"></script>
   <script src="js/launch-screen.js"></script>
   <script src="js/orientation-lock.js"></script>
