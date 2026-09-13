@@ -978,22 +978,32 @@
               </g>
             </svg>
           </div>
-          <button id="bearing-dial-unknown-btn" class="secondary bearing-dial-unknown-btn" type="button">Unknown Direction</button>
-
-          <!-- Item 90 landscape fix v3: moved here (a third item in this already-centered,
-               already-above-the-panel column, right below "Unknown Direction") after v2's
-               placement inside .whale-count-row rendered "way too large" on device -- see
-               .manual-activity-btn's own CSS comment for the full history. Opens
-               #activity-picker-modal below. Optional -- a sighting can be submitted with no
-               activities selected at all, same as travel direction already is. Badge shows a
-               count whenever any are selected; hidden (not "0") otherwise, matching the
-               queue-banner's own count-badge convention elsewhere in this app. Shared between both
-               entry points into this screen (camera-with-photo and plain Report Manually, see item
-               60) -- one button, one modal, no separate copy for each. -->
-          <button id="manual-activity-btn" class="secondary manual-activity-btn" type="button">
-            🐋 ACTIVITY<span id="manual-activity-badge" class="manual-activity-badge" hidden></span>
-          </button>
         </div>
+
+        <!-- Item 90 landscape fix v5: both buttons used to live INSIDE .bearing-dial-wrap (a flex
+             column right under the dial ring) -- worked fine visually in portrait, but v4's
+             landscape-only `position:fixed` override to move them to a left-side stack silently
+             computed relative to .bearing-dial-wrap's own box instead of the true viewport: a CSS
+             `transform` on ANY ancestor (here, .bearing-dial-wrap's own `translate(-50%,-50%)`
+             centering trick) makes that ancestor the containing block for a `position:fixed`
+             descendant, per spec -- confirmed via getComputedStyle showing the intended
+             `left:16px`/`top:152px` while a screenshot showed the button still rendering centered
+             under the dial. Moving both out to be plain siblings of .bearing-dial-wrap (still
+             inside .manual-map, which has no transform of its own) makes `position:fixed` actually
+             mean "relative to the real screen" -- both orientations now position these two
+             directly off screen coordinates instead of relying on any ancestor's flex layout; see
+             .bearing-dial-unknown-btn's own CSS for the actual top/left values. -->
+        <button id="bearing-dial-unknown-btn" class="secondary bearing-dial-unknown-btn" type="button">Unknown Direction</button>
+
+        <!-- Opens #activity-picker-modal below. Optional -- a sighting can be submitted with no
+             activities selected at all, same as travel direction already is. Badge shows a count
+             whenever any are selected; hidden (not "0") otherwise, matching the queue-banner's own
+             count-badge convention elsewhere in this app. Shared between both entry points into
+             this screen (camera-with-photo and plain Report Manually, see item 60) -- one button,
+             one modal, no separate copy for each. -->
+        <button id="manual-activity-btn" class="secondary manual-activity-btn" type="button">
+          🐋 ACTIVITY<span id="manual-activity-badge" class="manual-activity-badge" hidden></span>
+        </button>
 
         <!-- Item 39: on-screen counterpart to item 37's console.log diagnostics -- a phone has no
              devtools console to read them in. Query-param gated (?debug=1 in the URL, checked by

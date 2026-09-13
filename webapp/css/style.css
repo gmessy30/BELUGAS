@@ -1678,47 +1678,75 @@ button.camera-status.secondary {
   height: 100%;
 }
 
+/* Item 90 landscape fix, v5: both buttons are now plain siblings of .bearing-dial-wrap (see
+   index.html's own comment on why -- a `transform` on that wrap made it the containing block for
+   any `position:fixed` descendant, silently breaking v4's left-side placement even though
+   getComputedStyle showed the "correct" values). `position:fixed` here is always relative to the
+   real viewport now, so one unconditional rule works for both orientations: PORTRAIT centers them
+   under the dial (the same visual spot .bearing-dial-wrap's own flex column used to place them at
+   automatically -- 50%+85px/50%+129px reproduce "half the 150px dial, plus a 10px gap, plus this
+   button's own ~34px height, plus another 10px gap" without needing to be inside that column
+   anymore); LANDSCAPE moves them to a stack on the LEFT under the SELF/OTHER chips instead
+   (mirroring the right side's own RECENTER@64/SET DATE-TIME@112 rhythm; .manual-photo-thumb-row
+   already claims left@64 for the camera path's own photo thumb, so this starts at 112 to never
+   collide with it on that path) -- pulled out of the dial's own visual neighborhood entirely since
+   v4's screenshots showed the whale artwork sits close enough there for even a left-adjacent
+   stack to have been visually tight before, and confirmed via elementFromPoint/tap in whichever
+   orientation is actually being verified, not just this math. */
 .bearing-dial-unknown-btn {
+  position: fixed;
+  top: calc(50% + 85px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  margin: 0;
   pointer-events: auto;
   font-size: 0.75rem;
   padding: 6px 14px;
 }
 
-/* Item 90 landscape fix, v4: v3 (below) made ACTIVITY "normal sized" and moved it into
-   .bearing-dial-wrap's own centered column, right under "Unknown Direction" -- confirmed on
-   device this reads fine in PORTRAIT (plenty of vertical room), but in LANDSCAPE the wrap's now-
-   taller column still reached down far enough to paint both pills directly over the two middle
-   whale illustrations (screenshot-confirmed, not just bounding-box math). Fix: in landscape only,
-   both buttons are pulled OUT of the wrap's flow entirely (position:fixed, same "item 64"
-   mechanism SET DATE/TIME already uses on the right) into their own small stack on the LEFT, under
-   the SELF/OTHER chips -- mirroring the right side's own established rhythm (RECENTER@64,
-   SET DATE/TIME@112, 48px apart; .manual-photo-thumb-row already claims left@64 for the camera
-   path's photo thumb, so this stack starts at 112 to never collide with it on that path). Portrait
-   is untouched (this whole block is landscape-only) -- keeps v3's placement, which already reads
-   correctly there. */
+.manual-activity-btn {
+  position: fixed;
+  top: calc(50% + 129px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  margin: 0;
+  pointer-events: auto;
+  font-size: 0.75rem;
+  padding: 6px 14px;
+}
+
 @media (orientation: landscape) {
   #bearing-dial-unknown-btn {
-    position: fixed;
     top: calc(env(safe-area-inset-top, 0px) + 112px);
     left: 16px;
-    z-index: 5;
-    margin: 0;
+    transform: none;
   }
   #manual-activity-btn {
-    position: fixed;
     top: calc(env(safe-area-inset-top, 0px) + 152px);
     left: 16px;
-    z-index: 5;
-    margin: 0;
+    transform: none;
   }
-  /* ~20% smaller so the row (and its +/- touch targets) sit in a narrower band clear of the
-     left/right control clusters instead of spanning the full width -- scaled from its own bottom
-     edge (not center) so the shrink only reclaims space ABOVE the row (more clearance from the
-     dial/the new left stack above it), not below (where it's already flush with the panel's own
-     bottom padding). */
+  /* ~20% smaller (on-device confirmed: `transform:scale()` alone doesn't work here -- it only
+     shrinks the PAINTED result, not the row's real layout box, so .review-bottom-panel (bottom-
+     anchored, auto-height) never actually gets any shorter or gains real clearance from the fixed
+     stack above it; a getBoundingClientRect check after adding it showed the whale image's own top
+     edge hadn't moved AT ALL). max-width + auto margins genuinely narrows the row -- each
+     .whale-count-col is flex:1, so a narrower row means narrower columns, and since
+     .whale-count-art's height is aspect-ratio-locked to its own (now narrower) width, the row's
+     real rendered height shrinks too, which DOES reduce the panel's total content height and move
+     its top edge down for real clearance -- confirmed via a follow-up on-device check. The
+     '+'/'-' buttons are fixed-px (not proportional to the column), so they're resized to match
+     explicitly right below. */
   #manual-log-step .whale-count-row {
-    transform: scale(0.8);
-    transform-origin: 50% 100%;
+    max-width: 80%;
+    margin: 0 auto;
+  }
+  #manual-log-step .whale-count-inc,
+  #manual-log-step .whale-count-dec {
+    width: 35px;
+    height: 35px;
   }
 }
 
@@ -1859,25 +1887,6 @@ button.camera-status.secondary {
     z-index: 5;
     margin: 0;
   }
-}
-
-/* Item 90 landscape fix, v3 (portrait base layout): v1 gave ACTIVITY its own grid cell beside
-   .whale-count-row (squeezed the row, landed CALF's "+" under the dial); v2 nested it INSIDE
-   .whale-count-row as a flex child (fixed the squeeze, but the button rendered at "way too large"
-   a size fighting the whale columns for width, per direct on-device feedback). v3 drops it out of
-   the bottom panel/whale row entirely -- it's the third item in .bearing-dial-wrap's own centered
-   column (dial ring, then "Unknown Direction", then this), right below it, reusing that stack's
-   existing gap:10px spacing. Sized like its new sibling #bearing-dial-unknown-btn (button.
-   secondary's own pill shape, just smaller padding/font) rather than a full-width panel control --
-   "normal sized", not a whole row. This placement is what PORTRAIT actually uses (confirmed fine
-   on device -- plenty of vertical room there); v4 (see the landscape media query right above
-   .bearing-dial-unknown-btn's own base rule) pulls both this button and Unknown Direction OUT of
-   this centered column in LANDSCAPE specifically, since the taller column still reached down over
-   the whale artwork there. */
-.manual-activity-btn {
-  pointer-events: auto;
-  font-size: 0.75rem;
-  padding: 6px 14px;
 }
 
 /* Item 60: mirrors .manual-locate-row's own position (same top offset, opposite side) -- the
