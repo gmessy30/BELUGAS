@@ -66,7 +66,7 @@ function initMainMenu() {
   // sub-steps is showing inside it. Once Report Manually had ever forced manual-log-step visible
   // (openManualReportFlow), it stayed visible, so the generic handler kept landing back on
   // Manual Logging instead of the camera. goToCameraStep() explicitly shows camera-step and hides
-  // review-step/manual-log-step, the same way openManualReportFlow explicitly forces the opposite.
+  // manual-log-step, the same way openManualReportFlow explicitly forces the opposite.
   document.getElementById("menu-camera-item").addEventListener("click", () => {
     const previousTab = getActiveTabName();
     menu.hidden = true;
@@ -88,11 +88,12 @@ function initMainMenu() {
     const previousTab = getActiveTabName();
     menu.hidden = true;
     openManualReportFlow();
-    // No separate nested layer for the manual review step itself (contrast goToReviewStep's own
-    // push in submit-view.js) -- manual mode skips the camera step entirely, so this IS the
-    // submit tab's own resting layer, just starting on review-step instead of camera-step.
-    // goToCameraStep as the teardown matches LoggingScreen's/ManualLoggingScreen's shared
-    // onDoneClick (both return to Screen.CAPTURE) -- see resetSubmitForm's own comment.
+    // No separate nested layer for manual-log-step itself here (contrast
+    // enterManualLogStepFromCamera's own push in submit-view.js, item 60's camera-with-photo
+    // entry point) -- plain Report Manually skips the camera step entirely, so this IS the submit
+    // tab's own resting layer, just starting on manual-log-step instead of camera-step.
+    // goToCameraStep as the teardown matches ManualLoggingScreen's own onDoneClick (return to
+    // Screen.CAPTURE) -- see resetManualSubmitForm's own comment.
     pushNavLayer("manual-report", () => {
       goToCameraStep();
       switchTab(previousTab);

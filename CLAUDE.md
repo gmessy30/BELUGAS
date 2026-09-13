@@ -92,3 +92,18 @@ project (via `supabase db query --linked --file <path>`) — don't tell the user
   native's own `kenaiBannerLabel` (PresenceBanner.kt) only ever surfaces that field in the BLUE
   branch today ("NOT EXPECTED IN THE RIVER BEFORE {time}"), never during RED. Worth adding the
   same RED-branch addition natively for parity.
+- **Native-side parity item (item 60, DESIGN CHANGE, web-only so far)**: automatic whale placement
+  (a heading+distance projection outward from the observer's own GPS fix) kept landing whales on
+  land, so both reporting paths were changed to place the whale by human map placement instead.
+  On the PWA, capturing a photo (or skipping the camera) now goes straight into the same
+  map+crosshair+BearingDial screen "Report Manually" already used, photo attached
+  (`submit-view.js`'s `enterManualLogStepFromCamera`) — the old LoggingScreen-style review step,
+  its heading/distance picker, and the "Can't Place This Sighting" dialog are gone entirely from
+  the web app. The one thing the camera path still does that plain "Report Manually" deliberately
+  doesn't: it takes a best-effort GPS fix at capture time to center the map initially (never
+  stored, never the submitted position). Native (`LoggingScreen.kt`, `HeadingDistancePicker.kt`,
+  `CaptureScreen.kt`'s hand-off, `CoastlineGeometry`'s offshore-guess fallback) is UNCHANGED so
+  far — deliberately deferred, not forgotten: unify Camera → `ManualLoggingScreen` with the photo
+  attached, remove `HeadingDistancePicker`/the projection math/the coastline fallback entirely,
+  matching the web app's new design. Apply alongside every other pending native-parity item above
+  in one later pass, then rebuild for both Android and iOS.

@@ -98,7 +98,7 @@
   <div id="main-menu" class="menu-overlay mae-background" hidden>
     <!-- BUG FIX (item 36): NOT [data-nav] -- the generic data-nav handler below only calls
          switchTab("submit"), which reveals #submit-view but never touches which of its own
-         sub-steps (camera-step/review-step/manual-log-step) is showing inside it. Once Report
+         sub-steps (camera-step/manual-log-step) is showing inside it. Once Report
          Manually had been opened at least once (openManualReportFlow forces manual-log-step
          visible), that sub-step stayed visible forever after -- so this item, using the generic
          handler, was routing into whatever #submit-view last happened to show, not the camera.
@@ -664,10 +664,13 @@
       <div id="list-items"></div>
     </section>
 
-    <!-- Ports CaptureScreen.kt + LoggingScreen.kt as two chrome-less full-bleed steps, exactly
-         like native splits them across two screens -- no outer app header/queue-banner shows
-         over either (see switchTab in app.js), matching neither native screen going through any
-         shared app chrome. -->
+    <!-- Item 60: capturing a photo (or skipping the camera) now goes straight into the same
+         map+crosshair+BearingDial screen "Report Manually" uses (#manual-log-step below), photo
+         attached -- there is no more separate LoggingScreen-style review step (no heading/
+         distance picker, no CoastlineGeometry fallback; see submit-view.js's header comment).
+         Both chrome-less full-bleed steps -- no outer app header/queue-banner shows over either
+         (see switchTab in app.js), matching neither native screen going through any shared app
+         chrome. -->
     <section id="submit-view" class="view" hidden>
       <!-- Step 1 -- CaptureScreen.kt: live camera + reticle overlay, no location/count UI at
            all natively. -->
@@ -726,118 +729,23 @@
         </button>
       </div>
 
-      <!-- Step 2 -- LoggingScreen.kt: the captured photo itself as the full-bleed background
-           (not a small inline thumbnail), "← DONE"/"RETAKE ↻" top row, 3 relative direction
-           arrows overlaid on the photo, a heading+distance trigger button, and the whale-count
-           row. CAMERA-PATH ONLY -- ManualLoggingScreen is a structurally different screen
-           natively (map-backed, no heading/distance concept at all), ported separately below as
-           #manual-log-step, not shared with this one. -->
-      <div id="review-step" class="review-screen" hidden>
-        <img id="review-photo" class="review-photo" alt="Captured sighting photo">
-        <div class="review-vignette"></div>
-
-        <div class="review-top-row">
-          <button id="done-btn" class="review-done-btn" type="button">← DONE</button>
-          <button id="retake-btn" class="review-retake-btn" type="button">RETAKE ↻</button>
-        </div>
-
-        <!-- LoggingScreen.kt's 3 DirectionArrowButtons, overlaid directly on the photo -- RELATIVE
-             to the observer (pod moving away/left/right), resolved against the heading below into
-             the absolute travel_bearing_degrees actually stored (see heading-distance.js's
-             podDirectionToAbsoluteTravelBearingDegrees). Outlined until tapped, solid yellow once
-             selected, matching DirectionArrowButton's own isSelected fill swap. -->
-        <div class="direction-arrows-overlay">
-          <button type="button" class="direction-arrow-btn direction-arrow-away" data-pod-direction="AWAY" aria-label="Pod moving away from you">
-            <svg viewBox="0 0 1 1" preserveAspectRatio="none"><path class="arrow-path" d="M0.5,0 L1,0.5 L0.7,0.5 L0.7,1 L0.3,1 L0.3,0.5 L0,0.5 Z"/></svg>
-          </button>
-          <button type="button" class="direction-arrow-btn direction-arrow-left" data-pod-direction="LEFT" aria-label="Pod moving left">
-            <svg viewBox="0 0 1 1" preserveAspectRatio="none"><path class="arrow-path" d="M0,0.5 L0.5,0 L0.5,0.3 L1,0.3 L1,0.7 L0.5,0.7 L0.5,1 Z"/></svg>
-          </button>
-          <button type="button" class="direction-arrow-btn direction-arrow-right" data-pod-direction="RIGHT" aria-label="Pod moving right">
-            <svg viewBox="0 0 1 1" preserveAspectRatio="none"><path class="arrow-path" d="M1,0.5 L0.5,0 L0.5,0.3 L0,0.3 L0,0.7 L0.5,0.7 L0.5,1 Z"/></svg>
-          </button>
-        </div>
-
-        <div class="review-bottom-panel">
-          <!-- HeadingDistanceButton.kt: compact trigger, opens #heading-distance-modal below.
-               No live compass sensor attempt here (cross-browser magnetometer access is
-               inconsistent, gated behind extra permission prompts on iOS Safari in particular) --
-               always the manual-entry path HeadingDistanceDialog itself falls back to when its
-               own sensor read comes back null, not an invented simplification. -->
-          <button id="heading-distance-btn" class="secondary heading-distance-btn" type="button">🧭 SET HEADING &amp; DISTANCE</button>
-
-          <!-- No "Whale Count" label -- native's own WhaleCountRow has no preceding Text label
-               at all in either screen; the artwork speaks for itself. -->
-          <div class="whale-count-row">
-            <div class="whale-count-col" data-count="unknown">
-              <button class="whale-count-inc outlined-text" type="button">+</button>
-              <div class="whale-count-art">
-                <img src="img/Unknownbreaching.png" alt="Silvertine (unknown color) whale count">
-                <span class="whale-count-value outlined-text">0</span>
-              </div>
-              <button class="whale-count-dec outlined-text" type="button">−</button>
-            </div>
-            <div class="whale-count-col" data-count="greys">
-              <button class="whale-count-inc outlined-text" type="button">+</button>
-              <div class="whale-count-art">
-                <img src="img/Greybreaching.png" alt="Grey whale count">
-                <span class="whale-count-value outlined-text">0</span>
-              </div>
-              <button class="whale-count-dec outlined-text" type="button">−</button>
-            </div>
-            <div class="whale-count-col" data-count="calves">
-              <button class="whale-count-inc outlined-text" type="button">+</button>
-              <div class="whale-count-art">
-                <img src="img/Calfbreaching.png" alt="Calf count">
-                <span class="whale-count-value outlined-text">0</span>
-              </div>
-              <button class="whale-count-dec outlined-text" type="button">−</button>
-            </div>
-            <div class="whale-count-col" data-count="whites">
-              <button class="whale-count-inc outlined-text" type="button">+</button>
-              <div class="whale-count-art">
-                <img src="img/Whitebreaching.png" alt="White whale count">
-                <span class="whale-count-value outlined-text">0</span>
-              </div>
-              <button class="whale-count-dec outlined-text" type="button">−</button>
-            </div>
-          </div>
-
-          <p id="submit-status" class="status-info"></p>
-        </div>
-      </div>
-
-      <!-- HeadingDistanceDialog.kt, manual-entry branch only (see the trigger button's own
-           comment above). 8-point compass chips + a fine-tune slider for heading, 3 distance
-           chips for CLOSE/MEDIUM/FAR (heading-distance.js). -->
-      <div id="heading-distance-modal" class="modal-backdrop" hidden>
-        <div class="modal-card">
-          <h2>Heading &amp; Distance</h2>
-          <p class="modal-description">
-            Which way was the whale from you, and about how far away?
-          </p>
-          <div class="step-label-dark">Heading</div>
-          <div class="chip-row" id="heading-compass-chips"></div>
-          <input type="range" id="heading-slider" min="0" max="359" value="0">
-          <div id="heading-slider-value" class="heading-slider-value">0°</div>
-
-          <div class="step-label-dark">Distance</div>
-          <div class="chip-row" id="heading-distance-chips"></div>
-
-          <div class="modal-actions">
-            <button id="heading-distance-cancel-btn" class="secondary" type="button">Cancel</button>
-            <button id="heading-distance-confirm-btn" class="primary" type="button">Use This</button>
-          </div>
-        </div>
-      </div>
-
       <!-- ManualLoggingScreen.kt: a real interactive map with a fixed center BearingDial -- the
            dial's OWN crosshair marks the exact position (whatever the map is centered on at
            SUBMIT time; you pan the map under the fixed dial, there is no draggable pin), and the
            SAME control doubles as the travel-direction picker (continuous drag anywhere on the
            dial, snapping to the nearest of 16 compass points on release) -- one fused control,
            matching BearingDial.kt exactly rather than a separate chip-grid substitute. No
-           heading/distance projection, no photo.
+           heading/distance projection.
+
+           ITEM 60: this is now BOTH entry points' shared destination, not "Report Manually"
+           only -- capturing a photo (or skipping the camera) lands here too, via
+           submit-view.js's enterManualLogStepFromCamera, with the photo (if any) attached and
+           shown as a small corner thumbnail (#manual-photo-thumb-btn below, hidden whenever
+           there's no photo -- i.e. always, for a plain "Report Manually" visit). That's the one
+           thing the camera path does differently from plain Report Manually: it also takes a
+           best-effort GPS fix at capture time to center the map initially (never stored, never
+           the submitted position -- see that function's own comment); this screen's OWN GPS
+           behavior below is otherwise unchanged.
 
            SELF/OTHER toggle ("MY SIGHTING"/"REPORTED BY OTHER"), a compact SET DATE/TIME trigger
            (opens the platform's own native picker via a hidden datetime-local input's
@@ -847,16 +755,15 @@
            Location" was removed entirely (it implied the observer's own position is the whale's,
            which this screen exists specifically to NOT assume).
 
-           GPS is NOT auto-fetched on entry here -- a DELIBERATE web-only deviation from native's
-           own LaunchedEffect(Unit) { recenterOnGps() }, confirmed against source and overridden
-           on purpose (not an oversight): manual reporting is meant to be explicitly NOT "where I
-           am now".
+           GPS is NOT auto-fetched on entry here for a plain "Report Manually" visit -- a
+           DELIBERATE web-only deviation from native's own LaunchedEffect(Unit) { recenterOnGps() },
+           confirmed against source and overridden on purpose (not an oversight): manual reporting
+           is meant to be explicitly NOT "where I am now".
 
-           The bottom panel has no grey backing and never scrolls (same treatment as the camera
-           path's own panel) -- its content (SELF/OTHER + SET DATE/TIME + whale count) is compact
-           enough, now that the direction picker lives on the map itself rather than in this
-           panel, to stay fully visible and reachable at once, matching how compact native's own
-           bottom Column is. -->
+           The bottom panel has no grey backing and never scrolls -- its content (SELF/OTHER + SET
+           DATE/TIME + whale count) is compact enough, now that the direction picker lives on the
+           map itself rather than in this panel, to stay fully visible and reachable at once,
+           matching how compact native's own bottom Column is. -->
       <div id="manual-log-step" class="review-screen" hidden>
         <div id="manual-map" class="manual-map"></div>
 
@@ -924,6 +831,19 @@
           <button id="manual-recenter-btn" class="secondary" type="button">📍 RECENTER</button>
         </div>
 
+        <!-- Item 60: the camera path's attached photo, shown as a small corner thumbnail rather
+             than the old full-bleed review step -- hidden whenever there's no captured photo
+             (i.e. always, for a plain "Report Manually" visit; see updateManualPhotoThumb).
+             Tapping it discards the photo and returns to the camera step for another attempt
+             (retakePhoto) -- the only "retake" affordance left now that there's no separate
+             review step to retake from. Left-anchored, mirroring RECENTER's own right-anchored
+             position at the same height. -->
+        <div class="manual-photo-thumb-row">
+          <button id="manual-photo-thumb-btn" class="manual-photo-thumb-btn" type="button" hidden aria-label="Retake photo">
+            <img id="manual-photo-thumb" class="manual-photo-thumb" alt="">
+          </button>
+        </div>
+
         <div class="review-bottom-panel">
           <div class="chip-row">
             <button type="button" id="manual-observer-self-btn" class="chip-toggle active" data-observer-type="SELF">My Sighting</button>
@@ -936,7 +856,8 @@
           <button id="manual-datetime-btn" class="secondary manual-datetime-btn" type="button">📅 SET DATE / TIME</button>
           <input type="datetime-local" id="manual-datetime-input" class="manual-datetime-input-hidden" tabindex="-1" aria-hidden="true">
 
-          <!-- No "Whale Count" label -- see the camera path's own identical note above. -->
+          <!-- No "Whale Count" label -- native's own WhaleCountRow has no preceding Text label at
+               all; the artwork speaks for itself. -->
           <div class="whale-count-row">
             <div class="whale-count-col" data-count="unknown">
               <button class="whale-count-inc outlined-text" type="button">+</button>
@@ -973,25 +894,6 @@
           </div>
 
           <p id="manual-submit-status" class="status-info"></p>
-        </div>
-      </div>
-
-      <!-- Native's real dialog, shown when the camera path has no heading set (see submit-
-           view.js's submitCameraSighting) -- CoastlineGeometry's offshore-guess FALLBACK path
-           (used when native has no heading either) is NOT ported here (a substantial raycasting
-           port on its own), so this is shown whenever no heading was given at all, not only once
-           a fallback guess also fails as it is natively. Flagged, not silently narrowed. -->
-      <div id="cannot-place-modal" class="modal-backdrop" hidden>
-        <div class="modal-card">
-          <h2>Can't Place This Sighting</h2>
-          <p class="modal-description">
-            No direction/distance was given, so there's no way to estimate the whale's position.
-            Use Report Manually to drop a pin at the sighting location instead.
-          </p>
-          <div class="modal-actions">
-            <button id="cannot-place-cancel-btn" class="secondary" type="button">Cancel</button>
-            <button id="cannot-place-goto-manual-btn" class="primary" type="button">Go To Manual Logging</button>
-          </div>
         </div>
       </div>
     </section>

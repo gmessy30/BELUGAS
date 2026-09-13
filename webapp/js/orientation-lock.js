@@ -9,16 +9,16 @@
 // orientation left Report Manually's own controls (SELF/OTHER, whale count, RECENTER, SUBMIT)
 // unreachable once that assumption didn't hold. Removing the lock removes both failure modes at
 // their real source, rather than patching around either one -- see the CSS for #camera-step/
-// #review-step/#manual-log-step, which now lay out correctly in EITHER orientation instead of
-// assuming landscape-only.
+// #manual-log-step, which now lay out correctly in EITHER orientation instead of assuming
+// landscape-only.
 //
 // FULLSCREEN: entering the Report tab requests fullscreen on touch devices, reclaiming the space
 // the browser's own address bar/chrome would otherwise take up -- no native equivalent to port at
 // all (a native app has no browser chrome to reclaim space from in the first place). Best-effort
 // and wrapped in try/catch: iOS Safari does not support Element.requestFullscreen on most
 // elements (historically only <video> via a WebKit-specific API), so this silently no-ops there --
-// see style.css's own 100dvh sizing for #camera-step/#review-step/#manual-log-step, which is what
-// actually reclaims that space on iPhone instead.
+// see style.css's own 100dvh sizing for #camera-step/#manual-log-step, which is what actually
+// reclaims that space on iPhone instead.
 //
 // ROTATE HINT: a small, non-blocking, dismissible hint ("Rotate for a better view") on phone-sized
 // touch devices while the Report tab is in portrait -- never a barrier, and never shown on a

@@ -30,7 +30,7 @@
 }
 
 /* Several elements below (.modal-backdrop, .menu-overlay, .queue-banner, #splash-screen,
-   #camera-preview, .review-photo) set `display` unconditionally on the same element JS toggles
+   #camera-preview) set `display` unconditionally on the same element JS toggles
    via the `hidden` attribute (e.g. modal.hidden = true). A normal author rule always wins over the
    browser's built-in `[hidden] { display: none }` UA rule regardless of selector specificity --
    that's a cascade *origin* precedence, not something a more-specific selector can out-rank --
@@ -822,7 +822,6 @@ button.text-link {
 #alerts-page .chip-toggle,
 #point-picker-overlay .chip-toggle,
 #polygon-picker-overlay .chip-toggle,
-#review-step .chip-toggle,
 #manual-log-step .chip-toggle,
 #playback-panel .chip-toggle,
 #main-menu .chip-toggle {
@@ -835,7 +834,6 @@ button.text-link {
 #alerts-page .chip-toggle.active,
 #point-picker-overlay .chip-toggle.active,
 #polygon-picker-overlay .chip-toggle.active,
-#review-step .chip-toggle.active,
 #manual-log-step .chip-toggle.active,
 #playback-panel .chip-toggle.active,
 #main-menu .chip-toggle.active {
@@ -1363,7 +1361,7 @@ button.camera-status.secondary {
   text-align: center;
 }
 
-/* --- Submit view: Step 2, LoggingScreen.kt --- */
+/* --- Submit view: Step 2, ManualLoggingScreen.kt (shared by both entry points as of item 60) --- */
 
 .review-screen {
   position: relative;
@@ -1371,31 +1369,6 @@ button.camera-status.secondary {
   height: 100%;
   background: #000000;
   overflow: hidden;
-}
-
-/* No captured photo (manual mode, or camera-unavailable skip) -- native's own LoggingScreen has
-   nothing to show here either way (it's always a photo full-bleed), so this case has no direct
-   native equivalent to match. Plain black was the first guess (closest to "no photo" = "nothing
-   drawn"), but .review-bottom-panel's dark translucent backing (rgba(0,0,0,0.55)) composites
-   against WHATEVER is behind it -- against black that's still ~black, and the whale-count artwork
-   PNGs' anti-aliased edges show a visible fringe/halo against that near-black. White pushes the
-   panel to a mid-gray instead, which the artwork's edges blend into cleanly. */
-.review-screen.no-photo {
-  background: #ffffff;
-}
-
-.review-photo {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.review-vignette {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.2);
 }
 
 .review-top-row {
@@ -1409,29 +1382,22 @@ button.camera-status.secondary {
   z-index: 5;
 }
 
-.review-done-btn, .review-retake-btn {
+.review-done-btn {
   background: rgba(0, 0, 0, 0.8);
   border: none;
   border-radius: 999px;
   padding: 8px 16px;
-}
-
-.review-done-btn {
   color: var(--brand-yellow);
   font-size: 1.1rem;
   font-weight: 900;
 }
 
-.review-retake-btn {
-  color: #ffffff;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-/* Native's bottom Column here is just a heading/distance button + one count row, compact enough
-   to never need scrolling. This app's stand-in bottom content (GPS location + embedded map +
-   whale counts) is taller, so unlike native this panel gets a translucent dark backing and its
-   own scroll -- a necessary adaptation, not a style choice. */
+/* Base positioning/shape only -- the only screen still using this class (#manual-log-step, since
+   item 60 removed the old camera-path review step) immediately overrides max-height/overflow-y/
+   background right below (no card/box behind ManualLoggingScreen's own bottom Column, and its
+   content is compact enough to never need scrolling), so this base rule's own scroll/backing
+   values here never actually apply -- kept as the fallback shape in case a future screen reuses
+   this class without that override. */
 .review-bottom-panel {
   position: absolute;
   left: 0;
@@ -1448,24 +1414,13 @@ button.camera-status.secondary {
 
 /* WhaleCountControls.kt has no card/box behind it at all -- "each whale image IS the button...
    no card/box around any of it" (see that rule's own comment below). The translucent backdrop
-   above was a flat grey panel behind the whale counters that native never draws, on EITHER
-   screen -- removed here for the camera path so the count controls sit directly on the photo,
-   same as native (and again below for #manual-log-step, directly on the map). heading-distance-
-   btn/the SELF-OTHER/SET DATE-TIME chips and buttons all keep their own pill/chip backgrounds
+   above was a flat grey panel native never draws (ManualLoggingScreen has no card/box in its own
+   bottom Column either), removed here so the count controls sit directly on the map, same as
+   native. The SELF-OTHER/SET DATE-TIME chips and buttons all keep their own pill/chip backgrounds
    regardless (independent of this panel's own background), the count glyphs already have their
    own black-outlined-white treatment (.outlined-text) for contrast against ANY backdrop, and
-   #submit-status/#manual-submit-status get a text-shadow of their own (see that rule) rather than
-   reinstating a panel just for their sake. */
-#review-step .review-bottom-panel {
-  background: none;
-}
-
-/* No grey backing here either (same reasoning as #review-step's own override above -- native's
-   bottom Column has no card/box in ManualLoggingScreen any more than LoggingScreen's does), and
-   no scrolling: now that BearingDial lives on the map itself rather than in this panel, the
-   remaining content (SELF/OTHER + a compact SET DATE/TIME button + whale count) is exactly as
-   compact as native's own bottom Column, so it stays fully visible and reachable at once instead
-   of needing to scroll over itself. */
+   #manual-submit-status gets a text-shadow of its own (see that rule) rather than reinstating a
+   panel just for its sake. */
 /* BUG FIX (item 27a): this panel has no visible backing here (see above), but it's still a
    full-width/bottom-anchored absolutely-positioned box sitting OVER the live map underneath --
    its own empty padding/gaps (around the SELF/OTHER chips, the date/time button, the whale-count
@@ -1497,131 +1452,6 @@ button.camera-status.secondary {
 
 .review-bottom-panel .step-label:first-child {
   margin-top: 0;
-}
-
-/* --- Camera path (LoggingScreen.kt): direction arrows overlaid on the photo + heading/distance
-   trigger --- */
-
-/* Box(Modifier.fillMaxSize().padding(top=60dp, bottom=140dp)) -- the arrows align WITHIN this
-   padded box, not the raw full-bleed photo, so the padding has to live here too rather than on
-   the individual buttons. pointer-events:none so the empty padded area doesn't block taps on the
-   photo/vignette underneath it; the buttons themselves re-enable it.
-
-   BUG FIX (arrows colliding with the whale-count row): a fixed 140dp guess for the bottom
-   exclusion assumed native's own compact bottom Column (one heading/distance button + one count
-   row, never taller than that). This app's own content is the same shape but the exact rendered
-   height still depends on font metrics/viewport width, and a SHORT viewport (a phone in
-   landscape) leaves much less room overall -- a fixed guess either wastes space or, on the
-   cramped end, isn't enough and the vertically-centered LEFT/RIGHT arrows spill down into the
-   panel. --review-bottom-panel-height is the panel's own REAL measured height (submit-view.js's
-   ResizeObserver, mirroring ManualLoggingScreen's own bottomPanelHeightPx/onGloballyPositioned
-   pattern for the exact same problem), so this always reserves exactly the space the panel is
-   actually using, on any viewport, rather than a guess that can be wrong in either direction. */
-/* DIAGNOSED (item 26): z-index was 4 here vs. .review-bottom-panel's 5 -- an ordering mistake,
-   not the padding reservation itself. Whenever the reservation was even slightly short (the
-   ResizeObserver hadn't caught up yet, or any other transient mismatch), the panel -- being
-   numerically higher, and with no pointer-events:none of its own -- painted OVER the arrows in
-   the overlap AND intercepted taps meant for them. z-index:6 makes this permanent and
-   unconditional: the arrows are always on top and always clickable regardless of whether the
-   padding reservation is exactly right, not just usually right. */
-.direction-arrows-overlay {
-  position: absolute;
-  inset: 0;
-  padding: 60px 0 var(--review-bottom-panel-height, 140px);
-  z-index: 6;
-  pointer-events: none;
-}
-
-.direction-arrow-btn {
-  position: absolute;
-  background: none;
-  border: none;
-  padding: 0;
-  pointer-events: auto;
-}
-
-.direction-arrow-btn svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* Outlined until tapped, solid yellow once selected -- DirectionArrowButton's own isSelected
-   fill swap. Stroke widths are fractions of the 0..1 viewBox (not px) so they scale with
-   whatever size each arrow renders at, matching native's fixed 5dp/3dp Compose Stroke widths
-   scaling proportionally too. */
-.arrow-path {
-  fill: none;
-  stroke: var(--brand-yellow);
-  stroke-width: 0.045;
-}
-
-.direction-arrow-btn.selected .arrow-path {
-  fill: var(--brand-yellow);
-  stroke: #000000;
-  stroke-width: 0.03;
-}
-
-/* clamp()'d to a viewport-height fraction, not a fixed px size -- an extra safety margin on top
-   of --review-bottom-panel-height's own exact reservation above: on a genuinely short viewport
-   (a phone in landscape) the arrows shrink instead of just running up against/past their
-   reserved box, so tight vertical space always reflows rather than overlapping anything. */
-.direction-arrow-away {
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: clamp(80px, 30vh, 120px);
-  height: clamp(60px, 22vh, 90px);
-}
-
-.direction-arrow-left {
-  top: 50%;
-  left: 24px;
-  transform: translateY(-50%);
-  width: clamp(64px, 26vh, 110px);
-  height: clamp(64px, 26vh, 110px);
-}
-
-.direction-arrow-right {
-  top: 50%;
-  right: 24px;
-  transform: translateY(-50%);
-  width: clamp(64px, 26vh, 110px);
-  height: clamp(64px, 26vh, 110px);
-}
-
-.heading-distance-btn {
-  display: block;
-  width: fit-content;
-  margin: 0 auto;
-}
-
-/* Text/labels inside #heading-distance-modal sit on the light .modal-card surface (see
-   .modal-card button.secondary's own comment on this exact light/dark split) -- .step-label
-   itself assumes a dark backdrop (yellow-on-dark), so this is its light-card equivalent. */
-.step-label-dark {
-  margin: 16px 0 6px;
-  font-weight: 900;
-  font-size: 0.8rem;
-  color: var(--text);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-#heading-distance-modal .step-label-dark:first-of-type {
-  margin-top: 4px;
-}
-
-.heading-slider-value {
-  text-align: center;
-  font-size: 0.85rem;
-  color: var(--muted);
-  margin-top: 2px;
-}
-
-#heading-slider {
-  width: 100%;
-  margin-top: 8px;
 }
 
 /* --- Manual path (ManualLoggingScreen.kt): full-screen map + fixed center crosshair --- */
@@ -1787,6 +1617,34 @@ button.camera-status.secondary {
   z-index: 5;
 }
 
+/* Item 60: mirrors .manual-locate-row's own position (same top offset, opposite side) -- the
+   camera path's attached photo as a small corner thumbnail rather than the old full-bleed review
+   step. Hidden by default (index.html) -- shown only once updateManualPhotoThumb (submit-view.js)
+   confirms a photo actually exists this visit. */
+.manual-photo-thumb-row {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  left: 16px;
+  z-index: 5;
+}
+
+.manual-photo-thumb-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 2px solid #ffffff;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000000;
+}
+
+.manual-photo-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 .manual-datetime-btn {
   display: block;
   width: fit-content;
@@ -1808,8 +1666,8 @@ button.camera-status.secondary {
 }
 
 /* Landscape: the Report tab no longer forces/locks this orientation (see orientation-lock.js's
-   header comment on why that was removed) -- .review-bottom-panel/.direction-arrows-overlay/
-   .manual-locate-row above are ONE layout that already works in both orientations (a bottom
+   header comment on why that was removed) -- .review-bottom-panel/.manual-locate-row above are
+   ONE layout that already works in both orientations (a bottom
    panel that scrolls internally past a fixed max-height, arrows/buttons positioned in percentage/
    safe-area terms rather than assuming one fixed aspect ratio) rather than a separate landscape-
    specific rearrangement. The only thing landscape genuinely changes is WHERE a notch/home-
@@ -1842,12 +1700,10 @@ button.camera-status.secondary {
 /* DIAGNOSED (item 26b): width:100% stretched this button's actual clickable hit area across the
    WHOLE column (roughly a quarter of the panel's width) at a 44px height, even though the visible
    "+"/"-" glyph is small and centered -- on the leftmost/rightmost whale-count columns, that
-   full-width invisible hit area geometrically overlapped the LEFT/RIGHT direction arrows
-   positioned at the screen's edges, capturing taps meant for them regardless of the (separately
-   fixed) z-index ordering between .direction-arrows-overlay and .review-bottom-panel. A fixed
-   44x44 box (still a full accessible touch target) centered in the column via margin:0 auto
-   matches the actual drawn glyph's footprint instead of the whole column's, so nothing invisible
-   extends into the arrow zone at all -- not relying on stacking order alone to keep the two apart. */
+   full-width invisible hit area extended into screen-edge controls it had no business capturing
+   taps for (originally the camera path's own LEFT/RIGHT direction arrows, since removed by item
+   60). A fixed 44x44 box (still a full accessible touch target) centered in the column via
+   margin:0 auto matches the actual drawn glyph's footprint instead of the whole column's. */
 .whale-count-inc, .whale-count-dec {
   background: none;
   border: none;
@@ -1935,19 +1791,19 @@ button.secondary {
   margin-top: 8px;
 }
 
-/* #submit-status/#manual-submit-status/#camera-status all sit with NO backing behind them now
-   (.review-bottom-panel's own background was removed for both #review-step and #manual-log-step,
-   see those rules' own comments) -- directly over a real photo or a live map, both of
-   unpredictable brightness, so a text-shadow is added on top of the light-on-dark color itself,
-   belt and suspenders against a bright sky/water photo or map tile where near-white text alone
-   could still wash out. The muted/error tones these override (tuned for a light card, e.g. the
-   tier-code modal) would be nearly illegible on any of these. */
-#submit-status.status-info, #manual-submit-status.status-info {
+/* #manual-submit-status/#camera-status both sit with NO backing behind them (.review-bottom-
+   panel's own background was removed for #manual-log-step, see that rule's own comment) --
+   directly over a live map or the camera preview, both of unpredictable brightness, so a
+   text-shadow is added on top of the light-on-dark color itself, belt and suspenders against a
+   bright sky/water map tile where near-white text alone could still wash out. The muted/error
+   tones these override (tuned for a light card, e.g. the tier-code modal) would be nearly
+   illegible on either. */
+#manual-submit-status.status-info {
   color: rgba(255, 255, 255, 0.85);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
 
-#submit-status.status-error, #manual-submit-status.status-error, #camera-status.status-error {
+#manual-submit-status.status-error, #camera-status.status-error {
   color: #ffdada;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }

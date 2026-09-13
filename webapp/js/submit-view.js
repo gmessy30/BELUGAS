@@ -1,26 +1,26 @@
-// Camera tab (native's own menu label -- App.kt's MainMenuDrawer). Ports CaptureScreen.kt (live
-// camera + reticle) then LoggingScreen.kt (captured photo full-bleed, DONE/RETAKE row, 3 relative
-// direction arrows overlaid on the photo, a heading+distance trigger that PROJECTS the whale
-// position, whale-count row) as two steps within this tab.
+// Camera tab (native's own menu label -- App.kt's MainMenuDrawer).
 //
-// ManualLoggingScreen.kt ("Report Manually", see openManualReportFlow below) is a STRUCTURALLY
-// DIFFERENT native screen -- a real interactive map with a fixed center pin, SELF/OTHER toggle,
-// no heading/distance concept at all -- so it's its own separate #manual-log-step section here,
-// not a shared/overloaded copy of the camera path's review step (an earlier pass in this app's
-// history conflated the two into one shared UI; restoring the real per-screen native behavior is
-// exactly what un-does that).
+// ITEM 60 DESIGN CHANGE: automatic whale placement (a heading+distance projection outward from
+// the observer's own GPS fix) kept landing whales on land -- a GPS fix's own error plus an
+// estimated bearing/distance compounds fast at these distances. Both reporting paths now place
+// the whale by human map placement instead: capturing a photo (or skipping the camera entirely)
+// goes STRAIGHT into the same map+crosshair+BearingDial screen ManualLoggingScreen.kt/
+// #manual-log-step already used for "Report Manually", with the photo (if any) attached to the
+// eventual submission -- there is no more separate LoggingScreen-style review step, no heading/
+// distance picker, and no CoastlineGeometry offshore-guess fallback (none of that math exists in
+// this app any more, camera path included).
 //
-// HEADING INPUT: no live compass-sensor attempt on the web (cross-browser magnetometer access is
-// inconsistent, gated behind extra permission prompts on iOS Safari in particular) -- always the
-// manual-entry path (8-point chips + slider) HeadingDistanceDialog itself already falls back to
-// when its own sensor read comes back null. Not an invented simplification, native's own fallback
-// UI reused directly.
+// The one thing the camera path does that plain "Report Manually" deliberately still doesn't: it
+// takes a best-effort GPS fix at capture time and uses it ONLY to center the map initially (see
+// enterManualLogStepFromCamera/centerManualMapFromGpsOnce below) -- so a user coming from the
+// camera starts looking at roughly the right area instead of the region-wide default view. That
+// fix is never stored and never the submitted position; the submitted position is always
+// whatever the crosshair/map center reads at SUBMIT time, exactly like every other entry into
+// this screen.
 //
-// COASTLINE FALLBACK NOT PORTED: LoggingScreen still tries CoastlineGeometry's offshore-guess
-// projection (FALLBACK) when no heading was given at all -- that needs a real port of
-// CoastlineGeometry's raycasting, out of scope here. This app instead always shows the "Can't
-// Place This Sighting" dialog (a real native dialog, just reached unconditionally on no-heading
-// rather than only once a fallback guess also fails) -- flagged, not silently narrowed.
+// NATIVE PARITY: NOT yet applied to the Kotlin app (see CLAUDE.md's own pending-parity list) --
+// this is a web-only change for now, applied to native in a later pass alongside every other
+// pending parity item, then rebuilt for both platforms.
 
 let cameraStream = null;
 let capturedPhotoBlob = null;
@@ -40,31 +40,32 @@ let cameraZoomUsesHardware = false;
 let cameraCssZoomLevel = 1;
 const CAMERA_ZOOM_MIN = 1;
 const CAMERA_ZOOM_MAX = 5; // matches native's own 1f..5f range, used only by the CSS fallback
+// Item 59: pinch-to-zoom (CameraPreviewHost.android.kt's detectTransformGestures) -- tracks the
+// two-finger distance at pinch start and the slider's own value at that moment, so a pinch is a
+// multiplier on wherever zoom already was, not an absolute jump. Shares applyCameraZoomValue with
+// the slider itself (below), so both are clamped to the exact same live range -- the device's own
+// getCapabilities().zoom {min,max} when hardware zoom is in use, or the 1x-5x CSS-fallback range
+// otherwise -- with no separate range to keep in sync.
+let cameraPinchStartDistance = null;
+let cameraPinchStartZoomValue = 1;
 
-const cameraCounts = { whites: 0, greys: 0, calves: 0, unknown: 0 };
+// Item 60: one whale-count object for both entry points now -- there's only one whale-count row
+// left (#manual-log-step's own), so the camera path's previously-separate cameraCounts is gone.
 const manualCounts = { whites: 0, greys: 0, calves: 0, unknown: 0 };
 
-// --- Camera-path position state (LoggingScreen.kt) ---
-let selectedPodDirection = "NONE"; // AWAY/LEFT/RIGHT/NONE -- relative to the observer
-let headingDegrees = null; // null = not set yet
-let headingIsAerial = false; // cached once per review-step visit, see goToReviewStep
-// BUG FIX (item 47): was "MEDIUM" -- an unreviewed default let a sighting submit with a real
-// heading but a distance nobody ever actually chose. null now, same as headingDegrees, until
-// explicitly set via a distance chip tap (see the heading-distance modal's own draft handling).
-let selectedDistanceBucketKey = null;
-let pendingHeadingDegreesDraft = null; // the heading-distance modal's own working value pre-confirm
-// BUG FIX (item 47): mirrors pendingHeadingDegreesDraft above -- the distance chips used to write
-// selectedDistanceBucketKey directly and immediately (even if the modal was then CANCELLED), with
-// no pending/draft/confirm step at all, unlike heading. Now both fields go through the identical
-// draft-then-commit-on-CONFIRM path.
-let pendingDistanceBucketKeyDraft = null;
-
-// --- Manual-path state (ManualLoggingScreen.kt) ---
+// --- Manual-path state (ManualLoggingScreen.kt) -- shared by BOTH entry points as of item 60 ---
 let manualMapInstance = null;
 let manualLat = DEFAULT_MAP_CENTER[0];
 let manualLng = DEFAULT_MAP_CENTER[1];
 let manualTravelBearingDegrees = null;
 let manualObserverType = "SELF";
+// Item 60: which of the two entry points brought us to #manual-log-step this visit -- the two
+// differ by exactly one nav-stack layer (see enterManualLogStepFromCamera's own push vs.
+// main-menu.js's "manual-report" push for openManualReportFlow), so a successful submit's own
+// post-reset teardown (resetManualSubmitForm) needs to know which one to correctly unwind either
+// the extra layer (camera path) or nothing at all (plain path, matching its own pre-existing
+// behavior).
+let manualLogStepReachedViaCameraPath = false;
 
 // Shared by both paths' geofence-warning "SAVE ANYWAY" button -- set right before showing the
 // warning, so one modal/handler pair can serve either flow without needing to know which one is
@@ -81,15 +82,6 @@ let pendingConfirmAction = null;
 // objects have the identical {whites, greys, calves, unknown} shape.
 function formatWhaleCountsSummary(counts) {
   return `${counts.whites} white, ${counts.greys} grey, ${counts.calves} calves, ${counts.unknown} unknown`;
-}
-
-// Nearest-8-point label for a quick-glance display only (exact degrees are shown alongside it) --
-// same rounding-for-display-only treatment map-view.js's formatTravelDirection already uses for
-// stored travel bearings, applied here to the heading-to-whale value instead.
-function compassLabelForDegrees(degrees) {
-  const normalized = ((degrees % 360) + 360) % 360;
-  const index = Math.round(normalized / 45) % 8;
-  return COMPASS_POINTS_8[index][0];
 }
 
 // Item 34: compact readable summary (counts spelled out, direction/heading, time) with CONFIRM/
@@ -111,9 +103,18 @@ function showSubmitConfirmModal(countsText, directionText, timeText, onConfirm) 
 function initSubmitView() {
   document.getElementById("capture-btn").addEventListener("click", capturePhoto);
   document.getElementById("camera-zoom-slider").addEventListener("input", handleCameraZoomInput);
-  document.getElementById("skip-camera-btn").addEventListener("click", () => goToReviewStep());
-  document.getElementById("retake-btn").addEventListener("click", retakePhoto);
-  document.getElementById("done-btn").addEventListener("click", submitCameraSighting);
+  // Item 59: pinch-to-zoom, matching CameraPreviewHost.android.kt's own detectTransformGestures --
+  // touchmove needs { passive: false } so preventDefault can actually suppress the browser's own
+  // two-finger scroll/zoom while pinching the camera itself.
+  const cameraStepEl = document.getElementById("camera-step");
+  cameraStepEl.addEventListener("touchstart", handleCameraPinchStart, { passive: true });
+  cameraStepEl.addEventListener("touchmove", handleCameraPinchMove, { passive: false });
+  cameraStepEl.addEventListener("touchend", handleCameraPinchEnd, { passive: true });
+  cameraStepEl.addEventListener("touchcancel", handleCameraPinchEnd, { passive: true });
+  // Item 60: capturing a photo (or skipping the camera) now goes straight into the same
+  // manual-log-step every "Report Manually" entry uses -- see enterManualLogStepFromCamera.
+  document.getElementById("skip-camera-btn").addEventListener("click", () => enterManualLogStepFromCamera());
+  document.getElementById("manual-photo-thumb-btn").addEventListener("click", retakePhoto);
   document.getElementById("manual-submit-btn").addEventListener("click", submitManualSighting);
 
   document.getElementById("submit-confirm-back-btn").addEventListener("click", () => navigateBack());
@@ -128,22 +129,6 @@ function initSubmitView() {
     navigateBack();
     if (pendingFinishAction) pendingFinishAction(); // SAVE ANYWAY -- not geofence-verified
   });
-
-  document.getElementById("cannot-place-cancel-btn").addEventListener("click", () => navigateBack());
-  document.getElementById("cannot-place-goto-manual-btn").addEventListener("click", () => {
-    navigateBack();
-    // Already inside the submit tab (this dialog only ever shows from the camera-path review
-    // step), and the review-step nav-stack layer already on the stack is fine left as-is --
-    // goToCameraStep (its onPop) hides BOTH #review-step and #manual-log-step defensively, so it
-    // still tears down correctly whichever one is actually showing when this is eventually
-    // backed out of. No new layer needed for this in-tab transition.
-    openManualReportFlow();
-  });
-
-  initDirectionArrows();
-  initHeadingDistanceModal();
-  initWhaleCountWiring("#review-step", cameraCounts);
-  initReviewBottomPanelHeightTracking();
 
   initManualObserverToggle();
   initManualPositionControls();
@@ -215,6 +200,7 @@ function resetCameraZoomUi() {
   cameraZoomTrack = null;
   cameraZoomUsesHardware = false;
   cameraCssZoomLevel = 1;
+  cameraPinchStartDistance = null;
   document.getElementById("camera-preview").style.transform = "";
   document.getElementById("camera-zoom-control").hidden = true;
   document.getElementById("camera-zoom-slider").value = "1";
@@ -231,6 +217,10 @@ function initCameraZoomControl() {
     return;
   }
 
+  // Item 59: the slider's range comes from the device's OWN reported {min, max} here, never the
+  // 1x-5x CAMERA_ZOOM_MIN/MAX constant below -- that constant is scoped to the CSS fallback only
+  // (a few lines down), so a phone whose camera actually supports more than 5x (most iPhones do)
+  // still gets its full real range, not native's own hardcoded cap.
   const caps = typeof track.getCapabilities === "function" ? track.getCapabilities() : {};
   if (caps && caps.zoom && caps.zoom.max > caps.zoom.min) {
     cameraZoomTrack = track;
@@ -255,8 +245,18 @@ function initCameraZoomControl() {
   control.hidden = false;
 }
 
-function handleCameraZoomInput(event) {
-  const value = parseFloat(event.target.value);
+// Item 59: shared by the slider's own input listener AND the pinch gesture below, clamping to
+// the slider's own live min/max either way -- whatever initCameraZoomControl decided that range
+// is (real device capability, or the CSS-fallback constant), both input paths land on the exact
+// same number for the exact same finger position/slider position, never two ranges drifting
+// apart.
+function applyCameraZoomValue(rawValue) {
+  const slider = document.getElementById("camera-zoom-slider");
+  const min = parseFloat(slider.min);
+  const max = parseFloat(slider.max);
+  const value = Math.min(max, Math.max(min, rawValue));
+
+  slider.value = value;
   document.getElementById("camera-zoom-label").textContent = `${value.toFixed(1)}x`;
 
   if (cameraZoomUsesHardware && cameraZoomTrack) {
@@ -268,6 +268,33 @@ function handleCameraZoomInput(event) {
 
   cameraCssZoomLevel = value;
   document.getElementById("camera-preview").style.transform = `scale(${value})`;
+}
+
+function handleCameraZoomInput(event) {
+  applyCameraZoomValue(parseFloat(event.target.value));
+}
+
+function cameraTouchPairDistance(touches) {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.hypot(dx, dy);
+}
+
+function handleCameraPinchStart(event) {
+  if (event.touches.length !== 2 || document.getElementById("camera-zoom-control").hidden) return;
+  cameraPinchStartDistance = cameraTouchPairDistance(event.touches);
+  cameraPinchStartZoomValue = parseFloat(document.getElementById("camera-zoom-slider").value);
+}
+
+function handleCameraPinchMove(event) {
+  if (event.touches.length !== 2 || cameraPinchStartDistance == null) return;
+  event.preventDefault(); // don't let two-finger movement scroll/gesture-zoom the page underneath
+  const scaleFactor = cameraTouchPairDistance(event.touches) / cameraPinchStartDistance;
+  applyCameraZoomValue(cameraPinchStartZoomValue * scaleFactor);
+}
+
+function handleCameraPinchEnd(event) {
+  if (event.touches.length < 2) cameraPinchStartDistance = null;
 }
 
 function setCaptureLabel(text) {
@@ -307,73 +334,99 @@ function capturePhoto() {
     (blob) => {
       capturedPhotoBlob = blob;
       setCaptureLabel("CAPTURE");
-      goToReviewStep();
+      enterManualLogStepFromCamera();
     },
     "image/jpeg",
     0.85
   );
 }
 
-// Fetches the observer's altitude once per visit (for the heading dialog's isAerial bucket
-// sizing, matching LoggingScreen's own LaunchedEffect(Unit) fetch) -- best-effort, defaults to
-// shore (0m/non-aerial) if location isn't available, same as native's `?: 0.0` fallback.
-async function cacheObserverAltitudeForHeadingDialog() {
-  if (!navigator.geolocation) return;
-  await new Promise((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        headingIsAerial = (position.coords.altitude || 0) > 100;
-        resolve();
-      },
-      () => resolve(),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
-    );
-  });
+// Item 60: replaces the old goToReviewStep -- capturing a photo (or skipping the camera) now
+// lands directly on the SAME map+crosshair+BearingDial screen "Report Manually" uses, with the
+// photo (if any) attached via updateManualPhotoThumb, rather than LoggingScreen's own separate
+// photo-plus-heading-plus-distance review step (gone entirely, see this file's header comment).
+function enterManualLogStepFromCamera() {
+  manualLogStepReachedViaCameraPath = true;
+  stopCamera();
+  updateManualPhotoThumb();
+
+  document.getElementById("camera-step").hidden = true;
+  document.getElementById("manual-log-step").hidden = false;
+
+  initManualMapIfNeeded();
+  setManualDatetimeInputToNow();
+  updateManualDatetimeButtonLabel();
+
+  // Item 60: a best-effort GPS fix taken ONLY to center the map near the observer -- never
+  // stored, never the submitted position (see centerManualMapFromGpsOnce's own comment). Plain
+  // "Report Manually" (openManualReportFlow) deliberately does NOT do this -- that's an
+  // intentional, confirmed-against-source difference from native, unchanged by this item.
+  centerManualMapFromGpsOnce();
+
+  // Pushes its own nav-stack layer (see nav-stack.js) so the back gesture/hardware back button
+  // returns to the camera step exactly like tapping the photo thumbnail (retakePhoto) does --
+  // goToCameraStep is that same teardown, reused directly as this layer's onPop.
+  pushNavLayer("manual-log-step-from-camera", goToCameraStep);
 }
 
-function goToReviewStep() {
-  stopCamera();
-
-  const photoEl = document.getElementById("review-photo");
+// Item 60: shows/hides the small corner thumbnail on #manual-log-step (see the HTML's own
+// comment) -- visible only when this visit actually has a captured photo attached, i.e. only via
+// the camera path, never via plain "Report Manually".
+function updateManualPhotoThumb() {
+  const thumbBtn = document.getElementById("manual-photo-thumb-btn");
+  const thumbImg = document.getElementById("manual-photo-thumb");
   if (reviewPhotoObjectUrl) {
     URL.revokeObjectURL(reviewPhotoObjectUrl);
     reviewPhotoObjectUrl = null;
   }
   if (capturedPhotoBlob) {
     reviewPhotoObjectUrl = URL.createObjectURL(capturedPhotoBlob);
-    photoEl.src = reviewPhotoObjectUrl;
-    photoEl.hidden = false;
+    thumbImg.src = reviewPhotoObjectUrl;
+    thumbBtn.hidden = false;
   } else {
-    photoEl.hidden = true; // no photo (camera unavailable, user chose to skip)
+    thumbImg.src = "";
+    thumbBtn.hidden = true;
   }
-  document.getElementById("review-step").classList.toggle("no-photo", !capturedPhotoBlob);
-  document.getElementById("done-btn").textContent = "← DONE";
-  document.getElementById("retake-btn").hidden = false;
+}
 
-  document.getElementById("camera-step").hidden = true;
-  document.getElementById("review-step").hidden = false;
-  measureReviewBottomPanelHeightNow();
-
-  cacheObserverAltitudeForHeadingDialog();
-
-  // Pushes its own nav-stack layer (see nav-stack.js) so the back gesture/hardware back button
-  // returns to the camera step exactly like RETAKE does -- goToCameraStep is literally RETAKE's
-  // own teardown, reused directly as this layer's onPop.
-  pushNavLayer("review-step", goToCameraStep);
+// Item 60: a rough GPS fix taken once, at capture time, used ONLY to center the map near the
+// observer's own position -- never stored, never the submitted position (that's still always
+// whatever the crosshair/map center reads at SUBMIT time, exactly like a plain Report Manually
+// entry). Skipped entirely if the user has already started panning/zooming the map by the time
+// the fix arrives, so a slow fix can never yank the view out from under someone who's already
+// begun placing the pin. Best-effort and silent -- a denied/failed fix just leaves the map at its
+// DEFAULT_MAP_CENTER starting point, same as plain Report Manually always does.
+const CAMERA_GPS_CENTER_ZOOM = 14; // close enough to place a precise pin, not a region overview
+function centerManualMapFromGpsOnce() {
+  if (!navigator.geolocation || !manualMapInstance) return;
+  let userHasInteracted = false;
+  manualMapInstance.once("dragstart zoomstart", () => {
+    userHasInteracted = true;
+  });
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      // Also bails if the user has already left this screen entirely (back to camera-step, or
+      // out of the tab) by the time a slow fix resolves -- otherwise a stale fix from an earlier
+      // visit could still recenter the map out from under whatever the user is doing much later.
+      if (userHasInteracted || document.getElementById("manual-log-step").hidden) return;
+      manualMapInstance.setView(
+        [position.coords.latitude, position.coords.longitude],
+        CAMERA_GPS_CENTER_ZOOM
+      );
+    },
+    (err) => console.warn("CAMERA_INITIAL_GPS_FIX_ERROR", err),
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+  );
 }
 
 // Matches LoggingScreen's onDoneClick/onRetakeClick and ManualLoggingScreen's onDoneClick alike --
-// all three return to Screen.CAPTURE, ready for the next report. Shared exit point for both this
-// app's review-step (camera) and manual-log-step, since either one might be the caller.
+// all three return to Screen.CAPTURE, ready for the next report. Shared exit point regardless of
+// which of the two entry points (camera-with-photo or plain Report Manually) is currently showing.
 function goToCameraStep() {
-  if (reviewPhotoObjectUrl) {
-    URL.revokeObjectURL(reviewPhotoObjectUrl);
-    reviewPhotoObjectUrl = null;
-  }
-  document.getElementById("review-step").hidden = true;
+  capturedPhotoBlob = null;
+  updateManualPhotoThumb();
   document.getElementById("manual-log-step").hidden = true;
   document.getElementById("camera-step").hidden = false;
-  resetCameraPositionControls();
   resetManualPositionControls();
   startCamera();
 }
@@ -388,394 +441,25 @@ function resetManualPositionControls() {
   setManualObserverType("SELF");
 }
 
+// Item 60: tapping the photo thumbnail on #manual-log-step discards the photo and returns to the
+// camera step for another attempt -- the only "retake" affordance left, now that there's no
+// separate review step to retake FROM.
 function retakePhoto() {
-  capturedPhotoBlob = null;
-  navigateBack(); // pops the review-step layer; its onPop IS goToCameraStep
-}
-
-function resetCameraPositionControls() {
-  selectedPodDirection = "NONE";
-  document.querySelectorAll(".direction-arrow-btn").forEach((b) => b.classList.remove("selected"));
-  headingDegrees = null;
-  selectedDistanceBucketKey = null; // BUG FIX (item 47): was "MEDIUM" -- see that variable's own comment
-  updateHeadingDistanceButtonLabel();
-}
-
-// Mirrors ManualLoggingScreen.kt's own bottomPanelHeightPx/onGloballyPositioned pattern (used
-// there to anchor RECENTER above its bottom panel) for the same underlying problem: the direction
-// arrows need to know the REAL rendered height of #review-step's bottom panel, not a guessed
-// constant, so they never overlap it regardless of viewport height or font metrics (see
-// .direction-arrows-overlay's own comment in style.css). ResizeObserver reports the panel's
-// actual box whenever it changes -- including the very first time it becomes visible, since going
-// from a hidden ancestor to shown is itself a real resize from 0x0.
-function initReviewBottomPanelHeightTracking() {
-  const panel = document.querySelector("#review-step .review-bottom-panel");
-  const reviewStep = document.getElementById("review-step");
-  if (!panel || !reviewStep || typeof ResizeObserver === "undefined") return;
-  const observer = new ResizeObserver((entries) => {
-    for (const entry of entries) {
-      reviewStep.style.setProperty("--review-bottom-panel-height", `${Math.ceil(entry.contentRect.height)}px`);
-    }
-  });
-  observer.observe(panel);
-}
-
-// Belt-and-suspenders alongside the ResizeObserver above: a hidden-ancestor-to-visible transition
-// (exactly what happens every time goToReviewStep runs) is the one case a ResizeObserver callback
-// isn't guaranteed to fire promptly/at all for across every browser, so this explicitly re-measures
-// the instant the panel is actually laid out and visible (one rAF after unhiding, not the same
-// tick -- the browser hasn't computed its real box yet at the moment `hidden` is cleared). The
-// z-index fix on .direction-arrows-overlay (style.css) means the arrows are never truly occluded/
-// unclickable even if this were somehow stale, but there's no reason to leave the reservation
-// itself wrong when it's this cheap to get right immediately.
-function measureReviewBottomPanelHeightNow() {
-  const panel = document.querySelector("#review-step .review-bottom-panel");
-  const reviewStep = document.getElementById("review-step");
-  if (!panel || !reviewStep) return;
-  requestAnimationFrame(() => {
-    reviewStep.style.setProperty("--review-bottom-panel-height", `${Math.ceil(panel.getBoundingClientRect().height)}px`);
-  });
-}
-
-function initDirectionArrows() {
-  document.querySelectorAll(".direction-arrow-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".direction-arrow-btn").forEach((b) => b.classList.remove("selected"));
-      btn.classList.add("selected");
-      selectedPodDirection = btn.dataset.podDirection;
-    });
-  });
-}
-
-function initHeadingDistanceModal() {
-  document.getElementById("heading-distance-btn").addEventListener("click", openHeadingDistanceModal);
-  document.getElementById("heading-distance-cancel-btn").addEventListener("click", () => navigateBack());
-  document.getElementById("heading-distance-confirm-btn").addEventListener("click", () => {
-    headingDegrees = pendingHeadingDegreesDraft;
-    // BUG FIX (item 47): distance now commits on CONFIRM exactly like heading, instead of the
-    // chip click writing selectedDistanceBucketKey directly and immediately (which meant a
-    // distance change "stuck" even if the user then hit CANCEL, and meant there was no way for
-    // it to ever be null -- see this variable's own declaration comment).
-    selectedDistanceBucketKey = pendingDistanceBucketKeyDraft;
-    updateHeadingDistanceButtonLabel();
-    navigateBack();
-  });
-  document.getElementById("heading-slider").addEventListener("input", (event) => {
-    pendingHeadingDegreesDraft = Number(event.target.value);
-    document.getElementById("heading-slider-value").textContent = `${pendingHeadingDegreesDraft}°`;
-    renderHeadingCompassChips();
-  });
-}
-
-function openHeadingDistanceModal() {
-  // BUG FIX (item 47): no "?? 0"/"?? MEDIUM" fallback here anymore -- a genuinely never-set
-  // field (headingDegrees/selectedDistanceBucketKey both null) now stays null in the draft too,
-  // rather than silently seeding a fabricated starting value that CONFIRM would then commit as
-  // if it had been deliberately chosen. Re-opening to adjust an ALREADY-confirmed value still
-  // carries that real value over correctly, since headingDegrees/selectedDistanceBucketKey
-  // themselves are what's being read here, not a hardcoded default.
-  pendingHeadingDegreesDraft = headingDegrees;
-  pendingDistanceBucketKeyDraft = selectedDistanceBucketKey;
-  const sliderDisplayValue = pendingHeadingDegreesDraft ?? 0;
-  document.getElementById("heading-slider").value = String(sliderDisplayValue);
-  document.getElementById("heading-slider-value").textContent =
-    pendingHeadingDegreesDraft != null ? `${sliderDisplayValue}°` : "Not set";
-  renderHeadingCompassChips();
-  renderHeadingDistanceChips();
-  document.getElementById("heading-distance-modal").hidden = false;
-  pushNavLayer("heading-distance-modal", () => {
-    document.getElementById("heading-distance-modal").hidden = true;
-  });
-}
-
-// Same 8 points as COMPASS_POINTS in HeadingDistancePicker.kt.
-const COMPASS_POINTS_8 = [
-  ["N", 0], ["NE", 45], ["E", 90], ["SE", 135], ["S", 180], ["SW", 225], ["W", 270], ["NW", 315]
-];
-
-function renderHeadingCompassChips() {
-  const container = document.getElementById("heading-compass-chips");
-  container.innerHTML = "";
-  COMPASS_POINTS_8.forEach(([label, degrees]) => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "chip-toggle" + (pendingHeadingDegreesDraft === degrees ? " active" : "");
-    chip.textContent = label;
-    chip.addEventListener("click", () => {
-      pendingHeadingDegreesDraft = degrees;
-      document.getElementById("heading-slider").value = String(degrees);
-      document.getElementById("heading-slider-value").textContent = `${degrees}°`;
-      renderHeadingCompassChips();
-    });
-    container.appendChild(chip);
-  });
-}
-
-function renderHeadingDistanceChips() {
-  const container = document.getElementById("heading-distance-chips");
-  container.innerHTML = "";
-  DISTANCE_BUCKETS.forEach((bucket) => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "chip-toggle" + (pendingDistanceBucketKeyDraft === bucket.key ? " active" : "");
-    chip.textContent = distanceBucketShortLabel(bucket.key, headingIsAerial);
-    chip.addEventListener("click", () => {
-      pendingDistanceBucketKeyDraft = bucket.key;
-      renderHeadingDistanceChips();
-    });
-    container.appendChild(chip);
-  });
-}
-
-function updateHeadingDistanceButtonLabel() {
-  const btn = document.getElementById("heading-distance-btn");
-  // BUG FIX (item 47): both required now, not just heading -- selectedDistanceBucketKey can
-  // genuinely be null (see its own declaration comment), and DISTANCE_BUCKETS.find(...) would
-  // throw on a null key rather than just returning undefined.
-  if (headingDegrees != null && selectedDistanceBucketKey != null) {
-    const bucketLabel = DISTANCE_BUCKETS.find((b) => b.key === selectedDistanceBucketKey).label.toUpperCase();
-    btn.textContent = `🧭 ${Math.round(headingDegrees)}° · ${bucketLabel}`;
-  } else {
-    btn.textContent = "🧭 SET HEADING & DISTANCE";
-  }
-}
-
-function cameraTotalCount() {
-  return cameraCounts.whites + cameraCounts.greys + cameraCounts.calves + cameraCounts.unknown;
-}
-
-function setSubmitStatus(message, isError = false) {
-  const el = document.getElementById("submit-status");
-  el.textContent = message;
-  el.className = isError ? "status-error" : "status-info";
-}
-
-// Bound to the review step's "← DONE" button -- matches LoggingScreen's onClick: fetches a fresh
-// GPS fix as the OBSERVER's own position (the projection origin, never stored as whale_lat/lng
-// itself), projects the whale position outward from it via heading+distance, then runs the same
-// geofence flow every path in this app uses (coarse outer-bound hard reject, then the real
-// buffer-distance check with an online fallback and a SAVE ANYWAY override).
-async function submitCameraSighting() {
-  if (cameraTotalCount() === 0) {
-    setSubmitStatus("Enter at least one whale count before submitting.", true);
-    return;
-  }
-  // BUG FIX (item 47): distance used to default to "MEDIUM" and never actually require a tap --
-  // a user could set heading, hit CONFIRM in the Heading & Distance modal without ever touching a
-  // distance chip, and silently submit at MEDIUM's radius, unreviewed. Distance is now gated the
-  // same way heading already is: null until explicitly chosen (see openHeadingDistanceModal/
-  // renderHeadingDistanceChips), so either one missing routes here, matching this dialog's own
-  // existing "no CoastlineGeometry fallback-guess port -- always directed here when no heading
-  // was set" reasoning exactly (a radius with no real distance behind it is exactly as fabricated
-  // as a position with no real heading behind it).
-  if (headingDegrees == null || selectedDistanceBucketKey == null) {
-    document.getElementById("cannot-place-modal").hidden = false;
-    pushNavLayer("cannot-place-modal", () => {
-      document.getElementById("cannot-place-modal").hidden = true;
-    });
-    return;
-  }
-  if (!navigator.geolocation) {
-    setSubmitStatus("Geolocation isn't available in this browser.", true);
-    return;
-  }
-
-  // Item 34: frozen here rather than re-read from Date.now() again after confirmation -- the
-  // time shown in the summary is exactly the time that ends up stored, not an approximation of it.
-  const observedAtEpochMs = Date.now();
-  const directionParts = [
-    `Heading to whale: ${Math.round(headingDegrees)}° (${compassLabelForDegrees(headingDegrees)}) · ` +
-      distanceBucketShortLabel(selectedDistanceBucketKey, headingIsAerial)
-  ];
-  if (selectedPodDirection !== "NONE") {
-    directionParts.push(`Pod moving: ${selectedPodDirection}`);
-  }
-  showSubmitConfirmModal(
-    formatWhaleCountsSummary(cameraCounts),
-    directionParts.join(" · "),
-    new Date(observedAtEpochMs).toLocaleString(),
-    () => proceedCameraSubmit(observedAtEpochMs)
-  );
-}
-
-async function proceedCameraSubmit(observedAtEpochMs) {
-  const button = document.getElementById("done-btn");
-  button.disabled = true;
-  setSubmitStatus("Getting your location…");
-
-  try {
-    const position = await getBestGpsFix((sample) => {
-      setSubmitStatus(`Getting your location… (best so far: ±${Math.round(sample.coords.accuracy)}m)`);
-    });
-    // Item 30a: surfaced so a poor fix is visible BEFORE it gets baked into a projected whale
-    // position several hundred meters off -- native never shows this either (LocationService.kt's
-    // LocationCoordinates doesn't even carry accuracy), but a raw browser GPS fix is more variable
-    // than the OS-level fused/CoreLocation APIs native calls, so this app surfaces it where native
-    // doesn't need to.
-    console.log("GEOLOCATION_FIX_ACCURACY_METERS", position.coords.accuracy);
-    setSubmitStatus(`Location acquired (±${Math.round(position.coords.accuracy)}m). Checking location…`);
-    const radiusMeters = distanceBucketRadiusMeters(selectedDistanceBucketKey, headingIsAerial);
-    const [whaleLat, whaleLng] = destinationPoint(
-      position.coords.latitude, position.coords.longitude, headingDegrees, radiusMeters
-    );
-    continueCameraSubmit(whaleLat, whaleLng, radiusMeters, observedAtEpochMs);
-  } catch (err) {
-    console.error("GEOLOCATION_ERROR", err);
-    setSubmitStatus("Couldn't get your location (" + (err.message || err) + "). Check location permissions.", true);
-    button.disabled = false;
-  }
-}
-
-// Item 30a: a single getCurrentPosition() call can hand back a poor fix even with
-// enableHighAccuracy/maximumAge:0 -- a first-fix-after-idle chipset warm-up in particular, common
-// in a browser tab/PWA that isn't holding a location session open the way a native app's fused/
-// CoreLocation client does. Sampling a short burst via watchPosition and keeping whichever fix
-// reports the best (lowest) coords.accuracy is far more reliable than trusting whatever the FIRST
-// callback happens to deliver -- exactly the "prime suspect" for a projected position landing
-// hundreds of meters off. Resolves early once a good-enough fix arrives rather than always
-// waiting out the full sampling window.
-const GPS_FIX_SAMPLE_WINDOW_MS = 5000;
-const GPS_FIX_GOOD_ENOUGH_ACCURACY_METERS = 20;
-
-function getBestGpsFix(onSample) {
-  return new Promise((resolve, reject) => {
-    let best = null;
-    let settled = false;
-
-    const finish = (fatalErr) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      navigator.geolocation.clearWatch(watchId);
-      if (best) resolve(best);
-      else reject(fatalErr || new Error("No location fix was received."));
-    };
-
-    const timer = setTimeout(finish, GPS_FIX_SAMPLE_WINDOW_MS);
-
-    const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        if (!best || position.coords.accuracy < best.coords.accuracy) {
-          best = position;
-          onSample?.(position);
-        }
-        if (position.coords.accuracy <= GPS_FIX_GOOD_ENOUGH_ACCURACY_METERS) {
-          finish();
-        }
-      },
-      (err) => {
-        // Permission denial is terminal -- no reason to burn the whole sampling window waiting
-        // on a sample that will never arrive (matches the old single-shot call's fail-fast
-        // behavior for this case). Other errors (timeout/position-unavailable) might still be
-        // followed by a later successful sample within the window, so only bail early here.
-        if (!best && err.code === err.PERMISSION_DENIED) finish(err);
-      },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: GPS_FIX_SAMPLE_WINDOW_MS }
-    );
-  });
-}
-
-async function continueCameraSubmit(whaleLat, whaleLng, radiusMeters, observedAtEpochMs) {
-  const button = document.getElementById("done-btn");
-
-  if (!isWithinOuterGeofence(whaleLat, whaleLng)) {
-    document.getElementById("outer-geofence-reject-modal").hidden = false;
-    pushNavLayer("outer-geofence-reject-modal", () => {
-      document.getElementById("outer-geofence-reject-modal").hidden = true;
-    });
-    button.disabled = false;
-    return;
-  }
-
-  setSubmitStatus("Checking location…");
-  const finish = (verified) => finishCameraSubmit(whaleLat, whaleLng, radiusMeters, verified, observedAtEpochMs);
-  const verified = isWhalePositionVerified(whaleLat, whaleLng, radiusMeters);
-  if (verified === true) {
-    await finish(true);
-  } else if (verified === false) {
-    button.disabled = false;
-    setSubmitStatus("");
-    showGeofenceWarning(whaleLat, whaleLng, finish);
-  } else {
-    setSubmitStatus("Checking water data…");
-    const validByChannel = await isWithinCoastlineChannelFallback(whaleLat, whaleLng);
-    button.disabled = false;
-    if (validByChannel) {
-      await finish(true);
-    } else {
-      setSubmitStatus("");
-      showGeofenceWarning(whaleLat, whaleLng, finish);
-    }
-  }
-}
-
-function buildCameraSightingRecord(whaleLat, whaleLng, radiusMeters, isGeofenceVerified, observedAtEpochMs) {
-  const travelBearing = podDirectionToAbsoluteTravelBearingDegrees(selectedPodDirection, headingDegrees);
-  return {
-    whale_lat: whaleLat,
-    whale_lng: whaleLng,
-    uncertainty_radius_meters: radiusMeters,
-    uncertainty_bucket: selectedDistanceBucketKey,
-    travel_bearing_degrees: travelBearing,
-    travel_bearing_source: travelBearing != null ? "MANUAL" : null,
-    position_source: "PROJECTED",
-    count_whites: cameraCounts.whites,
-    count_greys: cameraCounts.greys,
-    count_calves: cameraCounts.calves,
-    count_unknown: cameraCounts.unknown,
-    observed_at_epoch_ms: observedAtEpochMs,
-    observer_type: "SELF", // LoggingScreen has no SELF/OTHER toggle at all -- that's manual-only
-    is_geofence_verified: isGeofenceVerified,
-    photo_url: null,
-    subscriber_id: getOrCreateSubscriberId()
-  };
-}
-
-async function finishCameraSubmit(whaleLat, whaleLng, radiusMeters, isGeofenceVerified, observedAtEpochMs) {
-  const button = document.getElementById("done-btn");
-  button.disabled = true;
-  setSubmitStatus("Submitting…");
-
-  try {
-    const record = buildCameraSightingRecord(whaleLat, whaleLng, radiusMeters, isGeofenceVerified, observedAtEpochMs);
-    const result = await submitOrQueueSighting(record, capturedPhotoBlob);
-
-    if (result.ok) {
-      setSubmitStatus("Sighting submitted! Thank you.");
-      resetCameraSubmitForm();
-      await refreshSightings();
-    } else if (result.queued) {
-      setSubmitStatus("You're offline -- this sighting is saved on your device and will upload automatically once you're back online.");
-      resetCameraSubmitForm();
-    } else {
-      setSubmitStatus("Couldn't save the sighting -- check your connection and try again.", true);
-    }
-  } finally {
-    button.disabled = false;
-  }
-}
-
-function resetCameraSubmitForm() {
-  capturedPhotoBlob = null;
-  resetWhaleCountUi("#review-step", cameraCounts);
-  // Pops the review-step layer; its onPop IS goToCameraStep, which also resets heading/direction/
-  // distance for the next capture (matching native: LoggingScreen's remembered state doesn't
-  // survive leaving and re-entering the screen).
-  navigateBack();
+  navigateBack(); // pops the manual-log-step-from-camera layer; its onPop IS goToCameraStep
 }
 
 // --- ManualLoggingScreen.kt (Report Manually path) ---
 
 // Called from the main menu's "Report Manually" item (main-menu.js owns the switchTab/nav-stack
 // push for THAT entry point, since it also has to remember/restore whichever tab was active
-// before) and from the camera path's "Can't Place This Sighting" dialog (already inside the
-// submit tab, no tab switch or new push needed there -- see that button's own handler above).
-// This function itself only ever changes which sub-step is visible within the submit tab.
+// before). This function itself only ever changes which sub-step is visible within the submit
+// tab -- no photo is ever attached via this entry point (updateManualPhotoThumb's hidden default
+// covers that; capturedPhotoBlob is only ever set by the camera path).
 function openManualReportFlow() {
-  switchTab("submit"); // idempotent if already the active tab (the cannot-place-modal call site)
+  manualLogStepReachedViaCameraPath = false;
+  switchTab("submit");
   stopCamera();
   document.getElementById("camera-step").hidden = true;
-  document.getElementById("review-step").hidden = true;
   document.getElementById("manual-log-step").hidden = false;
 
   // GPS is deliberately NOT auto-fetched here. Confirmed against ManualLoggingScreen.kt's real
@@ -785,7 +469,9 @@ function openManualReportFlow() {
   // that initial fetch. This app overrides that on purpose anyway (explicitly confirmed, not an
   // oversight): manual reporting is meant to be explicitly NOT "where I am now" from the moment
   // this screen opens, not just at submit time. The map starts at DEFAULT_MAP_CENTER instead, and
-  // there is no manual GPS button at all here any more, matching native exactly.
+  // there is no manual GPS button at all here any more, matching native exactly. Item 60's own
+  // camera-path entry point (enterManualLogStepFromCamera) is the one deliberate exception to
+  // this, and takes its own separate GPS fix for that reason -- see its own comment.
   initManualMapIfNeeded();
   setManualDatetimeInputToNow();
   updateManualDatetimeButtonLabel();
@@ -1184,7 +870,10 @@ async function finishManualSubmit(lat, lng, isGeofenceVerified) {
 
   try {
     const record = buildManualSightingRecord(lat, lng, isGeofenceVerified);
-    const result = await submitOrQueueSighting(record, null);
+    // Item 60: capturedPhotoBlob is non-null only when this visit came via the camera path
+    // (enterManualLogStepFromCamera/updateManualPhotoThumb) -- plain Report Manually never sets
+    // it, so this is null there exactly as it always was.
+    const result = await submitOrQueueSighting(record, capturedPhotoBlob);
 
     if (result.ok) {
       setManualSubmitStatus("Sighting submitted! Thank you.");
@@ -1205,11 +894,19 @@ function resetManualSubmitForm() {
   resetWhaleCountUi("#manual-log-step", manualCounts);
   setManualDatetimeInputToNow();
   updateManualDatetimeButtonLabel();
-  // No nested nav-stack layer to pop here -- manual mode's manual-log-step IS the "manual-report"
-  // layer's own resting content (see openManualReportFlow's own push), so returning to
-  // camera-step is just a visual change, not a back-stack pop. goToCameraStep itself resets the
-  // bearing dial/observer-type state (resetManualPositionControls), so this doesn't duplicate it.
-  goToCameraStep();
+  // Item 60: the two entry points differ by exactly one nav-stack layer (see
+  // manualLogStepReachedViaCameraPath's own declaration comment) -- the camera path's extra
+  // "manual-log-step-from-camera" layer needs popping (matching the old camera-path reset's own
+  // navigateBack()), the plain path's doesn't (matching ITS own pre-existing behavior: manual
+  // mode's manual-log-step IS the "manual-report" layer's own resting content, see
+  // openManualReportFlow's own push in main-menu.js, so returning to camera-step there is just a
+  // visual change, not a back-stack pop). Either way goToCameraStep is what actually resets the
+  // bearing dial/observer-type/photo state -- directly here, or via navigateBack's onPop there.
+  if (manualLogStepReachedViaCameraPath) {
+    navigateBack();
+  } else {
+    goToCameraStep();
+  }
 }
 
 // --- Shared geofence-warning modal (both paths) ---
