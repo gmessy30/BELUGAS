@@ -293,19 +293,42 @@ main {
   border-color: var(--brand-cyan);
 }
 
-/* Item 78: VERIFIED ONLY and the time-lapse FAB stack vertically here instead of each carrying
-   its own hardcoded top/bottom offset -- a real height change to either one (a longer label, a
-   different icon size) can never cause the other to overlap it, unlike two independently
-   positioned elements that happen to line up today. */
-.map-top-right-stack {
+/* Item 78/81: the whole top-right area (VERIFIED ONLY, the time-lapse FAB, and the panel that FAB
+   opens) lives in one shared flex column now instead of each piece carrying its own hardcoded
+   top/bottom offset -- a real height change to any one of them can never cause another to overlap
+   it, unlike independently positioned elements that happen to line up today. `bottom` here is the
+   ONLY place anything in this whole area still reserves space for the presence banner, and it's a
+   plain fixed estimate (generous enough for the banner's tallest realistic state -- two lines of
+   label/warnings plus safe-area), not a live measurement -- item 75's whole --presence-banner-
+   height mechanism was reverted after repeated failures, and item 81 explicitly avoids resurrecting
+   it. .playback-panel's own overflow-y:auto (below) is the real safety net for anything taller
+   than what this leaves, in exchange for never needing to get the measurement exactly right.
+   pointer-events:none here (re-enabled per real child below) keeps the empty space around a
+   right-aligned stack/hidden panel from blocking map taps underneath it. */
+.map-top-controls {
   position: absolute;
   top: 12px;
+  left: 12px;
   right: 12px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 100px);
   z-index: 900;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
+  pointer-events: none;
+}
+
+.map-top-controls > * {
+  pointer-events: auto;
+}
+
+.map-top-right-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 /* Ports App.kt's MainMenuDrawer: full-screen, right-aligned, vertically centered, bold
@@ -1213,26 +1236,12 @@ button.text-link {
   background: rgba(0, 0, 0, 0.85);
 }
 
-/* Item 74: one-line compact variant, toggled by map-view.js (setPresenceBannerCompact,
-   presence-banner.js) while the Map's playback panel is open -- gives the panel back more of a
-   short landscape viewport by shrinking the banner's own measured height, which
-   --presence-banner-height (item 67b) automatically propagates everywhere that reads it, live,
-   with no further plumbing. Landscape-only: portrait always has enough room, and this class
-   existing with no matching rule there keeps portrait's own banner untouched, exactly as before.
-   Padding shrinks, but the label itself (the actual gate-time/"next window" text) is never
-   hidden -- only the warnings line and the multi-card dot row, neither of which carry that text,
-   are. */
-@media (orientation: landscape) {
-  .presence-banner.compact .presence-banner-main {
-    padding-top: 4px;
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4px);
-  }
-
-  .presence-banner.compact .presence-banner-warnings,
-  .presence-banner.compact .presence-banner-dots {
-    display: none;
-  }
-}
+/* Item 74 added a one-line "compact" banner variant, toggled while the Map's playback panel was
+   open, to free up room for that (then bottom-anchored) panel in landscape. Item 81 moved the
+   panel to the top of the screen entirely -- it no longer competes with the banner's own space at
+   all, so shrinking the banner while it's open no longer serves any purpose. Removed (along with
+   its setPresenceBannerCompact call sites in map-view.js and its definition in
+   presence-banner.js) rather than left as a no-op-but-still-shrinking-the-banner holdover. */
 
 /* Reclaims the mobile browser chrome's height on these screens specifically (not the whole app --
    see orientation-lock.js's own header comment on why fullscreen is also attempted here). 100vh
@@ -2043,9 +2052,10 @@ button.secondary {
 /* --- Playback / time-lapse + date-range (SightingsMapScreen.kt's own scrub slider + quick-range
    chips, one Surface/Column natively -- ported as one panel here too, see map-view.js). --- */
 /* Item 78: relocated from a bottom-right, bottom-anchored FAB (position:absolute + the
-   --presence-banner-height/safe-area offset item 67b originally gave it, see .playback-panel
-   right below for that mechanism still in use) into the top-right stack, so nothing about its
-   own CSS references the bottom edge or the banner at all anymore. Same pill styling as
+   --presence-banner-height/safe-area offset item 67b originally gave it) into the top-right
+   stack, so nothing about its own CSS references the bottom edge or the banner at all anymore --
+   item 81 later moved the panel it opens up here too (see .map-top-controls above), so that
+   mechanism is gone entirely now, not just off this button. Same pill styling as
    .verified-toggle-btn (translucent dark fill, thin white-ish border) instead of the old solid
    teal circle, to read as one visual family with the button it now sits directly under -- still
    round (a 999px radius on an equal width/height box is a circle) to keep it visually distinct as
@@ -2064,33 +2074,32 @@ button.secondary {
   padding: 0;
 }
 
+/* Item 81: no `bottom`, no --presence-banner-height, no position:absolute of its own anymore --
+   this is now a flex child of .map-top-controls (index.html), which is what actually anchors the
+   whole area to the top and reserves the space above the banner (see that class's own comment).
+   flex:1/min-height:0 is what makes it take exactly whatever room the wrapper's fixed bottom
+   inset leaves after the VERIFIED ONLY/FAB stack's own height, whatever that turns out to be;
+   overflow-y:auto is the scroll fallback for real content taller than even that. align-self:
+   stretch spans the wrapper's full width in portrait ("full width" per the request) --
+   overridden to a fixed ~60%, right-aligned, in landscape just below. Same rule covers the
+   collapsed (minimized) player bar too -- it's the exact same element (map-view.js's
+   updatePlaybackPanelUi), just with #playback-full-controls hidden inside it. */
 .playback-panel {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--presence-banner-height, 0px) + 16px);
-  z-index: 500;
-  max-height: 70vh;
+  align-self: stretch;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   background: rgba(20, 30, 30, 0.92);
   border-radius: 14px;
   padding: 12px 14px;
   color: #ffffff;
+  box-sizing: border-box;
 }
 
-/* Item 74: 70vh (portrait's own value above, untouched -- there's always enough room there) can
-   still be taller than what's actually free on a short LANDSCAPE viewport once both the
-   VERIFIED ONLY toggle up top and the presence banner's own reserved space at the bottom are
-   subtracted -- the panel grows UPWARD from its bottom-anchored position (above), so an
-   unconstrained max-height can push its own top edge above the top toggle even though its bottom
-   edge is correctly clear of the banner. 100dvh (not vh -- the CURRENT, chrome-aware viewport
-   height, same reasoning as item 61/67a) minus the exact same three offsets the panel's own
-   `bottom` already reserves (safe-area + banner height + 16px gap), minus a further ~60px for the
-   VERIFIED ONLY button's own footprint, is the true ceiling; overflow-y:auto above still scrolls
-   internally whenever the panel's real content is taller than even that. */
 @media (orientation: landscape) {
   .playback-panel {
-    max-height: calc(100dvh - env(safe-area-inset-bottom, 0px) - var(--presence-banner-height, 0px) - 16px - 60px);
+    align-self: flex-end;
+    width: 60%;
   }
 }
 

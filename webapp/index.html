@@ -694,50 +694,55 @@
 
   <main>
     <section id="map-view" class="view">
-      <!-- Item 78: the time-lapse FAB used to sit bottom-right, bottom-anchored against the
-           presence banner (env(safe-area-inset-bottom) + --presence-banner-height) -- moved up
-           here into the same top-right stack as VERIFIED ONLY so it never references the bottom
-           edge or the banner at all, structurally, same reasoning as every other "stop measuring
-           an offset, make it not touch that edge in the first place" fix this session. Only the
-           FAB moved -- the open panel it launches (below) stays bottom-anchored, unchanged. -->
-      <div class="map-top-right-stack">
-        <button id="map-verified-toggle-btn" class="verified-toggle-btn">VERIFIED ONLY</button>
-        <button id="playback-fab-btn" class="playback-fab-btn" aria-label="Time-lapse playback" type="button">⏱</button>
-      </div>
-
-      <!-- Ports the playback Surface/Column verbatim as one panel (native has no separate sheet
-           wrapper either): date-range quick-picks, a fade-window control, speed, and the scrub
-           slider itself. Auto-minimizes to just its header+slider while playing, matching
-           native's own behavior -- see map-view.js's updatePlaybackPanelUi. -->
-      <div id="playback-panel" class="playback-panel" hidden>
-        <div class="playback-panel-header">
-          <span class="playback-panel-title">TIME-LAPSE</span>
-          <div class="playback-panel-header-actions">
-            <button id="playback-minimize-btn" class="playback-icon-btn" aria-label="Minimize" type="button">⌄</button>
-            <button id="playback-close-btn" class="playback-icon-btn" aria-label="Close" type="button">✕</button>
-          </div>
+      <!-- Item 78/81: the time-lapse FAB and the panel it opens both used to be bottom-anchored
+           against the presence banner (env(safe-area-inset-bottom) + --presence-banner-height).
+           Item 78 moved the FAB into a top-right stack with VERIFIED ONLY; item 81 moved the
+           panel up here too, as a sibling of that stack inside one shared wrapper
+           (.map-top-controls) -- the panel now drops down from just below the stack and is
+           height-capped by the WRAPPER's own fixed bottom inset (style.css), not by measuring the
+           banner at all, with its own overflow-y:auto as the scroll fallback. Neither the panel
+           nor its collapsed (minimized) state -- same element, see map-view.js's
+           updatePlaybackPanelUi -- reference the bottom edge or the banner in any way now. -->
+      <div class="map-top-controls">
+        <div class="map-top-right-stack">
+          <button id="map-verified-toggle-btn" class="verified-toggle-btn">VERIFIED ONLY</button>
+          <button id="playback-fab-btn" class="playback-fab-btn" aria-label="Time-lapse playback" type="button">⏱</button>
         </div>
 
-        <div id="playback-full-controls">
-          <div class="step-label">Date Range</div>
-          <div class="chip-row" id="date-range-chips"></div>
-          <div id="date-range-custom" class="date-range-custom" hidden>
-            <label>From <input type="date" id="date-range-from-input"></label>
-            <label>To <input type="date" id="date-range-to-input"></label>
+        <!-- Ports the playback Surface/Column verbatim as one panel (native has no separate sheet
+             wrapper either): date-range quick-picks, a fade-window control, speed, and the scrub
+             slider itself. Auto-minimizes to just its header+slider while playing, matching
+             native's own behavior -- see map-view.js's updatePlaybackPanelUi. -->
+        <div id="playback-panel" class="playback-panel" hidden>
+          <div class="playback-panel-header">
+            <span class="playback-panel-title">TIME-LAPSE</span>
+            <div class="playback-panel-header-actions">
+              <button id="playback-minimize-btn" class="playback-icon-btn" aria-label="Minimize" type="button">⌄</button>
+              <button id="playback-close-btn" class="playback-icon-btn" aria-label="Close" type="button">✕</button>
+            </div>
           </div>
 
-          <div class="step-label">Fade Window</div>
-          <div class="chip-row" id="fade-window-chips"></div>
+          <div id="playback-full-controls">
+            <div class="step-label">Date Range</div>
+            <div class="chip-row" id="date-range-chips"></div>
+            <div id="date-range-custom" class="date-range-custom" hidden>
+              <label>From <input type="date" id="date-range-from-input"></label>
+              <label>To <input type="date" id="date-range-to-input"></label>
+            </div>
 
-          <div class="step-label">Speed</div>
-          <div class="chip-row" id="playback-speed-chips"></div>
-        </div>
+            <div class="step-label">Fade Window</div>
+            <div class="chip-row" id="fade-window-chips"></div>
 
-        <div class="playback-scrub-row">
-          <button id="playback-play-btn" class="playback-icon-btn playback-play-btn" aria-label="Play" type="button">▶</button>
-          <input type="range" id="playback-slider" class="playback-slider" min="0" max="0" value="0">
+            <div class="step-label">Speed</div>
+            <div class="chip-row" id="playback-speed-chips"></div>
+          </div>
+
+          <div class="playback-scrub-row">
+            <button id="playback-play-btn" class="playback-icon-btn playback-play-btn" aria-label="Play" type="button">▶</button>
+            <input type="range" id="playback-slider" class="playback-slider" min="0" max="0" value="0">
+          </div>
+          <div id="playback-time-label" class="playback-time-label"></div>
         </div>
-        <div id="playback-time-label" class="playback-time-label"></div>
       </div>
     </section>
 
