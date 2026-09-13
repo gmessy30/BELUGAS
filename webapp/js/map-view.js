@@ -432,6 +432,9 @@ function openPlaybackPanel() {
   playbackIsOpen = true;
   playbackIsMinimized = false;
   document.getElementById("playback-panel").hidden = false;
+  // Item 74: frees up more of a short landscape viewport for the panel itself -- a no-op in
+  // portrait (style.css's own .compact rule is landscape-only).
+  setPresenceBannerCompact(true);
   updatePlaybackPanelUi();
   recomputePlaybackRange();
   playbackTimeMs = playbackRangeStart; // matches native: opening the panel resets the scrub to the range start
@@ -445,6 +448,7 @@ function closePlaybackPanel() {
   playbackIsPlaying = false;
   playbackIsOpen = false;
   document.getElementById("playback-panel").hidden = true;
+  setPresenceBannerCompact(false);
   // Reset to defaults -- native's own playback state is `remember`ed per screen-entry, so this
   // app's persistent (never-torn-down) Map view resets it here instead, at the equivalent
   // "leaving the feature" boundary.

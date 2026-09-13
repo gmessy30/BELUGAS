@@ -1190,6 +1190,27 @@ button.text-link {
   background: rgba(0, 0, 0, 0.85);
 }
 
+/* Item 74: one-line compact variant, toggled by map-view.js (setPresenceBannerCompact,
+   presence-banner.js) while the Map's playback panel is open -- gives the panel back more of a
+   short landscape viewport by shrinking the banner's own measured height, which
+   --presence-banner-height (item 67b) automatically propagates everywhere that reads it, live,
+   with no further plumbing. Landscape-only: portrait always has enough room, and this class
+   existing with no matching rule there keeps portrait's own banner untouched, exactly as before.
+   Padding shrinks, but the label itself (the actual gate-time/"next window" text) is never
+   hidden -- only the warnings line and the multi-card dot row, neither of which carry that text,
+   are. */
+@media (orientation: landscape) {
+  .presence-banner.compact .presence-banner-main {
+    padding-top: 4px;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 4px);
+  }
+
+  .presence-banner.compact .presence-banner-warnings,
+  .presence-banner.compact .presence-banner-dots {
+    display: none;
+  }
+}
+
 /* Reclaims the mobile browser chrome's height on these screens specifically (not the whole app --
    see orientation-lock.js's own header comment on why fullscreen is also attempted here). 100vh
    (and the height:100% chain #submit-view would otherwise inherit through .view/<main>/body/html)
@@ -1969,6 +1990,22 @@ button.secondary {
   border-radius: 14px;
   padding: 12px 14px;
   color: #ffffff;
+}
+
+/* Item 74: 70vh (portrait's own value above, untouched -- there's always enough room there) can
+   still be taller than what's actually free on a short LANDSCAPE viewport once both the
+   VERIFIED ONLY toggle up top and the presence banner's own reserved space at the bottom are
+   subtracted -- the panel grows UPWARD from its bottom-anchored position (above), so an
+   unconstrained max-height can push its own top edge above the top toggle even though its bottom
+   edge is correctly clear of the banner. 100dvh (not vh -- the CURRENT, chrome-aware viewport
+   height, same reasoning as item 61/67a) minus the exact same three offsets the panel's own
+   `bottom` already reserves (safe-area + banner height + 16px gap), minus a further ~60px for the
+   VERIFIED ONLY button's own footprint, is the true ceiling; overflow-y:auto above still scrolls
+   internally whenever the panel's real content is taller than even that. */
+@media (orientation: landscape) {
+  .playback-panel {
+    max-height: calc(100dvh - env(safe-area-inset-bottom, 0px) - var(--presence-banner-height, 0px) - 16px - 60px);
+  }
 }
 
 /* Item 67b: Leaflet's own bottom-anchored chrome (attribution; zoom, if ever repositioned there --

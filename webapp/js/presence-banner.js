@@ -75,6 +75,17 @@ function initPresenceBannerHeightTracking() {
   observer.observe(document.getElementById("presence-banner"));
 }
 
+// Item 74: called from map-view.js while the Map's playback panel is open/closes, on a short
+// landscape viewport where every bit of vertical room matters -- collapses the banner to one
+// compact line (style.css's own .compact rule, landscape-only) so its measured height shrinks,
+// which the ResizeObserver above already picks up and propagates through
+// --presence-banner-height automatically -- no separate re-measure call needed here. A no-op in
+// portrait (or anywhere else the class has no matching CSS rule), so this is safe to call
+// unconditionally regardless of orientation/screen.
+function setPresenceBannerCompact(isCompact) {
+  document.getElementById("presence-banner").classList.toggle("compact", isCompact);
+}
+
 function initPresenceBanner() {
   document.getElementById("presence-banner-main").addEventListener("click", handlePresenceBannerTap);
 
