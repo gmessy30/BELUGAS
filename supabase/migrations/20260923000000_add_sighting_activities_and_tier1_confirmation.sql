@@ -9,12 +9,41 @@
 -- 20260922000000_ratchet_departure_report_for_remainder_of_cycle.sql's version, confirmed
 -- identical to what's actually live before writing this. See that function's own section below
 -- for exactly what changed (one line) and what didn't (everything else, copied verbatim).
+--
+-- STATEMENT ORDER (BUG FIX): this migration failed on its first apply attempt --
+-- `42703: column s.confirmed_at does not exist` -- because export_sightings (a `language sql`
+-- function with a plain `select` body matching its own RETURNS TABLE shape) gets that body
+-- validated/inlined by Postgres immediately at CREATE FUNCTION time, not deferred to first call.
+-- The original file order created export_sightings (referencing activities/activity_note/
+-- confirmed_at) BEFORE the `alter table` that adds confirmed_at, which lives in the item-63
+-- section further down -- confirmed_by_subscriber_id/confirmed_at simply didn't exist yet at the
+-- moment export_sightings was defined. Fixed by moving EVERY schema change (both features' own
+-- `alter table`/constraint/grant statements) to the very top of the file, before any function
+-- definition that could reference them -- every function below is now created only after every
+-- column it touches already exists earlier in this same file, checked one statement at a time:
+--   1. activities/activity_note added + constrained + granted (needed by export_sightings, #4)
+--   2. confirmed_by_subscriber_id/confirmed_at added + granted (needed by export_sightings, #4;
+--      confirm_sighting, #6; and get_kenai_presence_state, #7)
+--   3. (nothing yet needs anything from #1/#2 except export_sightings itself)
+--   4. export_sightings (DROP+CREATE) -- reads activities/activity_note/confirmed_at, all added
+--      in #1/#2 above
+--   5. is_tier_one_observer -- reads only the PRE-EXISTING get_observer_tier/tier_roster, no
+--      dependency on anything new in this migration at all
+--   6. confirm_sighting -- writes confirmed_by_subscriber_id/confirmed_at (#2) and reads the
+--      PRE-EXISTING subscriber_id/id columns
+--   7. get_kenai_presence_state -- reads confirmed_at (#2); every other table/function it
+--      touches (tide_cycles, kenai_departure_reports, kenai_gate_time,
+--      is_whale_position_in_kenai_banner_area) is pre-existing and untouched by this migration
 
 
 -- =========================================================================================
--- ITEM 90: ACTIVITIES -- what the observer saw the whale(s) doing. Optional, multi-select
--- (six allowed values), plus a free-text note that only ever accompanies OTHER.
+-- SCHEMA CHANGES FIRST (both features) -- every function below depends on some subset of these,
+-- so all of them need to already exist before ANY function in this file is created, not just
+-- the ones that happen to need them per that function's own original section.
 -- =========================================================================================
+
+-- --- Item 90: ACTIVITIES -- what the observer saw the whale(s) doing. Optional, multi-select
+-- (six allowed values), plus a free-text note that only ever accompanies OTHER. ---
 
 alter table public.sightings
   add column if not exists activities text[],
@@ -46,10 +75,31 @@ alter table public.sightings
 -- pre-existing column that might still carry an old blanket grant to revoke first.
 grant select (activities, activity_note) on public.sightings to anon;
 
+-- --- Item 63: TIER-1 CONFIRMATION OF AN EXISTING SIGHTING -- a tier-1 observer can vouch for a
+-- sighting they didn't personally file, strengthening its RED-eligibility without altering who
+-- reported it or their own tier at submission time. ---
+
+alter table public.sightings
+  add column if not exists confirmed_by_subscriber_id uuid,
+  add column if not exists confirmed_at timestamptz;
+
+-- confirmed_at gets the same ordinary anon-SELECT grant as any other sighting column -- the
+-- client needs it to decide whether to show the CONFIRM SIGHTING button or the "Confirmed" badge.
+-- confirmed_by_subscriber_id deliberately does NOT: same lockdown as the original subscriber_id
+-- column, for the identical reason -- it identifies a specific device/observer's own action, not
+-- public sighting data. Nothing in this app's client ever needs to read WHO confirmed a row, only
+-- WHETHER it's confirmed.
+grant select (confirmed_at) on public.sightings to anon;
+
+
+-- =========================================================================================
 -- export_sightings: DROP + CREATE, not CREATE OR REPLACE -- the RETURNS shape is changing (three
 -- new columns across this migration's two features), and Postgres won't let CREATE OR REPLACE
 -- change an existing function's return type, same reason the observer_tier migration's own
--- rewrite of this function needed the DROP first.
+-- rewrite of this function needed the DROP first. Depends on activities/activity_note/
+-- confirmed_at, all added above.
+-- =========================================================================================
+
 drop function if exists public.export_sightings(bigint, bigint, double precision, double precision, double precision, double precision, text);
 
 create function public.export_sightings(
@@ -128,23 +178,6 @@ grant execute on function public.export_sightings to anon;
 
 
 -- =========================================================================================
--- ITEM 63: TIER-1 CONFIRMATION OF AN EXISTING SIGHTING -- a tier-1 observer can vouch for a
--- sighting they didn't personally file, strengthening its RED-eligibility without altering who
--- reported it or their own tier at submission time.
--- =========================================================================================
-
-alter table public.sightings
-  add column if not exists confirmed_by_subscriber_id uuid,
-  add column if not exists confirmed_at timestamptz;
-
--- confirmed_at gets the same ordinary anon-SELECT grant as any other sighting column -- the
--- client needs it to decide whether to show the CONFIRM SIGHTING button or the "Confirmed" badge.
--- confirmed_by_subscriber_id deliberately does NOT: same lockdown as the original subscriber_id
--- column, for the identical reason -- it identifies a specific device/observer's own action, not
--- public sighting data. Nothing in this app's client ever needs to read WHO confirmed a row, only
--- WHETHER it's confirmed.
-grant select (confirmed_at) on public.sightings to anon;
-
 -- is_tier_one_observer: a general-purpose "is this subscriber tier-1" visibility check --
 -- deliberately its own function, not a reuse of is_kenai_departure_reporter
 -- (20260914000000_swap_kenai_departure_polygon_and_expose_tier_check.sql), which is the exact
@@ -152,7 +185,10 @@ grant select (confirmed_at) on public.sightings to anon;
 -- do with confirming a sighting -- reusing it here would be a confusing name for what it actually
 -- gates. Purely a visibility signal, same "visibility is UX, enforcement is server-side" split as
 -- that function and report_kenai_departure both already use -- confirm_sighting below re-checks
--- tier itself regardless of what this returns.
+-- tier itself regardless of what this returns. No dependency on anything added by this migration
+-- at all -- get_observer_tier/tier_roster are both pre-existing.
+-- =========================================================================================
+
 create or replace function public.is_tier_one_observer(p_subscriber_id uuid)
 returns boolean
 language sql
@@ -166,11 +202,13 @@ $$;
 revoke execute on function public.is_tier_one_observer from public;
 grant execute on function public.is_tier_one_observer to anon;
 
--- confirm_sighting: the SOLE write path for confirmed_by_subscriber_id/confirmed_at. Deliberately
--- does NOT touch observer_tier -- confirming a sighting doesn't change who reported it or their
--- tier at submission time, only that a tier-1 observer has since vouched for it. The single UPDATE
--- below is what actually enforces every refusal rule atomically (no separate SELECT-then-UPDATE
--- race, same pattern as redeem_tier_code's own claim):
+
+-- =========================================================================================
+-- confirm_sighting: the SOLE write path for confirmed_by_subscriber_id/confirmed_at (both added
+-- above). Deliberately does NOT touch observer_tier -- confirming a sighting doesn't change who
+-- reported it or their tier at submission time, only that a tier-1 observer has since vouched
+-- for it. The single UPDATE below is what actually enforces every refusal rule atomically (no
+-- separate SELECT-then-UPDATE race, same pattern as redeem_tier_code's own claim):
 --   - confirmed_at is null        -- refuses an already-confirmed row (first confirmation wins,
 --                                    never reassigned; also makes two simultaneous confirm
 --                                    attempts on the same row race-safe: whichever commits first
@@ -185,6 +223,8 @@ grant execute on function public.is_tier_one_observer to anon;
 -- `false`, matching report_kenai_departure's own single-boolean design -- the client's own
 -- visibility check already covers the ordinary "why is this button even showing" case; this is
 -- the actual enforcement.
+-- =========================================================================================
+
 create or replace function public.confirm_sighting(p_sighting_id uuid, p_subscriber_id uuid)
 returns boolean
 language plpgsql
@@ -217,7 +257,9 @@ grant execute on function public.confirm_sighting to anon;
 -- strong a signal as that tier-1 observer having filed it themselves. The ONLY change from the
 -- currently-deployed version (20260922000000) is the one added `or s.confirmed_at is not null`
 -- condition in the RED-sighting query below -- everything else (the departure-report ratchet,
--- the season gate, the gate-time floor) is copied verbatim, unchanged.
+-- the season gate, the gate-time floor) is copied verbatim, unchanged. Depends on confirmed_at,
+-- added above; every other table/function referenced (tide_cycles, kenai_departure_reports,
+-- kenai_gate_time, is_whale_position_in_kenai_banner_area) is pre-existing, untouched here.
 -- =========================================================================================
 
 create or replace function public.get_kenai_presence_state(p_now_epoch_ms bigint default null)
