@@ -87,9 +87,19 @@ hand** — there's no build step tying them together. About's own PRIVACY POLICY
 (`webapp/index.html`) link to these with `../` (repo-root-relative from `webapp/`'s own deployed
 path), opened in a new tab rather than as in-app subpages.
 
+**Known low-priority issue (item 71):** each page's own "Back to BELUGAS" link tries
+`window.opener`-close / `history.back()` before falling back to a plain `href="webapp/"` reload
+(see each file's own inline `<script>`) — confirmed on a real device that this still falls through
+to the reload every time, not just the opened-directly case it's meant for. Most likely cause:
+this app runs installed as a standalone-mode PWA on the devices that hit this, and `target="_blank"`
+from a standalone PWA opens the system browser as a genuinely separate app/process, not a sibling
+browser tab — `window.opener` never gets a live reference to close back to in that context, unlike
+two tabs within one ordinary browser instance. Not re-attempted for now: the system back
+gesture/button already returns correctly (it's specifically the in-page Back **button** that
+reloads instead of returning), so this is a rough edge, not a dead end.
+
 ### Open items / not yet done
 
-- Admin page styling pass (Mae background / dark cards, matching the rest of the app more closely).
 - Web Push via FCM: needs the real Firebase Web config + VAPID key pasted into
   `webapp/js/firebase-config.js` (currently placeholder values) before it can work at all.
 - Self-service re-verification by email (deferred to after the Sunday deadline).
