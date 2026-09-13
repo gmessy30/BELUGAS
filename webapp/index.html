@@ -811,6 +811,21 @@
         <button id="capture-btn" class="capture-shutter-btn" type="button">
           <span id="capture-shutter-label" class="capture-shutter-label">C<br>A<br>P<br>T<br>U<br>R<br>E</span>
         </button>
+
+        <!-- Item 80: shown only when this session actually launched straight into Camera with
+             the fullscreen preference on (not in standalone mode, not a desktop-class device --
+             matches launch-screen.js's own resolveLaunchScreen gating) -- see submit-view.js's
+             cameraFullscreenTapGateActive/initSubmitView. Browsers require a live user gesture to
+             grant fullscreen, and app launch itself has none, so the camera stream is deferred
+             until this SAME tap also requests fullscreen -- one gesture doing both jobs. Stays
+             shown (not tied to a timer or a single check) until a stream actually goes live,
+             however that happens -- startCamera's own success branch hides it, so even a user who
+             ignores this and reaches the camera some other way (Skip Camera, then back) still
+             sees it correctly clear once the camera is genuinely running. -->
+        <button id="camera-tap-to-start-overlay" class="camera-tap-to-start-overlay" type="button" hidden>
+          <span class="camera-tap-to-start-icon">⛶</span>
+          <span class="camera-tap-to-start-label">TAP TO START</span>
+        </button>
       </div>
 
       <!-- ManualLoggingScreen.kt: a real interactive map with a fixed center BearingDial -- the

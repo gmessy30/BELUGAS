@@ -1428,6 +1428,40 @@ button.camera-status.secondary {
   text-align: center;
 }
 
+/* Item 80: covers every other control in .capture-screen (all position:absolute, none above
+   z-index:5) so this is the only thing reachable until tapped. Whole button IS the tap target --
+   large and unmissable, matching "obvious" rather than a small corner prompt, since missing it
+   just means staring at a frozen/black preview with no other indication why. */
+.camera-tap-to-start-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: rgba(0, 0, 0, 0.8);
+  border: none;
+  font-family: inherit;
+}
+
+.camera-tap-to-start-icon {
+  font-size: 56px;
+  color: #ffffff;
+}
+
+.camera-tap-to-start-label {
+  background: var(--brand-amber);
+  color: #000000;
+  font-size: 1.1rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 14px 28px;
+  border-radius: 12px;
+}
+
 /* --- Submit view: Step 2, ManualLoggingScreen.kt (shared by both entry points as of item 60) --- */
 
 .review-screen {

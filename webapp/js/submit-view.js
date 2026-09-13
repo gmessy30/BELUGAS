@@ -142,7 +142,48 @@ function initSubmitView() {
   initManualPositionControls();
   initWhaleCountWiring("#manual-log-step", manualCounts);
 
-  startCamera();
+  initCameraTapToStartOverlay();
+}
+
+// Item 80: true only for THIS session's actual launch into Camera with the fullscreen preference
+// on -- checked once here, at app startup, before resolveLaunchScreen (launch-screen.js) has even
+// run yet, using the exact same reachability condition it applies (CAMERA preference is only
+// honored on a non-desktop-class device, see isDesktopClassDevice) so this can't disagree with
+// what actually ends up on screen. getFullscreenPreferred/isStandaloneDisplayMode come from
+// orientation-lock.js (item 77) -- both are plain reads (localStorage/matchMedia), safe to call
+// from here regardless of file load order, since this only ever runs from initSubmitView, itself
+// only called after every script has finished loading (app.js's DOMContentLoaded).
+function cameraFullscreenTapGateActive() {
+  return (
+    getLaunchScreenPreference() === "CAMERA" &&
+    !isDesktopClassDevice() &&
+    getFullscreenPreferred() &&
+    !isStandaloneDisplayMode()
+  );
+}
+
+// Item 80: either starts the camera immediately (unchanged from before this item, the common
+// case), or -- only when cameraFullscreenTapGateActive() -- shows the tap-to-start overlay
+// instead and defers startCamera() to its own click handler, since that tap is what supplies the
+// user gesture browsers require to actually grant fullscreen (app launch itself has none).
+function initCameraTapToStartOverlay() {
+  const overlay = document.getElementById("camera-tap-to-start-overlay");
+
+  overlay.addEventListener("click", () => {
+    enterFullscreenForTouchDevice();
+    // Guards against a redundant/leaked second getUserMedia call in the (unlikely but possible)
+    // case where a stream already went live some other way -- Skip Camera then back via the
+    // manual-log-step's photo thumb -- while this overlay was still sitting there untapped;
+    // startCamera's own success branch below is what actually hides it in that case.
+    if (!cameraStream) startCamera();
+    overlay.hidden = true;
+  });
+
+  if (cameraFullscreenTapGateActive()) {
+    overlay.hidden = false;
+  } else {
+    startCamera();
+  }
 }
 
 function initWhaleCountWiring(scopeSelector, counts) {
@@ -182,6 +223,10 @@ async function startCamera() {
     });
     video.srcObject = cameraStream;
     initCameraZoomControl();
+    // Item 80: whatever path actually got a live stream running (the tap-to-start overlay's own
+    // tap, or a later goToCameraStep() call after the user ignored it via Skip Camera and came
+    // back) clears the overlay -- nothing left for it to gate once the camera is genuinely live.
+    document.getElementById("camera-tap-to-start-overlay").hidden = true;
   } catch (e) {
     // Native always has a working camera to trigger LoggingScreen from -- a browser can't
     // guarantee that, so this is the one deliberate departure from native's flow: a way to
