@@ -1192,12 +1192,19 @@ button.text-link {
 
 /* --- Submit view: Step 1, CaptureScreen.kt --- */
 
+/* Item 61: touch-action:none (not manipulation) -- manipulation still permits the browser's own
+   native pinch-zoom-the-page gesture, which is exactly what item 59's own two-finger pinch
+   handler needs to preempt entirely (it drives the CAMERA'S zoom instead -- see submit-view.js's
+   handleCameraPinchMove). Without this, iOS Safari can still start its own page-zoom on the same
+   two-finger gesture the JS handler is trying to claim, visibly dragging the fixed reticle/
+   capture button/MENU button off-screen as the browser scales the whole viewport underneath them. */
 .capture-screen {
   position: relative;
   width: 100%;
   height: 100%;
   background: #000000;
   overflow: hidden;
+  touch-action: none;
 }
 
 #camera-preview {

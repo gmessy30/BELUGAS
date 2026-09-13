@@ -111,6 +111,14 @@ function initSubmitView() {
   cameraStepEl.addEventListener("touchmove", handleCameraPinchMove, { passive: false });
   cameraStepEl.addEventListener("touchend", handleCameraPinchEnd, { passive: true });
   cameraStepEl.addEventListener("touchcancel", handleCameraPinchEnd, { passive: true });
+  // Item 61: iOS Safari's proprietary GestureEvent (gesturestart/gesturechange/gestureend) fires
+  // for a two-finger pinch independently of the standard touch events above -- older WebKit
+  // versions in particular can still drive the page's own native pinch-zoom off these even when
+  // touch-action:none/touchmove's preventDefault are both already in place. No browser other than
+  // Safari ever fires these at all, so this is a harmless no-op everywhere else.
+  cameraStepEl.addEventListener("gesturestart", (event) => event.preventDefault());
+  cameraStepEl.addEventListener("gesturechange", (event) => event.preventDefault());
+  cameraStepEl.addEventListener("gestureend", (event) => event.preventDefault());
   // Item 60: capturing a photo (or skipping the camera) now goes straight into the same
   // manual-log-step every "Report Manually" entry uses -- see enterManualLogStepFromCamera.
   document.getElementById("skip-camera-btn").addEventListener("click", () => enterManualLogStepFromCamera());
