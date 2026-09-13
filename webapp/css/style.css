@@ -1801,6 +1801,41 @@ button.camera-status.secondary {
   }
 }
 
+/* Item 90 landscape fix: ACTIVITY (added after item 64's own fix, so it never got a landscape
+   treatment of its own) stacked as its own full-width row directly above .whale-count-row --
+   that extra row's height was enough on a short landscape viewport to push .review-bottom-panel's
+   top edge up into the vertically-centered BearingDial's drag region, landing the button dead
+   center over the ring. Rather than reusing SET DATE/TIME's own top-right fixed-position treatment
+   (no room left up there without crowding RECENTER/the photo thumb), CSS Grid puts it on the SAME
+   line as whale-count-row instead -- explicit grid-area placement means the DOM order (unchanged;
+   still ACTIVITY-before-whale-count-row, so tab order is unaffected) doesn't have to match visual
+   order. Portrait is untouched (this whole block is landscape-only) -- reported "fine as-is". */
+@media (orientation: landscape) {
+  #manual-log-step .review-bottom-panel {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "chip chip"
+      "counts activity"
+      "status status";
+    align-items: center;
+    column-gap: 8px;
+  }
+  #manual-log-step .chip-row {
+    grid-area: chip;
+  }
+  #manual-log-step .whale-count-row {
+    grid-area: counts;
+  }
+  #manual-log-step .manual-activity-btn {
+    grid-area: activity;
+    margin: 0;
+  }
+  #manual-log-step #manual-submit-status {
+    grid-area: status;
+  }
+}
+
 /* Item 60: mirrors .manual-locate-row's own position (same top offset, opposite side) -- the
    camera path's attached photo as a small corner thumbnail rather than the old full-bleed review
    step. Hidden by default (index.html) -- shown only once updateManualPhotoThumb (submit-view.js)
