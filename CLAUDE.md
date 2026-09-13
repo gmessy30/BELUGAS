@@ -73,6 +73,20 @@ Supabase Auth is not enough on its own.
 project (via `supabase db query --linked --file <path>`) — don't tell the user to run them again.
 **Convention: apply migrations via that CLI command, never the Supabase web SQL editor.**
 
+### Legal pages
+
+`PRIVACY.html` and `LICENSE.html` at the **repo root** (not under `webapp/`) are static, hand-
+written renderings of `PRIVACY.md` and `LICENSE`, styled to match the app (teal gradient, dark
+card, brand yellow) but otherwise self-contained — no dependency on `webapp/css/style.css`, so
+they stay stable regardless of what changes inside the app's own SPA. They exist because
+`.nojekyll` (required so GitHub Pages doesn't try to run Jekyll over `webapp/`) also means
+`PRIVACY.md`/`LICENSE` are never auto-rendered to HTML the way Jekyll would otherwise do —
+without these two files, `/PRIVACY.html` and `/LICENSE.html` simply don't resolve at all.
+**If `PRIVACY.md` or `LICENSE` changes, update the matching `.html` file's content to match by
+hand** — there's no build step tying them together. About's own PRIVACY POLICY/LICENSE buttons
+(`webapp/index.html`) link to these with `../` (repo-root-relative from `webapp/`'s own deployed
+path), opened in a new tab rather than as in-app subpages.
+
 ### Open items / not yet done
 
 - Admin page styling pass (Mae background / dark cards, matching the rest of the app more closely).
@@ -133,3 +147,11 @@ project (via `supabase db query --linked --file <path>`) — don't tell the user
   `bearingFromPointerEvent`'s element-center assumption and the ring's own off-center SVG
   coordinates; native's `detectDragGestures`/Canvas both already operate in the same coordinate
   space with no equivalent offset to begin with.)
+- **Native-side parity item (item 70, web-only so far)**: About gained a `© 2026 Keen Eye Apps`
+  line under DEVELOPMENT and a `© 2026 Luna Montgomery` line under ARTWORK (`webapp/index.html`),
+  plus PRIVACY POLICY/LICENSE link buttons under the credits (item 69, opening the new root-level
+  `PRIVACY.html`/`LICENSE.html` — see this file's own "Legal pages" section above) with a one-line
+  PolyForm Noncommercial summary. None of this exists in `AboutScreen.kt` yet — worth
+  adding the same copyright lines and legal links there for parity, alongside the other pending
+  items above. (The actual license text/artwork carve-out itself — `LICENSE`, `README.md` — is
+  already project-wide, nothing platform-specific to port there.)

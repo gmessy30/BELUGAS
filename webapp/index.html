@@ -172,26 +172,12 @@
       </div>
       <hr class="section-divider">
 
-      <!-- Item 65b: plain, brief changelog -- a date plus a handful of short lines on what a
-           returning user would actually notice, not a full technical changelog. Update the date
-           and swap the lines for whatever the next round of user-visible changes turns out to be;
-           this isn't meant to accumulate every past entry. -->
-      <div class="subpage-section">
-        <div class="section-title">WHAT'S NEW -- SEPTEMBER 12, 2026</div>
-        <ul class="tip-list">
-          <li>Reporting is now one flow: snap a photo (or skip it), then drop the pin and travel direction on a map instead of estimating range from where you're standing.</li>
-          <li>The presence banner is tappable -- when it's red, tap it to jump straight to the map.</li>
-          <li>Yellow and blue banners both show the same "next expected window" estimate now.</li>
-          <li>Added a Share page with a QR code, for handing someone your phone or a link instead of spelling out the app name.</li>
-          <li>The app can be added to your phone's home screen like a native app -- look for the install prompt or your browser's "Add to Home Screen" option.</li>
-        </ul>
-      </div>
-      <hr class="section-divider">
-
       <div class="subpage-section">
         <div class="section-title">DEVELOPMENT</div>
         <p class="section-body">BELUGAS is developed by Ryan Messimer.</p>
         <a class="text-link about-interactive" href="mailto:keeneyeapps@gmail.com">Contact: keeneyeapps@gmail.com</a>
+        <!-- Item 70: matches LICENSE's own Required Notice line for the software itself. -->
+        <p class="copyright-line">© 2026 Keen Eye Apps</p>
       </div>
       <hr class="section-divider">
 
@@ -199,6 +185,24 @@
         <div class="section-title">ARTWORK</div>
         <p class="section-body">The beluga artwork used throughout the app is by Luna.</p>
         <a class="text-link about-interactive" href="mailto:keeneyeapps+luna@gmail.com">For inquiries about Luna's artwork: keeneyeapps+luna@gmail.com</a>
+        <!-- Item 70: matches LICENSE's own Required Notice carve-out -- this artwork is
+             separately copyrighted, not covered by the software's own PolyForm license. -->
+        <p class="copyright-line">© 2026 Luna Montgomery</p>
+      </div>
+      <hr class="section-divider">
+
+      <!-- Item 69: standalone pages at the repo root (PRIVACY.html/LICENSE.html, rendered from
+           PRIVACY.md/LICENSE with the app's own styling -- see item 69a) -- opened in a new tab
+           rather than as in-app subpages, since these are plain static files entirely outside
+           this SPA's own nav-stack/subpage system, and a new tab is the simple, robust option the
+           request explicitly allowed as a fallback. No policy/license text duplicated here, just
+           the links and a one-line summary of which license this is. -->
+      <div class="subpage-section">
+        <div class="legal-links-row">
+          <a class="legal-link-btn about-interactive" href="../PRIVACY.html" target="_blank" rel="noopener">Privacy Policy</a>
+          <a class="legal-link-btn about-interactive" href="../LICENSE.html" target="_blank" rel="noopener">License</a>
+        </div>
+        <p class="section-body legal-note">Free for non-commercial use (PolyForm Noncommercial).</p>
       </div>
       <hr class="section-divider">
 
@@ -212,6 +216,24 @@
       <div class="subpage-section">
         <div class="section-title">SHARE</div>
         <button id="about-share-link-btn" class="text-link about-interactive" type="button">Share this app →</button>
+      </div>
+      <hr class="section-divider">
+
+      <!-- Item 65b: plain, brief changelog -- a date plus a handful of short lines on what a
+           returning user would actually notice, not a full technical changelog. Update the date
+           and swap the lines for whatever the next round of user-visible changes turns out to be;
+           this isn't meant to accumulate every past entry. Kept LAST (item 68) -- it grows over
+           time, and shouldn't push the credits/artwork/share attributions above it around as it
+           does. -->
+      <div class="subpage-section">
+        <div class="section-title">WHAT'S NEW -- SEPTEMBER 12, 2026</div>
+        <ul class="tip-list">
+          <li>Reporting is now one flow: snap a photo (or skip it), then centre the crosshair and travel direction on a map instead of estimating range from where you're standing.</li>
+          <li>The presence banner is tappable -- when it's red, tap it to jump straight to the map.</li>
+          <li>Yellow and blue banners both show the same "next expected window" estimate now.</li>
+          <li>Added a Share page with a QR code, for handing someone your phone or a link instead of spelling out the app name.</li>
+          <li>The app can be added to your phone's home screen like a native app -- look for the install prompt or your browser's "Add to Home Screen" option.</li>
+        </ul>
       </div>
     </div>
   </div>
@@ -324,7 +346,7 @@
       <div class="subpage-section">
         <div class="section-title">HOW TO USE THIS APP</div>
         <p class="section-body">To log a sighting: tap Camera and take a photo, or skip it if you don't have one. Then pan the map so the crosshair marks where the whale actually was, and drag the ring around it if you know which way it was heading. Enter how many you saw and confirm. No photo at all? Report Manually skips straight to that same map.</p>
-        <p class="section-body">This app asks for the whale's position, not yours -- that's deliberate. A report is far more useful to other observers and researchers when it marks where the animal actually was, so take the extra moment to place that pin rather than just dropping it on your own location.</p>
+        <p class="section-body">This app asks for the whale's position, not yours -- that's deliberate. A report is far more useful to other observers and researchers when it marks where the animal actually was, so take the extra moment to centre the crosshair there rather than just leaving it on your own location.</p>
         <p class="section-body">Many good viewing spots along the Kenai and Kasilof are on or accessed through private property. Always get permission before crossing a fence line or cutting through someone's yard to reach the water -- public road pullouts and posted public access points exist for a reason.</p>
         <p class="section-body">The blue banner shows the earliest time the rising tide is deep enough for belugas to enter the river -- they're often visible milling in the inlet before that. Red means someone has actually seen them in the current tide cycle, and tapping it jumps straight to the map. Yellow is a caution: a verified sighting in the last few cycles, but none confirmed right now. Both yellow and blue show the same next-window estimate; yellow just means it's happened recently.</p>
         <p class="section-body">Reporting is open to anyone -- no account or login needed. A small number of credentialed observers carry a verification code that unlocks a couple of extra tools, like confirming once a group has clearly moved on from a watched area.</p>

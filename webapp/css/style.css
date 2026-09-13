@@ -1807,6 +1807,44 @@ button.secondary {
   letter-spacing: 0.03em;
 }
 
+.legal-links-row {
+  display: flex;
+  gap: 10px;
+}
+
+/* Item 69: button.secondary's real styling is scoped to that element type -- these are <a> tags
+   (PRIVACY.html/LICENSE.html, opened via target=_blank), so they need their own copy of the same
+   look rather than picking up the rule automatically, same reasoning .admin-sms-link's own
+   comment already gives for the identical situation. flex:1 on both, in a flex row above, is what
+   makes them equal-width and side-by-side on one line. */
+.legal-link-btn {
+  flex: 1;
+  display: block;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.3);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-decoration: none;
+}
+
+.legal-note {
+  margin-top: 10px;
+  text-align: center;
+}
+
+/* Item 70: small print under DEVELOPMENT/ARTWORK's own credit lines -- muted, not competing with
+   the actual contact link above it for attention. */
+.copyright-line {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 6px 0 0;
+}
+
 .status-error {
   color: var(--error);
   font-size: 0.9rem;

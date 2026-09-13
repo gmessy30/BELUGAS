@@ -34,6 +34,14 @@ Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:
 - Android tests: `./gradlew :shared:testAndroidHostTest`
 - iOS tests: `./gradlew :shared:iosSimulatorArm64Test`
 
+### License
+
+This project is licensed under the [PolyForm Noncommercial License 1.0.0](./LICENSE) --
+free for non-commercial use.
+
+The beluga artwork in `webapp/img/` and this app's Compose drawable resources is
+© Luna Montgomery. All rights reserved. This artwork is not licensed under the terms above.
+
 ---
 
 Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…
