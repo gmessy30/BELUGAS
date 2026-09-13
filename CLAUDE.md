@@ -98,6 +98,67 @@ two tabs within one ordinary browser instance. Not re-attempted for now: the sys
 gesture/button already returns correctly (it's specifically the in-page Back **button** that
 reloads instead of returning), so this is a rough edge, not a dead end.
 
+### Live device inspection (adb + Chrome DevTools Protocol)
+
+Two physical Android phones are available over USB, USB debugging authorized: `adb` lives at
+`%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe` (there is no `adb` on PATH in this
+environment — always invoke it by that full path, e.g. `"$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"`
+from bash). Run `adb devices` to see current serials — they were `ZY22JSTXPW` (locked with
+fingerprint auth at the time of setup — unusable for this until unlocked by hand, adb cannot
+authenticate a fingerprint) and `ZY22KH9WHP` (no lock, usable directly) — **check both are still
+attached and note which is actually unlocked before relying on either serial**, since which
+physical phone is unlocked can change between sessions.
+
+**Item 85 established this so future sessions verify real behavior on-device instead of asking the
+user to read a debug overlay and report back.** Two independent capabilities, both driven from
+this same adb connection:
+
+**Screenshots** — `adb -s <serial> exec-out screencap -p > shot.png`. Must be run from `cmd`/bash
+(this repo's Bash tool), **never** PowerShell — PowerShell's `>` redirection is text-mode by
+default and corrupts the binary PNG stream. Save into your scratchpad directory, then `Read` the
+PNG file directly (the Read tool renders images).
+
+**Live page access (read/drive real page state, not just look at pixels)**:
+1. `adb -s <serial> forward tcp:<local-port> localabstract:chrome_devtools_remote` — pick a
+   distinct local port per device if inspecting both at once (e.g. 9222/9223), since two devices
+   can't share one forwarded port.
+2. If Chrome isn't already showing the app: `adb -s <serial> shell am start -a
+   android.intent.action.VIEW -d "https://gmessy30.github.io/BELUGAS/webapp/?debug=1"
+   com.android.chrome` (append `?debug=1` to also get the on-page debug overlay's own state,
+   useful as a cross-check). The device's screen must be on and unlocked first (`adb -s <serial>
+   shell input keyevent KEYCODE_WAKEUP`, then check `adb -s <serial> shell dumpsys window | grep
+   isKeyguardShowing` — if `true` and there's no PIN-less swipe, that device needs a human to
+   unlock it; don't attempt to bypass a lock).
+3. `GET http://localhost:<local-port>/json` lists every open tab (title, url,
+   `webSocketDebuggerUrl`) — find the one whose `url` matches the deployed app.
+   `tools/device-inspect/find_tab.py <local-port> [url-substring]` does this lookup (prints every
+   tab with no substring, or just the matching tab's websocket URL with one).
+4. Connect to that tab's `webSocketDebuggerUrl` and send the Chrome DevTools Protocol's
+   `Runtime.evaluate` over it to run arbitrary JS in the live page — read any variable/DOM
+   state, or drive the app directly (call its own global functions, e.g. `switchTab('map')`,
+   `openPlaybackPanel()`, click a real chip/button via `.click()` to exercise its actual handler
+   rather than hand-simulating one). `tools/device-inspect/cdp_eval.py <websocket-url> "<js
+   expression>"` wraps this (needs `pip install websocket-client`).
+   - **Gotcha**: recent Chrome rejects a DevTools WebSocket connection whose `Origin` header isn't
+     on an allow-list (`403 Forbidden`, "Rejected an incoming WebSocket connection from the
+     http://... origin") — there's no practical way to pass `--remote-allow-origins` to a stock
+     installed Android Chrome, so the fix is to omit the `Origin` header entirely
+     (`websocket-client`'s `create_connection(..., suppress_origin=True)`), not to try to guess an
+     allowed value. `cdp_eval.py` already does this.
+   - No Node.js is installed in this environment (the user's own message suggested a Node + `ws`
+     script) — these tools use Python (`websocket-client`/`requests` via pip) instead, which was
+     available. Node would work identically if it's ever present.
+5. `fetch('./sw.js').then(r=>r.text())` from within a `Runtime.evaluate` call is a reliable way to
+   confirm which `CACHE_NAME` is actually LIVE on the server (sw.js itself is never in
+   `APP_SHELL`, so this always hits the network, not a cached copy) — cross-check this against
+   `navigator.serviceWorker.controller`'s state (`hasController`/`controllerState:"activated"`) to
+   confirm the tab is actually running that version, not just that a newer one exists on GitHub
+   Pages while an older one is still installed/controlling.
+
+Tear down forwards when done with `adb forward --remove tcp:<local-port>` (or `--remove-all`) —
+they otherwise persist across adb server restarts until explicitly removed or the device
+disconnects.
+
 ### Open items / not yet done
 
 - **Native-side BUG (item 83a, not yet fixed there)**: `PlaybackRange.kt`'s `QuickRange.resolve()`
