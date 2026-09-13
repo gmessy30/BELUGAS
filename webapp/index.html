@@ -130,6 +130,17 @@
          reveals it once installing is actually possible (see that file's own header comment). -->
     <button id="menu-install-item" class="menu-nav-item" hidden>Install App</button>
 
+    <!-- Item 77: web-only, no native equivalent (a native app has no browser chrome to reclaim
+         space from in the first place). Shares .menu-nav-item's text styling like Camera/About
+         above, but isn't a navigation destination -- doesn't close the menu on tap, see
+         orientation-lock.js's own toggleFullscreen. Hidden by default; that same file's
+         updateFullscreenToggleUi reveals it only on a touch device that actually supports
+         Element.requestFullscreen and isn't already running installed/standalone (no browser
+         chrome there to reclaim either). Label flips between "Enter"/"Exit Fullscreen" to reflect
+         real current state, including when fullscreen is exited some other way (back press, the
+         browser's own built-in exit affordance, etc.). -->
+    <button id="menu-fullscreen-toggle-item" class="menu-nav-item" type="button" hidden>Enter Fullscreen</button>
+
     <!-- Ports MainMenuDrawer's own "OPEN APP TO" FilterChip row (App.kt) -- launch-screen.js.
          DEFAULT ON FIRST LAUNCH IS A DELIBERATE DEVIATION: native's own getLaunchScreen()
          fallback is actually CAMERA (confirmed directly in AppPreferences.android.kt/.ios.kt --
