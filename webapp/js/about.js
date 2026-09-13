@@ -66,8 +66,11 @@ function isWithinWhaleBNose(point) {
 }
 
 // Matches AboutScreen's onWhaleNoseTap exactly: a rolling window, not an ever-accumulating
-// counter, and no feedback at all until the count is actually reached.
-function onWhaleNoseTap() {
+// counter, and no feedback at all until the count is actually reached. Item 62a: also takes the
+// completing tap's own screen position (tapScreenY, the real 7th "boop"'s clientY) so the modal
+// can position its harmless-to-tap input field there instead of opening dead-center under the
+// finger -- see tier-code.js's positionTierCodeModalUnderTap.
+function onWhaleNoseTap(tapScreenY) {
   const now = Date.now();
   hiddenGestureTapCount = (now - hiddenGestureLastTapAt <= HIDDEN_GESTURE_TAP_TIMEOUT_MS)
     ? hiddenGestureTapCount + 1
@@ -77,7 +80,7 @@ function onWhaleNoseTap() {
   if (hiddenGestureTapCount >= HIDDEN_GESTURE_TAP_COUNT) {
     hiddenGestureTapCount = 0;
     document.getElementById("about-page").hidden = true;
-    openTierCodeModal();
+    openTierCodeModal(tapScreenY);
     pushNavLayer("tier-code-modal", () => {
       document.getElementById("tier-code-modal").hidden = true;
       document.getElementById("about-page").hidden = false;
@@ -140,7 +143,7 @@ function initAboutPage() {
     if (!document.getElementById("about-text-content").hidden) {
       setAboutTextVisible(false);
     }
-    onWhaleNoseTap();
+    onWhaleNoseTap(event.clientY);
   });
 }
 

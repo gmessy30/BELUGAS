@@ -107,3 +107,11 @@ project (via `supabase db query --linked --file <path>`) — don't tell the user
   attached, remove `HeadingDistancePicker`/the projection math/the coastline fallback entirely,
   matching the web app's new design. Apply alongside every other pending native-parity item above
   in one later pass, then rebuild for both Android and iOS.
+- **Native-side parity item (item 62c, web-only so far)**: the PWA's REPORT DEPARTURE button
+  (`webapp/js/tier-code.js`'s `submitDepartureReport`, the "WHALES LEFT?" section reached via the
+  hidden 7-tap nose gesture) is now a two-step action — a `confirm()` dialog ("Report that the
+  whales have left? This steps RED to YELLOW and can't be undone for 3 hours.") gates the actual
+  RPC call, since the button sits in the same modal that gesture opens and a stray trailing tap
+  landing on it would otherwise fire an irreversible (3h) report with no chance to back out.
+  `TierClaimScreen.kt`'s own "WHALES LEFT?" button has no equivalent confirmation step yet — worth
+  adding the same two-step gate there for parity.

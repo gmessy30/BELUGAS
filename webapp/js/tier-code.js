@@ -1,6 +1,13 @@
 // Observer-code redemption modal. Reached the same way it is natively: only via the hidden
 // 7-tap-the-whale's-nose gesture on the About page (see about.js's onWhaleNoseTap), not any
 // visible menu item.
+//
+// Item 62: this gesture's own repeated rapid tapping is exactly what makes the modal risky to
+// open under the finger unguarded -- screen sensitivity means the 7-tap count sometimes runs to
+// 8 or 9 "boops" before the user notices the modal appeared, and every one of those trailing taps
+// lands at roughly the same screen position the LAST nose-tap did. Two independent guards below
+// (62a positions the input, not a button, under that position; 62b ignores button taps for a
+// short window after open) rather than relying on either alone.
 function initTierCodeModal() {
   const modal = document.getElementById("tier-code-modal");
   const closeBtn = document.getElementById("tier-code-close-btn");
@@ -8,31 +15,86 @@ function initTierCodeModal() {
   const input = document.getElementById("tier-code-input");
 
   closeBtn.addEventListener("click", () => {
+    if (isTierCodeModalButtonIgnored()) return;
     navigateBack();
   });
 
   // Tapping the dimmed backdrop (not the dialog card itself) closes it, same convention as
-  // the location/camera steps' plain-button dismissal elsewhere in this app.
+  // the location/camera steps' plain-button dismissal elsewhere in this app. Not guarded by the
+  // ignore-window: the card itself covers the nose-tap position (see positionTierCodeModalUnderTap),
+  // so a trailing boop lands ON the card, never on the backdrop behind it.
   modal.addEventListener("click", (event) => {
     if (event.target === modal) navigateBack();
   });
 
-  submitBtn.addEventListener("click", submitTierCode);
+  submitBtn.addEventListener("click", () => {
+    if (isTierCodeModalButtonIgnored()) return;
+    submitTierCode();
+  });
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter") submitTierCode();
   });
 
-  document.getElementById("tier-code-departure-btn").addEventListener("click", submitDepartureReport);
+  document.getElementById("tier-code-departure-btn").addEventListener("click", () => {
+    if (isTierCodeModalButtonIgnored()) return;
+    submitDepartureReport();
+  });
 }
 
-// Called from about.js's onWhaleNoseTap once the hidden gesture completes.
-function openTierCodeModal() {
+// Item 62b: a button tap within this window of the modal opening is silently ignored -- a
+// trailing "boop" from the 7-tap gesture landing on SUBMIT/CANCEL/REPORT DEPARTURE the very
+// instant the modal appears (before the user has even seen it, let alone decided to tap
+// something) is exactly the accidental-action risk this closes off. 600ms is comfortably longer
+// than the gap between rapid taps but short enough that it's never noticeable as a real delay to
+// someone deliberately tapping a button afterwards.
+const TIER_CODE_MODAL_BUTTON_IGNORE_MS = 600;
+let tierCodeModalOpenedAt = 0;
+
+function isTierCodeModalButtonIgnored() {
+  return Date.now() - tierCodeModalOpenedAt < TIER_CODE_MODAL_BUTTON_IGNORE_MS;
+}
+
+// Item 62a: shifts the modal card so the CODE INPUT (harmless to tap into or accidentally type
+// a stray character in -- nothing submits on its own) lands at the tapping finger's own last
+// screen position, rather than the modal's generic flex-centered spot -- every button (Cancel/
+// Submit, and Report Departure further down) ends up clearly below that position instead.
+// tapScreenY is the 7th tap's own event.clientY (about.js's onWhaleNoseTap) -- literally where
+// the finger just was, not a theoretical zone-center guess.
+function positionTierCodeModalUnderTap(tapScreenY) {
+  const card = document.querySelector("#tier-code-modal .modal-card");
+  const input = document.getElementById("tier-code-input");
+  card.style.transform = ""; // clear any previous shift before measuring fresh
+  if (tapScreenY == null) return;
+
+  requestAnimationFrame(() => {
+    const inputRect = input.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    const inputCenterY = inputRect.top + inputRect.height / 2;
+    let deltaY = tapScreenY - inputCenterY;
+
+    // Clamped so the card's own top/bottom both stay safely on-screen -- a tap near the very
+    // top or bottom edge shouldn't push the buttons/departure section off the viewport entirely
+    // just to keep the input exactly centered under it.
+    const margin = 16;
+    const minDeltaY = margin - cardRect.top;
+    const maxDeltaY = window.innerHeight - margin - cardRect.bottom;
+    deltaY = Math.min(maxDeltaY, Math.max(minDeltaY, deltaY));
+
+    card.style.transform = `translateY(${deltaY}px)`;
+  });
+}
+
+// Called from about.js's onWhaleNoseTap once the hidden gesture completes. tapScreenY is that
+// 7th tap's own event.clientY -- see positionTierCodeModalUnderTap's own comment.
+function openTierCodeModal(tapScreenY) {
   const modal = document.getElementById("tier-code-modal");
   const input = document.getElementById("tier-code-input");
   modal.hidden = false;
+  tierCodeModalOpenedAt = Date.now();
   setTierCodeStatus("");
   input.value = "";
   input.focus();
+  positionTierCodeModalUnderTap(tapScreenY);
 
   // Item 40: fire-and-forget, matching native's own LaunchedEffect(Unit) -- doesn't block the
   // modal from opening while the tier check (and, if eligible, a GPS fix) resolve.
@@ -155,7 +217,20 @@ function setDepartureStatus(message, isError = false) {
   el.className = isError ? "status-error" : "status-info";
 }
 
+// Item 62c: a two-step action now, not a single tap -- REPORT DEPARTURE is a real, hard-to-undo
+// consequence (steps RED to YELLOW, can't be reversed for 3 hours), and sits in the same modal
+// the 7-tap nose gesture opens, where a stray trailing tap landing on it was a real risk even
+// with 62a/62b's own guards. The native browser confirm() dialog matches this app's own existing
+// precedent for a consequential, hard-to-undo action (admin.js's handleRevoke) -- and as a real
+// separate OS-level dialog, it can't itself be dismissed/confirmed by an accidental touch the way
+// a same-page button could.
 async function submitDepartureReport() {
+  if (!confirm(
+    "Report that the whales have left? This steps RED to YELLOW and can't be undone for 3 hours."
+  )) {
+    return;
+  }
+
   const btn = document.getElementById("tier-code-departure-btn");
   btn.disabled = true;
   setDepartureStatus("Reporting…");
