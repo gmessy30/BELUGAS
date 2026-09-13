@@ -423,9 +423,14 @@
       <button id="news-filter-research" class="news-filter-chip" data-type="research_paper">RESEARCH PAPERS</button>
     </div>
 
-    <div id="news-articles" class="subpage-content news-articles-list"></div>
-
+    <!-- Item 78: moved up from below the article list (where it was the LAST item in this
+         page's flex column -- .news-screen -- and so sat exactly where the presence banner
+         renders whenever it's showing) to here, above #news-articles, so the article list is
+         what actually touches the bottom edge now. Scrolled article text under the banner isn't
+         a problem the way a now-unreachable CONTROL was. -->
     <button id="suggest-article-btn" class="suggest-article-btn" type="button">+ SUGGEST AN ARTICLE OR PAPER</button>
+
+    <div id="news-articles" class="subpage-content news-articles-list"></div>
   </div>
 
   <div id="suggest-article-modal" class="modal-backdrop" hidden>
@@ -683,10 +688,16 @@
 
   <main>
     <section id="map-view" class="view">
-      <button id="map-verified-toggle-btn" class="verified-toggle-btn map-verified-toggle-btn">VERIFIED ONLY</button>
-
-      <!-- SightingsMapScreen.kt's bottom-right time-lapse FAB, opens the panel below. -->
-      <button id="playback-fab-btn" class="playback-fab-btn" aria-label="Time-lapse playback" type="button">⏱</button>
+      <!-- Item 78: the time-lapse FAB used to sit bottom-right, bottom-anchored against the
+           presence banner (env(safe-area-inset-bottom) + --presence-banner-height) -- moved up
+           here into the same top-right stack as VERIFIED ONLY so it never references the bottom
+           edge or the banner at all, structurally, same reasoning as every other "stop measuring
+           an offset, make it not touch that edge in the first place" fix this session. Only the
+           FAB moved -- the open panel it launches (below) stays bottom-anchored, unchanged. -->
+      <div class="map-top-right-stack">
+        <button id="map-verified-toggle-btn" class="verified-toggle-btn">VERIFIED ONLY</button>
+        <button id="playback-fab-btn" class="playback-fab-btn" aria-label="Time-lapse playback" type="button">⏱</button>
+      </div>
 
       <!-- Ports the playback Surface/Column verbatim as one panel (native has no separate sheet
            wrapper either): date-range quick-picks, a fade-window control, speed, and the scrub

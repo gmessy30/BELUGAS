@@ -293,11 +293,19 @@ main {
   border-color: var(--brand-cyan);
 }
 
-.map-verified-toggle-btn {
+/* Item 78: VERIFIED ONLY and the time-lapse FAB stack vertically here instead of each carrying
+   its own hardcoded top/bottom offset -- a real height change to either one (a longer label, a
+   different icon size) can never cause the other to overlap it, unlike two independently
+   positioned elements that happen to line up today. */
+.map-top-right-stack {
   position: absolute;
   top: 12px;
   right: 12px;
   z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
 }
 
 /* Ports App.kt's MainMenuDrawer: full-screen, right-aligned, vertically centered, bold
@@ -780,6 +788,17 @@ button.text-link {
   padding: 14px;
   font-weight: 900;
   text-transform: uppercase;
+}
+
+/* Item 78: News Feed's own instance specifically (NOT the shared .suggest-article-btn class
+   above -- Alerts' SUBSCRIBE button also uses it, but sits at the true end of an ordinary
+   scrolling .subpage-content list there, not pinned as the last item of a bottom-anchored flex
+   column, so it never had this bug and doesn't need this override). Now positioned above
+   #news-articles (index.html) instead of below it, so the bottom safe-area margin the shared
+   class still carries (harmless there, but meaningless here) is replaced with a plain gap before
+   the list starts. */
+#suggest-article-btn {
+  margin: 0 16px 12px;
 }
 
 .chip-toggle {
@@ -1991,22 +2010,26 @@ button.secondary {
 
 /* --- Playback / time-lapse + date-range (SightingsMapScreen.kt's own scrub slider + quick-range
    chips, one Surface/Column natively -- ported as one panel here too, see map-view.js). --- */
-/* Item 67b: --presence-banner-height folded into the safe-area offset -- the presence banner is
-   position:fixed at z-index:970 (both of these sit at 500), so whenever it's showing it would
-   otherwise paint directly over the FAB/panel rather than just sitting near them. */
+/* Item 78: relocated from a bottom-right, bottom-anchored FAB (position:absolute + the
+   --presence-banner-height/safe-area offset item 67b originally gave it, see .playback-panel
+   right below for that mechanism still in use) into the top-right stack, so nothing about its
+   own CSS references the bottom edge or the banner at all anymore. Same pill styling as
+   .verified-toggle-btn (translucent dark fill, thin white-ish border) instead of the old solid
+   teal circle, to read as one visual family with the button it now sits directly under -- still
+   round (a 999px radius on an equal width/height box is a circle) to keep it visually distinct as
+   an icon-only control, not a text pill. */
 .playback-fab-btn {
-  position: absolute;
-  right: 16px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--presence-banner-height, 0px) + 16px);
-  z-index: 500;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  border: none;
-  background: var(--brand-teal-2);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.35);
   color: #ffffff;
-  font-size: 22px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  font-size: 18px;
+  padding: 0;
 }
 
 .playback-panel {
