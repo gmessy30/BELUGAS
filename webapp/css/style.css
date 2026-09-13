@@ -1903,13 +1903,11 @@ button.secondary {
   text-decoration: none;
 }
 
-.legal-note {
-  margin-top: 10px;
-  text-align: center;
-}
-
 /* Item 70: small print under DEVELOPMENT/ARTWORK's own credit lines -- muted, not competing with
-   the actual contact link above it for attention. */
+   the actual contact link above it for attention. Item 79: this is now each section's OWN
+   statement of its actual terms (PolyForm Noncommercial for the software, all rights reserved for
+   the artwork) rather than a plain copyright line plus one shared blanket summary elsewhere
+   (.legal-note, removed -- it read as covering the artwork too, which it never actually did). */
 .copyright-line {
   font-size: 0.7rem;
   color: rgba(255, 255, 255, 0.55);

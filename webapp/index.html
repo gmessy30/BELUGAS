@@ -197,8 +197,11 @@
         <div class="section-title">DEVELOPMENT</div>
         <p class="section-body">BELUGAS is developed by Ryan Messimer.</p>
         <a class="text-link about-interactive" href="mailto:keeneyeapps@gmail.com">Contact: keeneyeapps@gmail.com</a>
-        <!-- Item 70: matches LICENSE's own Required Notice line for the software itself. -->
-        <p class="copyright-line">© 2026 Keen Eye Apps</p>
+        <!-- Item 70/79: matches LICENSE's own Required Notice line for the software itself --
+             carries its own license terms now (item 79), since the standalone "Free for
+             non-commercial use" line below this section used to read as covering everything
+             including the artwork's own, different terms. -->
+        <p class="copyright-line">© 2026 Keen Eye Apps · Licensed under PolyForm Noncommercial 1.0.0</p>
       </div>
       <hr class="section-divider">
 
@@ -206,9 +209,10 @@
         <div class="section-title">ARTWORK</div>
         <p class="section-body">The beluga artwork used throughout the app is by Luna.</p>
         <a class="text-link about-interactive" href="mailto:keeneyeapps+luna@gmail.com">For inquiries about Luna's artwork: keeneyeapps+luna@gmail.com</a>
-        <!-- Item 70: matches LICENSE's own Required Notice carve-out -- this artwork is
-             separately copyrighted, not covered by the software's own PolyForm license. -->
-        <p class="copyright-line">© 2026 Luna Montgomery</p>
+        <!-- Item 70/79: matches LICENSE's own Required Notice carve-out -- this artwork is
+             separately copyrighted, NOT covered by the software's own PolyForm license, so its
+             own line says so directly rather than relying on a single blanket line below. -->
+        <p class="copyright-line">© 2026 Luna Montgomery · All rights reserved</p>
       </div>
       <hr class="section-divider">
 
@@ -217,7 +221,10 @@
            rather than as in-app subpages, since these are plain static files entirely outside
            this SPA's own nav-stack/subpage system, and a new tab is the simple, robust option the
            request explicitly allowed as a fallback. No policy/license text duplicated here, just
-           the links and a one-line summary of which license this is.
+           the links themselves -- item 79 removed the one-line "Free for non-commercial use"
+           summary that used to sit here: it read as a single blanket term for everything on this
+           page, including the artwork, which is under different (all-rights-reserved) terms of
+           its own. Each section's own copyright line above states its actual terms directly now.
 
            ITEM 71: deliberately NO rel="noopener" here -- both destinations are this app's own
            same-origin pages, and their own "Back to BELUGAS" link needs a live window.opener
@@ -229,7 +236,6 @@
           <a class="legal-link-btn about-interactive" href="../PRIVACY.html" target="_blank">Privacy Policy</a>
           <a class="legal-link-btn about-interactive" href="../LICENSE.html" target="_blank">License</a>
         </div>
-        <p class="section-body legal-note">Free for non-commercial use (PolyForm Noncommercial).</p>
       </div>
       <hr class="section-divider">
 

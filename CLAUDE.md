@@ -168,11 +168,16 @@ reloads instead of returning), so this is a rough edge, not a dead end.
   `bearingFromPointerEvent`'s element-center assumption and the ring's own off-center SVG
   coordinates; native's `detectDragGestures`/Canvas both already operate in the same coordinate
   space with no equivalent offset to begin with.)
-- **Native-side parity item (item 70, web-only so far)**: About gained a `© 2026 Keen Eye Apps`
-  line under DEVELOPMENT and a `© 2026 Luna Montgomery` line under ARTWORK (`webapp/index.html`),
-  plus PRIVACY POLICY/LICENSE link buttons under the credits (item 69, opening the new root-level
-  `PRIVACY.html`/`LICENSE.html` — see this file's own "Legal pages" section above) with a one-line
-  PolyForm Noncommercial summary. None of this exists in `AboutScreen.kt` yet — worth
-  adding the same copyright lines and legal links there for parity, alongside the other pending
-  items above. (The actual license text/artwork carve-out itself — `LICENSE`, `README.md` — is
-  already project-wide, nothing platform-specific to port there.)
+- **Native-side parity item (item 70/79, web-only so far)**: About gained a
+  `© 2026 Keen Eye Apps · Licensed under PolyForm Noncommercial 1.0.0` line under DEVELOPMENT and
+  a `© 2026 Luna Montgomery · All rights reserved` line under ARTWORK (`webapp/index.html`), plus
+  PRIVACY POLICY/LICENSE link buttons under the credits (item 69, opening the new root-level
+  `PRIVACY.html`/`LICENSE.html` — see this file's own "Legal pages" section above). Item 79 gave
+  each copyright its own terms directly rather than a single shared "Free for non-commercial use"
+  line below both — that line read as covering the artwork too, which it never actually did (the
+  artwork is separately copyrighted, all rights reserved, not under the software's PolyForm
+  license at all). None of this exists in `AboutScreen.kt` yet — worth adding the same copyright
+  lines (with the SAME per-section terms split, not a shared summary line) and legal links there
+  for parity, alongside the other pending items above. (The actual license text/artwork carve-out
+  itself — `LICENSE`, `README.md` — is already project-wide, nothing platform-specific to port
+  there.)
