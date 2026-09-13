@@ -1718,35 +1718,46 @@ button.camera-status.secondary {
 }
 
 @media (orientation: landscape) {
+  /* v6 (on-device confirmed, iterated live via CDP): v5 stacked these two VERTICALLY
+     (Unknown@112, Activity@152) under the SELF/OTHER chips -- but on a short landscape viewport
+     (this device: 348px tall) the chip row itself sits close enough to the top that a two-item
+     vertical stack collided with it (measured: chips at y119-149, the stack at y112-148 --
+     overlapping). Side-by-side needs only ONE row's worth of height (~36px), which fits safely in
+     the gap between the top row (SUBMIT/MENU, ends ~50) and the chips (starts ~119+) regardless of
+     exactly where the chips land. */
   #bearing-dial-unknown-btn {
-    top: calc(env(safe-area-inset-top, 0px) + 112px);
+    top: calc(env(safe-area-inset-top, 0px) + 64px);
     left: 16px;
     transform: none;
   }
   #manual-activity-btn {
-    top: calc(env(safe-area-inset-top, 0px) + 152px);
-    left: 16px;
+    top: calc(env(safe-area-inset-top, 0px) + 64px);
+    left: 190px;
     transform: none;
   }
-  /* ~20% smaller (on-device confirmed: `transform:scale()` alone doesn't work here -- it only
-     shrinks the PAINTED result, not the row's real layout box, so .review-bottom-panel (bottom-
-     anchored, auto-height) never actually gets any shorter or gains real clearance from the fixed
-     stack above it; a getBoundingClientRect check after adding it showed the whale image's own top
-     edge hadn't moved AT ALL). max-width + auto margins genuinely narrows the row -- each
-     .whale-count-col is flex:1, so a narrower row means narrower columns, and since
-     .whale-count-art's height is aspect-ratio-locked to its own (now narrower) width, the row's
-     real rendered height shrinks too, which DOES reduce the panel's total content height and move
-     its top edge down for real clearance -- confirmed via a follow-up on-device check. The
-     '+'/'-' buttons are fixed-px (not proportional to the column), so they're resized to match
-     explicitly right below. */
+  /* Shrunk enough that the row's real top edge (not just its painted size -- `transform:scale()`
+     was tried first and confirmed NOT to work here: it only shrinks the PAINTED result, not the
+     row's real layout box, so .review-bottom-panel, which is bottom-anchored/auto-height, never
+     actually got shorter or gained real clearance) clears the dial's own bottom edge (measured at
+     y249 on this device) -- confirmed via getBoundingClientRect that the dial and the whale
+     artwork no longer overlap at max-width:24%/22px controls; anything looser (tried 80%/35px,
+     55%/28px, 45%/26px, 32%/22px in that order) still left the dial overlapping the two middle
+     whale images. max-width+auto-margins genuinely narrows the row -- each .whale-count-col is
+     flex:1, so a narrower row means narrower columns, and since .whale-count-art's height is
+     aspect-ratio-locked to its own (now narrower) width, the row's real rendered height shrinks
+     too, which DOES reduce the panel's total content height and move its top edge down for real
+     clearance. The '+'/'-' buttons are fixed-px (not proportional to the column), so they're
+     resized to match explicitly right below -- 22px is smaller than the 44px target used
+     elsewhere in this app, a deliberate tradeoff forced by how little vertical room this
+     particular viewport leaves once the dial's own fixed 150px size is accounted for. */
   #manual-log-step .whale-count-row {
-    max-width: 80%;
+    max-width: 24%;
     margin: 0 auto;
   }
   #manual-log-step .whale-count-inc,
   #manual-log-step .whale-count-dec {
-    width: 35px;
-    height: 35px;
+    width: 22px;
+    height: 22px;
   }
 }
 
