@@ -661,73 +661,53 @@
   </div>
 
   <main>
-    <!-- ITEM 75: two prior attempts (67b/74) computed a measured --presence-banner-height inset
-         and offset the FAB/panel/Leaflet chrome by it -- both looked correct in source and both
-         still failed on a real device (the FAB fully hidden in portrait, mostly hidden in
-         landscape; the open panel's own bottom cut off under the banner in landscape). Rather
-         than a third measured offset, #map-view is now a flex column: #map-canvas (the actual
-         Leaflet container -- renamed from map-view itself, since Leaflet needs a dedicated
-         element it fully owns) on top, and the presence banner reparented in as a genuine last
-         flex child underneath it (presence-banner.js's updatePresenceBannerParent) whenever Map
-         is the topmost screen. #map-canvas's own box is what #map-verified-toggle-btn/
-         #playback-fab-btn/#playback-panel/Leaflet's own bottom controls all position themselves
-         against (they're its children now, not #map-view's) -- its bottom edge sits above the
-         banner BY CONSTRUCTION (whatever the flex layout leaves it), not by computing an offset
-         that has to separately match the banner's own real height. -->
     <section id="map-view" class="view">
-      <div id="map-canvas" class="map-canvas">
-        <button id="map-verified-toggle-btn" class="verified-toggle-btn map-verified-toggle-btn">VERIFIED ONLY</button>
+      <button id="map-verified-toggle-btn" class="verified-toggle-btn map-verified-toggle-btn">VERIFIED ONLY</button>
 
-        <!-- SightingsMapScreen.kt's bottom-right time-lapse FAB, opens the panel below. -->
-        <button id="playback-fab-btn" class="playback-fab-btn" aria-label="Time-lapse playback" type="button">⏱</button>
+      <!-- SightingsMapScreen.kt's bottom-right time-lapse FAB, opens the panel below. -->
+      <button id="playback-fab-btn" class="playback-fab-btn" aria-label="Time-lapse playback" type="button">⏱</button>
 
-        <!-- Ports the playback Surface/Column verbatim as one panel (native has no separate sheet
-             wrapper either): date-range quick-picks, a fade-window control, speed, and the scrub
-             slider itself. Auto-minimizes to just its header+slider while playing, matching
-             native's own behavior -- see map-view.js's updatePlaybackPanelUi. -->
-        <div id="playback-panel" class="playback-panel" hidden>
-          <div class="playback-panel-header">
-            <span class="playback-panel-title">TIME-LAPSE</span>
-            <div class="playback-panel-header-actions">
-              <button id="playback-minimize-btn" class="playback-icon-btn" aria-label="Minimize" type="button">⌄</button>
-              <button id="playback-close-btn" class="playback-icon-btn" aria-label="Close" type="button">✕</button>
-            </div>
+      <!-- Ports the playback Surface/Column verbatim as one panel (native has no separate sheet
+           wrapper either): date-range quick-picks, a fade-window control, speed, and the scrub
+           slider itself. Auto-minimizes to just its header+slider while playing, matching
+           native's own behavior -- see map-view.js's updatePlaybackPanelUi. -->
+      <div id="playback-panel" class="playback-panel" hidden>
+        <div class="playback-panel-header">
+          <span class="playback-panel-title">TIME-LAPSE</span>
+          <div class="playback-panel-header-actions">
+            <button id="playback-minimize-btn" class="playback-icon-btn" aria-label="Minimize" type="button">⌄</button>
+            <button id="playback-close-btn" class="playback-icon-btn" aria-label="Close" type="button">✕</button>
           </div>
-
-          <div id="playback-full-controls">
-            <div class="step-label">Date Range</div>
-            <div class="chip-row" id="date-range-chips"></div>
-            <div id="date-range-custom" class="date-range-custom" hidden>
-              <label>From <input type="date" id="date-range-from-input"></label>
-              <label>To <input type="date" id="date-range-to-input"></label>
-            </div>
-
-            <div class="step-label">Fade Window</div>
-            <div class="chip-row" id="fade-window-chips"></div>
-
-            <div class="step-label">Speed</div>
-            <div class="chip-row" id="playback-speed-chips"></div>
-          </div>
-
-          <div class="playback-scrub-row">
-            <button id="playback-play-btn" class="playback-icon-btn playback-play-btn" aria-label="Play" type="button">▶</button>
-            <input type="range" id="playback-slider" class="playback-slider" min="0" max="0" value="0">
-          </div>
-          <div id="playback-time-label" class="playback-time-label"></div>
         </div>
+
+        <div id="playback-full-controls">
+          <div class="step-label">Date Range</div>
+          <div class="chip-row" id="date-range-chips"></div>
+          <div id="date-range-custom" class="date-range-custom" hidden>
+            <label>From <input type="date" id="date-range-from-input"></label>
+            <label>To <input type="date" id="date-range-to-input"></label>
+          </div>
+
+          <div class="step-label">Fade Window</div>
+          <div class="chip-row" id="fade-window-chips"></div>
+
+          <div class="step-label">Speed</div>
+          <div class="chip-row" id="playback-speed-chips"></div>
+        </div>
+
+        <div class="playback-scrub-row">
+          <button id="playback-play-btn" class="playback-icon-btn playback-play-btn" aria-label="Play" type="button">▶</button>
+          <input type="range" id="playback-slider" class="playback-slider" min="0" max="0" value="0">
+        </div>
+        <div id="playback-time-label" class="playback-time-label"></div>
       </div>
     </section>
 
-    <!-- ITEM 75: same in-flow treatment as #map-view above -- #list-canvas is the real scrolling
-         region (moved from #list-view itself), with the banner reparented in as a flex sibling
-         below it whenever List is the topmost screen. -->
     <section id="list-view" class="view mae-background" hidden>
-      <div id="list-canvas" class="list-canvas">
-        <div class="list-toolbar">
-          <button id="list-verified-toggle-btn" class="verified-toggle-btn">VERIFIED ONLY</button>
-        </div>
-        <div id="list-items"></div>
+      <div class="list-toolbar">
+        <button id="list-verified-toggle-btn" class="verified-toggle-btn">VERIFIED ONLY</button>
       </div>
+      <div id="list-items"></div>
     </section>
 
     <!-- Item 60: capturing a photo (or skipping the camera) now goes straight into the same
