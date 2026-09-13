@@ -134,10 +134,14 @@ main {
 }
 
 /* Item 67a: same 100dvh treatment #submit-view already had (see that rule's own comment) -- Map
-   now also attempts fullscreen (orientation-lock.js's lockFullscreenForMapTab), and needs the
-   same iOS Safari fallback (no real fullscreen support there at all): 100dvh tracks the
-   viewport's CURRENT size as the browser's own address bar shows/hides, instead of 100vh/.view's
-   own inset:0-derived height resolving against the LARGE (chrome-hidden-assumed) viewport size. */
+   reclaims the same browser-chrome space this way. 100dvh tracks the viewport's CURRENT size as
+   the browser's own address bar shows/hides, instead of 100vh/.view's own inset:0-derived height
+   resolving against the LARGE (chrome-hidden-assumed) viewport size. Item 76: Map ALSO used to
+   request real fullscreen on top of this (orientation-lock.js's lockFullscreenForMapTab) --
+   removed entirely, since whenever that request actually succeeded (only reachable by tapping
+   into Map, never on a gesture-less direct launch) it hid the body-level #presence-banner
+   completely. This 100dvh sizing alone is what actually reclaims the space on iPhone regardless,
+   so nothing is lost by dropping the fullscreen attempt. */
 #map-view {
   padding: 0;
   height: 100vh;
