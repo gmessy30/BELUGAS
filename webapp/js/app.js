@@ -118,6 +118,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   // BLUE data had landed. Awaiting it here alongside refreshSightings() means neither surface is
   // ever shown before the real data has landed, same as this gate already does for sightings.
   const minDelay = new Promise((resolve) => setTimeout(resolve, SPLASH_MIN_DISPLAY_MS));
+  // Item 63: awaited BEFORE refreshSightings, not alongside it in the Promise.all below --
+  // refreshSightings does its own render synchronously as soon as ITS fetch resolves, with
+  // nothing to re-render again later, so cachedIsTierOneObserver has to already be correct by
+  // that point or CONFIRM SIGHTING would silently never appear even once the real answer lands
+  // (Promise.all resolving "eventually" isn't enough -- order of the actual render matters here).
+  await refreshTierOneObserverStatus();
   await Promise.all([minDelay, refreshSightings(), initPresenceState()]);
   // Resolved while still covered by the splash screen, same timing intent as App.kt's own
   // resolveAndSetLaunchScreen (called during the splash's own display window) -- the very first

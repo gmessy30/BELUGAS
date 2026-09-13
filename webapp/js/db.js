@@ -7,14 +7,45 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 // column at all (supabase/migrations/20260903010000_add_observer_tier_system.sql's column-level
 // lockdown), so a bare `select('*')` would fail outright. Kept as an explicit list, same as
 // SupabaseApi.SIGHTING_LIST_COLUMNS on the native side.
-const SIGHTING_LIST_COLUMNS = [
+const SIGHTING_LIST_COLUMNS_BASE = [
   "id", "lat", "lng", "heading", "heading_degrees", "heading_source",
   "heading_accuracy_degrees", "distance_bucket", "distance_radius_meters",
   "count_whites", "count_greys", "count_calves", "count_unknown",
   "observed_at_epoch_ms", "observer_type", "is_geofence_verified", "photo_url",
   "whale_lat", "whale_lng", "uncertainty_radius_meters", "uncertainty_bucket",
   "travel_bearing_degrees", "travel_bearing_source", "position_source", "observer_tier"
-].join(",");
+];
+
+// Items 90/63: activities/activity_note (the ACTIVITY picker) and confirmed_at (tier-1
+// confirmation -- NOT confirmed_by_subscriber_id, which gets the same anon-SELECT lockdown as
+// the ORIGINAL subscriber_id column and for the identical reason: it identifies a specific
+// device/observer's own action, not just public sighting data) all land in the SAME migration,
+// so one shared capability flag below covers all three -- they can only ever be missing or
+// present together.
+const SIGHTING_LIST_COLUMNS_NEW = ["activities", "activity_note", "confirmed_at"];
+
+// null = not yet determined, true/false once a real query has actually told us. Tried optimistically
+// (assume the new columns exist) and only ever flipped to false by a real missing-column error --
+// never re-tried upward afterward within one page load, since the schema doesn't change mid-session.
+let sightingSchemaHasNewColumns = null;
+
+function sightingListColumns() {
+  const cols = sightingSchemaHasNewColumns === false
+    ? SIGHTING_LIST_COLUMNS_BASE
+    : [...SIGHTING_LIST_COLUMNS_BASE, ...SIGHTING_LIST_COLUMNS_NEW];
+  return cols.join(",");
+}
+
+// Postgres/PostgREST's own "column does not exist" signature -- code 42703, or (PostgREST
+// sometimes surfaces this as a plain message instead of a structured code) a message mentioning
+// it directly. Used to tell "the migration hasn't been applied yet" apart from every other kind
+// of query failure, which should NOT flip the capability flag (a transient network error here
+// must not permanently downgrade every later request for the rest of the session).
+function isMissingColumnError(error) {
+  if (!error) return false;
+  if (error.code === "42703") return true;
+  return /column .* does not exist/i.test(error.message || "");
+}
 
 // Matches SightingRecord.isHighConfidence in shared/src/commonMain/kotlin/com/cookinlet/belugas/
 // SightingRecord.kt exactly: a photo is direct evidence regardless of who logged it; absent
@@ -30,13 +61,30 @@ function isHighConfidence(sighting) {
 /**
  * Fetches recent sightings, newest first. Returns [] on failure -- callers show an inline error
  * separately rather than crash the map/list view.
+ *
+ * Items 90/63: tries the new columns (activities/activity_note/confirmed_at) first -- if the
+ * migration hasn't actually been applied yet, that specific request fails with a missing-column
+ * error, which flips sightingSchemaHasNewColumns to false and retries ONCE with the base column
+ * list, so the app keeps working (just without those fields) rather than breaking entirely until
+ * the migration lands.
  */
 async function fetchRecentSightings(limit = 200) {
-  const { data, error } = await supabaseClient
+  let { data, error } = await supabaseClient
     .from("sightings")
-    .select(SIGHTING_LIST_COLUMNS)
+    .select(sightingListColumns())
     .order("observed_at_epoch_ms", { ascending: false })
     .limit(limit);
+
+  if (error && isMissingColumnError(error) && sightingSchemaHasNewColumns !== false) {
+    sightingSchemaHasNewColumns = false;
+    ({ data, error } = await supabaseClient
+      .from("sightings")
+      .select(sightingListColumns())
+      .order("observed_at_epoch_ms", { ascending: false })
+      .limit(limit));
+  } else if (!error && sightingSchemaHasNewColumns === null) {
+    sightingSchemaHasNewColumns = true;
+  }
 
   if (error) {
     console.error("SIGHTINGS_FETCH_ERROR", error);
@@ -99,9 +147,27 @@ async function uploadSightingPhoto(id, blob) {
  * permitted. Same reasoning as SupabaseApi.postSighting on the native side, which also never
  * requests the row back.
  */
+// Item 90: strips activities/activity_note from a record about to be inserted -- used only once
+// the schema's already been confirmed NOT to have those columns yet (sightingSchemaHasNewColumns
+// === false), so a submission from before the migration lands still succeeds, just without those
+// two fields, rather than failing outright on a missing column.
+function stripNewSightingFields(record) {
+  const { activities, activity_note, ...rest } = record;
+  return rest;
+}
+
 async function insertSighting(record) {
   try {
-    const { error } = await supabaseClient.from("sightings").insert(record);
+    const payload = sightingSchemaHasNewColumns === false ? stripNewSightingFields(record) : record;
+    let { error } = await supabaseClient.from("sightings").insert(payload);
+
+    if (error && isMissingColumnError(error) && sightingSchemaHasNewColumns !== false) {
+      sightingSchemaHasNewColumns = false;
+      ({ error } = await supabaseClient.from("sightings").insert(stripNewSightingFields(record)));
+    } else if (!error && sightingSchemaHasNewColumns === null) {
+      sightingSchemaHasNewColumns = true;
+    }
+
     if (error) {
       console.error("SIGHTING_INSERT_ERROR", error);
       return { ok: false, networkError: isNetworkError(error) };
@@ -508,6 +574,46 @@ async function reportKenaiDeparture(subscriberId, lat, lng) {
   });
   if (error) {
     console.error("DEPARTURE_REPORT_ERROR", error);
+    return false;
+  }
+  return data === true;
+}
+
+// Item 63: purely a visibility signal for whether to show CONFIRM SIGHTING at all -- same
+// "visibility is UX, enforcement is server-side" split as isKenaiDepartureReporter right above
+// (confirm_sighting re-checks tier itself server-side regardless of what this returns). Checked
+// ONCE per app load (refreshTierOneObserverStatus, called from app.js's own splash-gate
+// Promise.all) rather than per sighting row -- it's the same device/subscriber_id for every row
+// shown, so there's nothing to gain from re-checking it repeatedly. Fails closed (false) on error.
+let cachedIsTierOneObserver = false;
+
+async function isTierOneObserver(subscriberId) {
+  const { data, error } = await supabaseClient.rpc("is_tier_one_observer", { p_subscriber_id: subscriberId });
+  if (error) {
+    console.error("TIER_ONE_CHECK_ERROR", error);
+    return false;
+  }
+  return data === true;
+}
+
+async function refreshTierOneObserverStatus() {
+  cachedIsTierOneObserver = await isTierOneObserver(getOrCreateSubscriberId());
+}
+
+/**
+ * Item 63: the sole write path for confirmed_by_subscriber_id/confirmed_at -- confirm_sighting
+ * itself re-checks tier, refuses an already-confirmed row, and refuses the caller's own row,
+ * entirely server-side (this app has no reliable client-side way to know "is this row mine" for
+ * an arbitrary fetched sighting anyway, since subscriber_id itself is never anon-readable). false
+ * covers every refusal reason uniformly, matching reportKenaiDeparture's own single-boolean design.
+ */
+async function confirmSighting(sightingId, subscriberId) {
+  const { data, error } = await supabaseClient.rpc("confirm_sighting", {
+    p_sighting_id: sightingId,
+    p_subscriber_id: subscriberId
+  });
+  if (error) {
+    console.error("CONFIRM_SIGHTING_ERROR", error);
     return false;
   }
   return data === true;

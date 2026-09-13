@@ -271,6 +271,13 @@ main {
   font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
 }
 
+/* Item 90: same treatment as .sighting-breakdown right above -- one more plain detail line. */
+.sighting-activities {
+  color: #d0d0d0;
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+
 /* Shared by the map overlay button and the list toolbar button -- both mirror the exact same
    native toggle (SightingsMapScreen.kt's own showHighConfidenceOnly action / OfflineSightingsList's
    "VERIFIED ONLY" TopAppBar action): white/translucent when off, the app's real "on" color
@@ -898,7 +905,13 @@ button.text-link {
 #polygon-picker-overlay .chip-toggle.active,
 #manual-log-step .chip-toggle.active,
 #playback-panel .chip-toggle.active,
-#main-menu .chip-toggle.active {
+#main-menu .chip-toggle.active,
+/* Item 90: "the app's yellow 'on' state, matching VERIFIED ONLY" per the request -- the
+   VERIFIED ONLY button's OWN active state is actually cyan (.verified-toggle-btn.active further
+   down), but this shared yellow chip-active convention (already used by #manual-log-step right
+   above, among others) is what every other selected-chip state in this app actually looks like,
+   which is what's being matched here. */
+#activity-picker-modal .chip-toggle.active {
   background: var(--brand-yellow);
   color: #000000;
 }
@@ -1822,6 +1835,31 @@ button.camera-status.secondary {
   margin: 0 auto 4px;
 }
 
+/* Item 90: same fit-content/centered treatment as .manual-datetime-btn right above -- one of a
+   row of auxiliary per-sighting settings buttons, not a full-width control. */
+.manual-activity-btn {
+  display: block;
+  width: fit-content;
+  margin: 0 auto 8px;
+}
+
+/* Count of currently-selected activities -- hidden entirely (not shown as "0") whenever none are
+   selected, toggled by submit-view.js's own updateActivityButtonUi. Plain inline badge next to
+   the button's own label rather than an absolutely-positioned corner overlay, so it never needs
+   to know the button's own rendered size. */
+.manual-activity-badge {
+  display: inline-block;
+  margin-left: 6px;
+  min-width: 16px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--brand-yellow);
+  color: #000000;
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-align: center;
+}
+
 /* Never shown itself -- purely a vehicle for the platform's own datetime picker UI, triggered by
    #manual-datetime-btn's click handler calling this element's showPicker(). Kept in the DOM
    (not display:none) since some browsers refuse showPicker()/focus() on a non-rendered element;
@@ -2076,6 +2114,29 @@ button.secondary {
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
+}
+
+/* Item 63: shown in the map popup and the list item -- tier-1-only, so this is a small ask
+   (visually secondary to CAPTURE/SUBMIT-style primary actions elsewhere), full-width within
+   whichever container it's in either way. */
+.confirm-sighting-btn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--brand-teal-2);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.confirmed-sighting-badge {
+  margin-top: 8px;
+  color: var(--brand-teal-2);
+  font-weight: 700;
+  font-size: 0.8rem;
 }
 
 /* --- Playback / time-lapse + date-range (SightingsMapScreen.kt's own scrub slider + quick-range

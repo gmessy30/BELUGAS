@@ -644,10 +644,39 @@
         <p id="confirm-summary-counts" class="confirm-summary-line"></p>
         <p id="confirm-summary-direction" class="confirm-summary-line"></p>
         <p id="confirm-summary-time" class="confirm-summary-line"></p>
+        <!-- Item 90: hidden entirely (not shown as "Activities: none") whenever nothing was
+             picked -- see submit-view.js's own showSubmitConfirmModal call sites. -->
+        <p id="confirm-summary-activities" class="confirm-summary-line" hidden></p>
       </div>
       <div class="modal-actions">
         <button id="submit-confirm-back-btn" class="secondary" type="button">← Back</button>
         <button id="submit-confirm-confirm-btn" class="primary" type="button">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Item 90: multi-select activity picker for the logging screen's bottom panel (both
+       camera-with-photo and plain Report Manually paths share #manual-log-step, see item 60) --
+       opened by the ACTIVITY button there. Six chips, ANY number active at once (unlike every
+       other .chip-toggle group in this app, which is single-select/radio-style) -- each just
+       toggles its own membership independently, see submit-view.js's own wiring. OTHER reveals
+       the one-line note field below (140-char cap, matching the column's own max length).
+       Optional -- Done with nothing selected is a valid, empty state; resets between sightings
+       (never persisted), matching every other per-sighting field on this screen. -->
+  <div id="activity-picker-modal" class="modal-backdrop" hidden>
+    <div class="modal-card">
+      <h2>Activity</h2>
+      <div class="chip-row" id="activity-chips">
+        <button type="button" class="chip-toggle" data-activity="TRAVELLING">Travelling</button>
+        <button type="button" class="chip-toggle" data-activity="MILLING">Milling</button>
+        <button type="button" class="chip-toggle" data-activity="FEEDING_OBSERVED">Feeding Observed</button>
+        <button type="button" class="chip-toggle" data-activity="BENTHIC_FEEDING_EVIDENCED">Benthic Feeding Evidenced</button>
+        <button type="button" class="chip-toggle" data-activity="COURTSHIP_BEHAVIOURS">Courtship Behaviours</button>
+        <button type="button" class="chip-toggle" data-activity="OTHER">Other</button>
+      </div>
+      <input type="text" id="activity-other-note-input" class="suggest-input" placeholder="Describe (optional)" maxlength="140" hidden>
+      <div class="modal-actions">
+        <button id="activity-picker-done-btn" class="primary" type="button">Done</button>
       </div>
     </div>
   </div>
@@ -996,6 +1025,16 @@
                (falling back to .click()/.focus() wherever showPicker() isn't supported). -->
           <button id="manual-datetime-btn" class="secondary manual-datetime-btn" type="button">📅 SET DATE / TIME</button>
           <input type="datetime-local" id="manual-datetime-input" class="manual-datetime-input-hidden" tabindex="-1" aria-hidden="true">
+
+          <!-- Item 90: opens #activity-picker-modal below. Optional -- a sighting can be
+               submitted with no activities selected at all, same as travel direction already is.
+               Badge shows a count whenever any are selected; hidden (not "0") otherwise, matching
+               the queue-banner's own count-badge convention elsewhere in this app. Shared between
+               both entry points into this screen (camera-with-photo and plain Report Manually,
+               see item 60) -- one button, one modal, no separate copy for each. -->
+          <button id="manual-activity-btn" class="secondary manual-activity-btn" type="button">
+            🐋 ACTIVITY<span id="manual-activity-badge" class="manual-activity-badge" hidden></span>
+          </button>
 
           <!-- No "Whale Count" label -- native's own WhaleCountRow has no preceding Text label at
                all; the artwork speaks for itself. -->

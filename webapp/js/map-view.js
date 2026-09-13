@@ -273,6 +273,11 @@ function drawMapMarkers(skipFitBounds = false) {
     const marker = L.marker([s.whale_lat, s.whale_lng], { icon: sightingDivIcon(s.is_local) });
     marker.sightingData = s; // read back by the cluster-click handler's same-point check above
     marker.bindPopup(sightingPopupHtml(s));
+    // Item 63: the popup's own CONFIRM SIGHTING button (if present -- see confirmSightingButtonHtml)
+    // is injected as part of that same HTML string, so it needs wiring up fresh every time the
+    // popup actually opens (Leaflet re-parses the string into DOM each time, there's no persistent
+    // element to attach a listener to ahead of time).
+    marker.on("popupopen", (event) => wireConfirmSightingButton(event.popup.getElement(), s));
     marker.bindTooltip(sightingCaptionText(s), {
       permanent: true,
       direction: "bottom",
@@ -329,10 +334,61 @@ function sightingPopupHtml(s) {
   const time = s.observed_at_epoch_ms ? new Date(s.observed_at_epoch_ms).toLocaleString() : "Unknown time";
   const counts = formatCounts(s);
   const direction = formatTravelDirection(s.travel_bearing_degrees);
+  // Item 90: formatActivitiesSummary (submit-view.js) is shared with the confirm modal/list item
+  // so all three can never describe the same sighting's activities differently.
+  const activitiesText = formatActivitiesSummary(s.activities, s.activity_note);
+  const activities = activitiesText ? `<br>${escapeHtml(activitiesText)}` : "";
   const photo = s.photo_url
     ? `<img src="${escapeHtml(s.photo_url)}" alt="Sighting photo" style="width:100%;border-radius:6px;margin-top:6px;">`
     : "";
-  return `<div class="popup"><strong>${time}</strong><br>${counts}<br>${direction}${photo}</div>`;
+  return `<div class="popup"><strong>${time}</strong><br>${counts}<br>${direction}${activities}${photo}${confirmSightingButtonHtml(s)}</div>`;
+}
+
+// Item 63: null/empty for a locally-queued (not yet synced) sighting -- it has no real DB id yet,
+// nothing to confirm. Otherwise: an already-confirmed row shows a plain badge (nothing to tap,
+// visibility-only -- confirm_sighting itself would refuse a second confirmation regardless);
+// everything else gets the button, gated on cachedIsTierOneObserver (db.js) -- this device not
+// being tier-1 hides it outright rather than showing a button that would just fail server-side.
+// "Is this MY OWN row" is NOT checked here at all: this app has no reliable client-side way to
+// know that for an arbitrary fetched sighting (subscriber_id is never anon-readable), so that
+// refusal reason is left entirely to confirm_sighting itself, same "visibility is UX, enforcement
+// is server-side" split as the departure-report button.
+function confirmSightingButtonHtml(s) {
+  if (s.is_local || !cachedIsTierOneObserver) return "";
+  if (s.confirmed_at) return `<div class="confirmed-sighting-badge">✓ Confirmed</div>`;
+  return `<button type="button" class="confirm-sighting-btn" data-sighting-id="${escapeHtml(s.id)}">Confirm Sighting</button>`;
+}
+
+// Item 63: shared by the map popup (called on Leaflet's own popupopen, since the popup's HTML is
+// re-parsed into fresh DOM every time it opens) and the list item (called once, right after the
+// button is actually appended to a real, persistent DOM element) -- one click-handling/two-step-
+// guard implementation for both surfaces.
+function wireConfirmSightingButton(container, s) {
+  if (!container) return;
+  const btn = container.querySelector(".confirm-sighting-btn");
+  if (!btn) return;
+  btn.addEventListener("click", () => handleConfirmSightingClick(s, btn));
+}
+
+async function handleConfirmSightingClick(sighting, btn) {
+  // Two-step guard (item 63) -- same plain confirm() gate as the departure-report button
+  // (tier-code.js's submitDepartureReport), for the same reason: a stray tap shouldn't be able to
+  // fire an action that can't be undone.
+  if (!confirm("Confirm this sighting? This can't be undone.")) return;
+
+  btn.disabled = true;
+  btn.textContent = "Confirming…";
+  const ok = await confirmSighting(sighting.id, getOrCreateSubscriberId());
+  if (ok) {
+    // Refetches rather than just flipping a local flag -- picks up the real confirmed_at (and
+    // keeps the List tab's own copy of this same row in sync too), same reasoning
+    // proceedManualSubmit's own post-submit refreshSightings() call already uses.
+    await refreshSightings();
+  } else {
+    btn.disabled = false;
+    btn.textContent = "Confirm Sighting";
+    alert("Couldn't confirm this sighting -- it may already be confirmed, or it may be your own report.");
+  }
 }
 
 // Same 8-point display-only snapping SightingsMapScreen's own travel-bearing stub rendering

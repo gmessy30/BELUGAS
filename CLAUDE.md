@@ -195,6 +195,22 @@ disconnects.
 
 ### Open items / not yet done
 
+- **Migration not yet applied**:
+  `supabase/migrations/20260923000000_add_sighting_activities_and_tier1_confirmation.sql` (items
+  90/63 — the ACTIVITIES field + tier-1 confirmation of an existing sighting) has been written but
+  NOT applied — the user reviews the `get_kenai_presence_state` diff first, then applies it
+  themselves via `supabase db query --linked --file <path>`. Until it's applied, the client's own
+  tolerant fallback (`db.js`'s `sightingSchemaHasNewColumns`) keeps everything else working
+  without `activities`/`activity_note`/`confirmed_at`, and `is_tier_one_observer`/`confirm_sighting`
+  simply don't exist yet — CONFIRM SIGHTING stays hidden (`cachedIsTierOneObserver` resolves to
+  `false` on the RPC-not-found error, same as any other failure).
+- **Native-side parity item (item 90, web-only so far)**: the ACTIVITIES field (multi-select:
+  Travelling, Milling, Feeding Observed, Benthic Feeding Evidenced, Courtship Behaviours, Other +
+  a note) and its chip-picker modal (`webapp/index.html`'s `#activity-picker-modal`,
+  `submit-view.js`'s `initActivityPicker`) exist only in the PWA so far. `ManualLoggingScreen.kt`
+  (shared by both native entry points, same as `#manual-log-step` here since item 60) has no
+  equivalent control yet — worth adding the same multi-select chip picker there for parity,
+  alongside the other pending native-parity items above.
 - **Native-side BUG (item 83a, not yet fixed there)**: `PlaybackRange.kt`'s `QuickRange.resolve()`
   has the identical bug the webapp just fixed in `map-view.js`'s `recomputePlaybackRange` —
   `start.coerceIn(dataMinMs, dataMaxMs)`/`end.coerceIn(...)` clamp TODAY/YESTERDAY/THIS_SEASON's

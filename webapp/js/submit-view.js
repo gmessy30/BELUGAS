@@ -59,6 +59,11 @@ let manualLat = DEFAULT_MAP_CENTER[0];
 let manualLng = DEFAULT_MAP_CENTER[1];
 let manualTravelBearingDegrees = null;
 let manualObserverType = "SELF";
+// Item 90: multi-select, unlike every other .chip-toggle group on this screen -- a Set, not a
+// single active value, since any number of these can apply to one sighting at once. Reset between
+// sightings (resetManualPositionControls), never persisted.
+const manualSelectedActivities = new Set();
+let manualActivityOtherNote = "";
 // Item 60: which of the two entry points brought us to #manual-log-step this visit -- the two
 // differ by exactly one nav-stack layer (see enterManualLogStepFromCamera's own push vs.
 // main-menu.js's "manual-report" push for openManualReportFlow), so a successful submit's own
@@ -84,14 +89,43 @@ function formatWhaleCountsSummary(counts) {
   return `${counts.whites} white, ${counts.greys} grey, ${counts.calves} calves, ${counts.unknown} unknown`;
 }
 
+// Item 90: matches the CHECK constraint's own allowed values (supabase/migrations) exactly --
+// this is the one place that label text is spelled out, reused by the confirm summary, the map
+// popup, and the list item, so all three can never drift apart from each other or from the DB's
+// own allowed set.
+const ACTIVITY_LABELS = {
+  TRAVELLING: "Travelling",
+  MILLING: "Milling",
+  FEEDING_OBSERVED: "Feeding Observed",
+  BENTHIC_FEEDING_EVIDENCED: "Benthic Feeding Evidenced",
+  COURTSHIP_BEHAVIOURS: "Courtship Behaviours",
+  OTHER: "Other"
+};
+
+// null (not the empty string) whenever nothing's selected -- callers use that to hide the whole
+// line rather than show "Activity: " with nothing after it.
+function formatActivitiesSummary(activities, note) {
+  if (!activities || activities.length === 0) return null;
+  const parts = activities.map((key) => ACTIVITY_LABELS[key] || key);
+  let text = `Activity: ${parts.join(", ")}`;
+  if (activities.includes("OTHER") && note && note.trim()) {
+    text += ` (${note.trim()})`;
+  }
+  return text;
+}
+
 // Item 34: compact readable summary (counts spelled out, direction/heading, time) with CONFIRM/
 // BACK, shown before EITHER path's actual submit logic runs -- requires a deliberate tap, never
 // auto-dismisses. onConfirm is deferred until the CONFIRM button's own click handler below, not
 // called from here.
-function showSubmitConfirmModal(countsText, directionText, timeText, onConfirm) {
+function showSubmitConfirmModal(countsText, directionText, timeText, activitiesText, onConfirm) {
   document.getElementById("confirm-summary-counts").textContent = countsText;
   document.getElementById("confirm-summary-direction").textContent = directionText;
   document.getElementById("confirm-summary-time").textContent = `Time: ${timeText}`;
+  // Item 90: hidden entirely (not "Activity: none") whenever nothing was selected.
+  const activitiesEl = document.getElementById("confirm-summary-activities");
+  activitiesEl.hidden = activitiesText == null;
+  activitiesEl.textContent = activitiesText || "";
   pendingConfirmAction = onConfirm;
   document.getElementById("submit-confirm-modal").hidden = false;
   pushNavLayer("submit-confirm-modal", () => {
@@ -140,6 +174,7 @@ function initSubmitView() {
 
   initManualObserverToggle();
   initManualPositionControls();
+  initActivityPicker();
   initWhaleCountWiring("#manual-log-step", manualCounts);
 
   initCameraTapToStartOverlay();
@@ -492,6 +527,7 @@ function resetManualPositionControls() {
   manualTravelBearingDegrees = null;
   updateBearingDialNeedle(null);
   setManualObserverType("SELF");
+  resetActivityPicker();
 }
 
 // Item 60: tapping the photo thumbnail on #manual-log-step discards the photo and returns to the
@@ -827,6 +863,70 @@ function setManualObserverType(type) {
   document.getElementById("manual-observer-other-btn").classList.toggle("active", type === "OTHER");
 }
 
+// Item 90: multi-select chip picker -- each chip toggles its OWN membership in
+// manualSelectedActivities independently (unlike every other .chip-toggle group here, which
+// deactivates its siblings on tap), so any combination can be active at once.
+function initActivityPicker() {
+  document.getElementById("manual-activity-btn").addEventListener("click", () => {
+    document.getElementById("activity-picker-modal").hidden = false;
+    pushNavLayer("activity-picker-modal", () => {
+      document.getElementById("activity-picker-modal").hidden = true;
+    });
+  });
+
+  document.querySelectorAll("#activity-chips .chip-toggle").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const key = chip.dataset.activity;
+      if (manualSelectedActivities.has(key)) {
+        manualSelectedActivities.delete(key);
+      } else {
+        manualSelectedActivities.add(key);
+      }
+      chip.classList.toggle("active", manualSelectedActivities.has(key));
+
+      if (key === "OTHER") {
+        const noteInput = document.getElementById("activity-other-note-input");
+        const otherSelected = manualSelectedActivities.has("OTHER");
+        noteInput.hidden = !otherSelected;
+        if (!otherSelected) {
+          manualActivityOtherNote = "";
+          noteInput.value = "";
+        }
+      }
+    });
+  });
+
+  document.getElementById("activity-other-note-input").addEventListener("input", (event) => {
+    manualActivityOtherNote = event.target.value;
+  });
+
+  document.getElementById("activity-picker-done-btn").addEventListener("click", () => {
+    navigateBack(); // pops the activity-picker-modal layer, hiding it via its own onPop above
+    updateActivityButtonUi();
+  });
+}
+
+// Count badge -- hidden entirely (not "0") whenever nothing's selected.
+function updateActivityButtonUi() {
+  const badge = document.getElementById("manual-activity-badge");
+  const count = manualSelectedActivities.size;
+  badge.hidden = count === 0;
+  badge.textContent = String(count);
+}
+
+// Item 90: resets between sightings -- called from resetManualPositionControls, which already
+// runs on every exit from #manual-log-step (successful submit, abandoned mid-way, retake), same
+// as travel direction/observer type right above it.
+function resetActivityPicker() {
+  manualSelectedActivities.clear();
+  manualActivityOtherNote = "";
+  document.querySelectorAll("#activity-chips .chip-toggle").forEach((chip) => chip.classList.remove("active"));
+  const noteInput = document.getElementById("activity-other-note-input");
+  noteInput.hidden = true;
+  noteInput.value = "";
+  updateActivityButtonUi();
+}
+
 function manualTotalCount() {
   return manualCounts.whites + manualCounts.greys + manualCounts.calves + manualCounts.unknown;
 }
@@ -855,6 +955,7 @@ async function submitManualSighting() {
     formatWhaleCountsSummary(manualCounts),
     directionText,
     new Date(manualSelectedTimestampMs()).toLocaleString(),
+    formatActivitiesSummary(Array.from(manualSelectedActivities), manualActivityOtherNote),
     () => proceedManualSubmit()
   );
 }
@@ -916,7 +1017,15 @@ function buildManualSightingRecord(lat, lng, isGeofenceVerified) {
     observer_type: manualObserverType,
     is_geofence_verified: isGeofenceVerified,
     photo_url: null,
-    subscriber_id: getOrCreateSubscriberId()
+    subscriber_id: getOrCreateSubscriberId(),
+    // Item 90: null (not []) when nothing's selected -- matches every other optional field on
+    // this record. activity_note only ever accompanies OTHER, and only when it has real text;
+    // capped at 140 chars to match the column's own CHECK constraint (also enforced by the input's
+    // own maxlength, this is just a defensive belt-and-suspenders match).
+    activities: manualSelectedActivities.size > 0 ? Array.from(manualSelectedActivities) : null,
+    activity_note: (manualSelectedActivities.has("OTHER") && manualActivityOtherNote.trim())
+      ? manualActivityOtherNote.trim().slice(0, 140)
+      : null
   };
 }
 

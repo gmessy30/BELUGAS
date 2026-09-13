@@ -116,6 +116,38 @@ function sightingListItem(s) {
     : "Location not recorded";
 
   details.append(time, totalRow, breakdown, footer);
+
+  // Item 90: formatActivitiesSummary (submit-view.js) shared with the map popup/confirm modal so
+  // all three can never describe the same sighting's activities differently. Omitted entirely
+  // (not an empty line) when nothing was recorded.
+  const activitiesText = formatActivitiesSummary(s.activities, s.activity_note);
+  if (activitiesText) {
+    const activities = document.createElement("div");
+    activities.className = "sighting-activities";
+    activities.textContent = activitiesText;
+    details.appendChild(activities);
+  }
+
+  // Item 63: same confirmed-badge/CONFIRM SIGHTING button as the map popup
+  // (confirmSightingButtonHtml/wireConfirmSightingButton, map-view.js) -- built as a real DOM
+  // element here instead of an HTML string, since this list is never re-parsed the way a Leaflet
+  // popup is; wiring happens once, right after the button is actually in the document.
+  if (!s.is_local && cachedIsTierOneObserver) {
+    if (s.confirmed_at) {
+      const badge = document.createElement("div");
+      badge.className = "confirmed-sighting-badge";
+      badge.textContent = "✓ Confirmed";
+      details.appendChild(badge);
+    } else {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "confirm-sighting-btn";
+      btn.textContent = "Confirm Sighting";
+      btn.addEventListener("click", () => handleConfirmSightingClick(s, btn));
+      details.appendChild(btn);
+    }
+  }
+
   item.appendChild(details);
   return item;
 }
