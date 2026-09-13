@@ -103,6 +103,17 @@ reloads instead of returning), so this is a rough edge, not a dead end.
 - Web Push via FCM: needs the real Firebase Web config + VAPID key pasted into
   `webapp/js/firebase-config.js` (currently placeholder values) before it can work at all.
 - Self-service re-verification by email (deferred to after the Sunday deadline).
+- **Make sighting inserts idempotent** (found while investigating item 73's phantom-marker bug):
+  `insertSighting`/`attemptUploadAndInsert` (`webapp/js/db.js`, `offline-queue.js`) do a plain
+  `.insert(record)` with no client-supplied id and no server-side uniqueness check. If the insert
+  actually succeeds but the success response is lost to a dropped connection, the client sees a
+  network error and retries (immediately, or later via the offline queue's own drain), creating a
+  genuine duplicate row — this is a data-integrity gap, not the rendering bug item 73 fixed (the
+  local queue purges correctly on a *recognized* success; this is about the case where success
+  itself was never recognized). Fix: have the client generate the row's own id (uuid) before the
+  first insert attempt and reuse that same id on every retry of the same submission, so a retried
+  insert after a lost success response can be made to no-op (upsert on that id, or a unique
+  constraint) instead of creating a second row.
 - Real-device testing still needed for: time-lapse playback + clustering (Sightings Map), the
   Android/PWA back-gesture nav stack, Camera/Report Manually's responsive (portrait+landscape,
   no forced orientation) layout and fullscreen-on-touch-devices behavior, and the Android/iOS

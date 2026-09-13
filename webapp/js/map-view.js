@@ -11,6 +11,7 @@
 // (0xFFFF6D00), black-stroke badge.
 let mapInstance = null;
 let mapShadingLayer = null;
+let mapUncertaintyLayer = null;
 let mapMarkersLayer = null;
 let lastCombinedSightings = [];
 let mapVerifiedOnly = false;
@@ -28,6 +29,18 @@ function initMap() {
   // Shading added before the markers layer so it always paints underneath sighting pins,
   // matching SightingsMapScreen's own draw order (shading, then uncertainty circles, then pins).
   mapShadingLayer = L.layerGroup().addTo(mapInstance);
+
+  // BUG FIX (item 73): uncertainty circles used to be added directly to mapMarkersLayer (the
+  // markerClusterGroup below) -- L.markerClusterGroup accepts any layer via addLayer/addTo, not
+  // just markers, so each circle silently became an extra COUNTED child of whatever cluster its
+  // sighting fell into (5 sightings, some with a circle, reading as a cluster count of 8), and
+  // spiderfying tried to lay out a "leg" for it too even though a circle has no icon to show at
+  // the leg's end -- a leg with no dot. A separate, plain (non-clustered) layer group for these
+  // keeps the cluster group's own count exactly equal to the number of markers in it, matching
+  // native's own uncertainty circles (their own unclustered FillLayer, never part of the
+  // GeoJsonOptions(cluster=true) source). Added before the markers layer, same draw-order reason
+  // as mapShadingLayer above.
+  mapUncertaintyLayer = L.layerGroup().addTo(mapInstance);
 
   // zoomToBoundsOnClick: false -- clusterClick below decides between zooming in (the normal case)
   // and showing the same-point sightings sheet (when every pin in the cluster shares one exact
@@ -154,6 +167,7 @@ const SIGHTING_DOT_LOCAL_COLOR = "#9E9E9E";
 function drawMapMarkers(skipFitBounds = false) {
   if (!mapInstance) return;
   mapMarkersLayer.clearLayers();
+  mapUncertaintyLayer.clearLayers();
 
   const visible = lastCombinedSightings.filter((s) => {
     if (s.whale_lat == null || s.whale_lng == null) return false;
@@ -177,6 +191,9 @@ function drawMapMarkers(skipFitBounds = false) {
     // Plain uncertainty circle -- same replacement for the old heading/distance sector wedge
     // the native map switched to post-redesign (SightingRecord.uncertaintyRadiusMeters' comment).
     // Color/opacity match SightingsMapScreen's FillLayer(0.18 opacity)/LineLayer(1.5dp) exactly.
+    // Item 73: its own non-clustered layer, NOT mapMarkersLayer -- see mapUncertaintyLayer's own
+    // declaration comment for why (a circle counted as a cluster child, with no icon to spiderfy
+    // out to, is exactly what phantom-inflated the cluster badge count before).
     if (s.uncertainty_radius_meters != null) {
       L.circle([s.whale_lat, s.whale_lng], {
         radius: s.uncertainty_radius_meters,
@@ -184,7 +201,7 @@ function drawMapMarkers(skipFitBounds = false) {
         weight: 1.5,
         fillOpacity: 0.18,
         opacity: 1
-      }).addTo(mapMarkersLayer);
+      }).addTo(mapUncertaintyLayer);
     }
   });
 
