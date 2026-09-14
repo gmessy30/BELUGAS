@@ -23,6 +23,12 @@ in `webapp/sw.js` rather than trusting a number here, it moves every deploy) —
 returning visitor's installed service worker sees byte-identical install/activate logic and never
 attempts an update.
 
+**About's header shows this same version number** (`webapp/index.html`'s `.about-version` span,
+"ABOUT · v{N}") — deliberately in the header row, not as a line at the bottom of the page's own
+scrollable content, so it's always visible regardless of scroll position or the presence banner's
+state. No build step ties the two together: bump `.about-version`'s number by hand every time
+`CACHE_NAME` changes, so they never drift apart.
+
 ### Known pattern: Leaflet's internal z-index escapes an unisolated container
 
 Leaflet's bundled CSS gives its own internal panes real z-index values (tile pane 200, overlay

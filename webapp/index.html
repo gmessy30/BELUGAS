@@ -185,7 +185,12 @@
     <img id="about-bg-image" class="about-bg-image" src="img/beluga_about_sketches.jpg" alt="">
 
     <div class="subpage-top-row">
-      <h1 class="subpage-title">ABOUT</h1>
+      <!-- The version number lives here (not as its own line at the bottom of
+           #about-text-content) specifically so it's always visible regardless of scroll position
+           or the presence banner's own state -- bump the number by hand alongside sw.js's
+           CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
+           section). -->
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v78</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>

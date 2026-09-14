@@ -539,6 +539,12 @@ main {
   font-weight: 900;
 }
 
+.about-version {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.65);
+}
+
 .subpage-top-actions {
   display: flex;
   align-items: center;
@@ -554,13 +560,19 @@ main {
   padding: 8px 10px;
 }
 
+/* Item 67b gave --presence-banner-height treatment to Map's playback FAB/panel and List's own
+   bottom padding, but never to this shared class -- the presence banner (fixed, z-index:970) sits
+   above every one of About/Resources/News Feed/Alerts (see presence-banner.js's own
+   PRESENCE_BANNER_OVERLAY_IDS, all of which use .subpage-content as their scroll container), so
+   About's own last section (WHAT'S NEW) was getting covered by it whenever the banner shows --
+   confirmed on device. One shared fix here covers all four pages, not just About. */
 .subpage-content {
   position: relative;
   z-index: 2;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 16px 24px;
+  padding: 8px 16px calc(24px + var(--presence-banner-height, 0px));
 }
 
 .subpage-section {
@@ -1718,46 +1730,51 @@ button.camera-status.secondary {
 }
 
 @media (orientation: landscape) {
-  /* v6 (on-device confirmed, iterated live via CDP): v5 stacked these two VERTICALLY
-     (Unknown@112, Activity@152) under the SELF/OTHER chips -- but on a short landscape viewport
-     (this device: 348px tall) the chip row itself sits close enough to the top that a two-item
-     vertical stack collided with it (measured: chips at y119-149, the stack at y112-148 --
-     overlapping). Side-by-side needs only ONE row's worth of height (~36px), which fits safely in
-     the gap between the top row (SUBMIT/MENU, ends ~50) and the chips (starts ~119+) regardless of
-     exactly where the chips land. */
-  #bearing-dial-unknown-btn {
+  /* v7 (superseding v6, on-device confirmed via CDP): v6 shrank the whale row to 24%
+     width/22px controls to squeeze it below the dial -- direct feedback was that this made
+     Luna's artwork "far too small... not clutter to shrink around". v7 restores the row to
+     roughly its PORTRAIT size (max-width:420px reproduces portrait's own ~100px column width, so
+     .whale-count-art's aspect-ratio-locked height comes out the same ~44px as portrait -- letting
+     the row stretch to the full landscape viewport width instead, as a bare "remove the shrink"
+     attempt first did, actually makes the row TALLER than portrait, not the same size, since a
+     WIDER column means a TALLER aspect-ratio-locked image) and instead solves the vertical
+     conflict by moving SELF/OTHER + Unknown Direction + Activity into ONE compact row under the
+     top bar (out of .review-bottom-panel's own flow entirely, same position:fixed mechanism as
+     item 64's SET DATE/TIME), leaving the whole bottom band to the whales. The dial is shrunk
+     (150px -> 64px) as the last resort specifically asked for -- confirmed via
+     getBoundingClientRect that at 64px it no longer overlaps the whale artwork; on THIS device's
+     348px-tall viewport, a portrait-sized row (needing ~132px) plus its necessary safe-area
+     bottom padding (~40px) plus top padding (14px) totals ~186px, which pushes the row's own top
+     edge (y162) ABOVE the screen's true vertical center (y174) where the dial is anchored --
+     meaning literally NO dial size above 0 fully avoids this without either shrinking the row
+     below portrait size or moving the dial off dead-center (neither attempted here, per the
+     request's own scope). 64px was the smallest dial size that still cleared the artwork
+     entirely; if the ring's own drag-target now feels too small in practice, that trade-off needs
+     revisiting explicitly rather than silently shrinking the whales again. */
+  #manual-log-step .chip-row {
+    position: fixed;
     top: calc(env(safe-area-inset-top, 0px) + 64px);
     left: 16px;
+    z-index: 5;
+    margin: 0;
+  }
+  #bearing-dial-unknown-btn {
+    top: calc(env(safe-area-inset-top, 0px) + 64px);
+    left: 260px;
     transform: none;
   }
   #manual-activity-btn {
     top: calc(env(safe-area-inset-top, 0px) + 64px);
-    left: 190px;
+    left: 440px;
     transform: none;
   }
-  /* Shrunk enough that the row's real top edge (not just its painted size -- `transform:scale()`
-     was tried first and confirmed NOT to work here: it only shrinks the PAINTED result, not the
-     row's real layout box, so .review-bottom-panel, which is bottom-anchored/auto-height, never
-     actually got shorter or gained real clearance) clears the dial's own bottom edge (measured at
-     y249 on this device) -- confirmed via getBoundingClientRect that the dial and the whale
-     artwork no longer overlap at max-width:24%/22px controls; anything looser (tried 80%/35px,
-     55%/28px, 45%/26px, 32%/22px in that order) still left the dial overlapping the two middle
-     whale images. max-width+auto-margins genuinely narrows the row -- each .whale-count-col is
-     flex:1, so a narrower row means narrower columns, and since .whale-count-art's height is
-     aspect-ratio-locked to its own (now narrower) width, the row's real rendered height shrinks
-     too, which DOES reduce the panel's total content height and move its top edge down for real
-     clearance. The '+'/'-' buttons are fixed-px (not proportional to the column), so they're
-     resized to match explicitly right below -- 22px is smaller than the 44px target used
-     elsewhere in this app, a deliberate tradeoff forced by how little vertical room this
-     particular viewport leaves once the dial's own fixed 150px size is accounted for. */
-  #manual-log-step .whale-count-row {
-    max-width: 24%;
-    margin: 0 auto;
+  #bearing-dial {
+    width: 64px;
+    height: 64px;
   }
-  #manual-log-step .whale-count-inc,
-  #manual-log-step .whale-count-dec {
-    width: 22px;
-    height: 22px;
+  #manual-log-step .whale-count-row {
+    max-width: 420px;
+    margin: 0 auto;
   }
 }
 
