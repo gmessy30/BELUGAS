@@ -794,6 +794,34 @@ button.text-link {
   flex-shrink: 0;
 }
 
+/* Item 93: .suggest-input's own base rule (shared with the Suggest modal/admin page) has no
+   background/color of its own -- a plain form control, white-on-dark-page by default, same
+   reason that works unstyled in both of those other contexts. padding-right leaves room for the
+   × button below without the typed text ever running under it. */
+.news-search-row {
+  position: relative;
+  padding: 0 16px 8px;
+  flex-shrink: 0;
+}
+
+.news-search-input {
+  margin-top: 0;
+  padding-right: 36px;
+}
+
+.news-search-clear-btn {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.45);
+  padding: 4px 8px;
+}
+
 .news-filter-chip {
   background: rgba(255, 255, 255, 0.1);
   border: none;

@@ -190,7 +190,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v86</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v87</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -464,6 +464,20 @@
     <div class="news-filter-row">
       <button id="news-filter-news" class="news-filter-chip active" data-type="news">NEWS</button>
       <button id="news-filter-research" class="news-filter-chip" data-type="research_paper">RESEARCH PAPERS</button>
+    </div>
+
+    <!-- Item 93: filters the already-loaded list client-side (title/summary/source_url,
+         case-insensitive) -- see news-feed.js's own renderFilteredArticles/articleMatchesSearch
+         comment for why this stays client-side for now. type="search" gets a platform-native
+         clear affordance on some browsers, but not consistently enough to rely on alone -- the
+         explicit × button covers every browser the same way. Query is intentionally NOT reset by
+         setArticleType (switching chips) -- only by a fresh entry into this page entirely
+         (openNewsFeedPage). -->
+    <div class="news-search-row">
+      <input id="news-search-input" class="suggest-input news-search-input" type="search"
+             placeholder="Search articles…" autocomplete="off">
+      <button id="news-search-clear-btn" class="news-search-clear-btn" type="button"
+              aria-label="Clear search" hidden>×</button>
     </div>
 
     <!-- Item 78: moved up from below the article list (where it was the LAST item in this

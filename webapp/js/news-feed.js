@@ -7,6 +7,11 @@
 // a native submission would, and once approved, shows up in both apps identically.
 let currentArticleType = "news";
 let suggestArticleType = "news";
+// Item 93: the raw fetch result for the CURRENT chip, before any search filtering -- kept
+// separate from what's actually rendered so switching the search query never needs a network
+// refetch, only a re-filter of what's already loaded.
+let lastLoadedArticles = [];
+let currentSearchQuery = "";
 
 function initNewsFeedPage() {
   document.getElementById("news-back-btn").addEventListener("click", () => {
@@ -16,6 +21,22 @@ function initNewsFeedPage() {
   document.getElementById("news-filter-news").addEventListener("click", () => setArticleType("news"));
   document.getElementById("news-filter-research").addEventListener("click", () => setArticleType("research_paper"));
 
+  // Item 93: deliberately does NOT call loadArticles/refetch -- typing only ever re-filters
+  // lastLoadedArticles (renderFilteredArticles), same list switching chips already fetched.
+  document.getElementById("news-search-input").addEventListener("input", (event) => {
+    currentSearchQuery = event.target.value;
+    updateNewsSearchClearBtnVisibility();
+    renderFilteredArticles();
+  });
+  document.getElementById("news-search-clear-btn").addEventListener("click", () => {
+    const input = document.getElementById("news-search-input");
+    input.value = "";
+    currentSearchQuery = "";
+    updateNewsSearchClearBtnVisibility();
+    renderFilteredArticles();
+    input.focus();
+  });
+
   document.getElementById("suggest-article-btn").addEventListener("click", openSuggestArticleModal);
   document.getElementById("suggest-cancel-btn").addEventListener("click", closeSuggestArticleModal);
   document.getElementById("suggest-submit-btn").addEventListener("click", submitSuggestedArticle);
@@ -23,6 +44,13 @@ function initNewsFeedPage() {
   document.getElementById("suggest-type-research").addEventListener("click", () => setSuggestArticleType("research_paper"));
 }
 
+function updateNewsSearchClearBtnVisibility() {
+  document.getElementById("news-search-clear-btn").hidden = currentSearchQuery.length === 0;
+}
+
+// Item 93: switching NEWS/RESEARCH PAPERS keeps the current search query (per the request) --
+// only re-fetches for the new content_type and re-applies whatever's already typed, never clears
+// the input itself.
 function setArticleType(type) {
   currentArticleType = type;
   document.getElementById("news-filter-news").classList.toggle("active", type === "news");
@@ -34,15 +62,40 @@ async function loadArticles() {
   const container = document.getElementById("news-articles");
   container.innerHTML = '<p class="empty-state">Loading…</p>';
 
-  const articles = await getArticles(currentArticleType);
+  lastLoadedArticles = await getArticles(currentArticleType);
+  renderFilteredArticles();
+}
+
+// Item 93: plain case-insensitive substring match across title/summary/source_url -- "source/
+// domain" from the request is covered by source_url directly (a domain is just a substring of
+// its own URL, e.g. searching "noaa" matches ".../noaa.gov/..."). Client-side only for now,
+// filtering whatever loadArticles already fetched -- if the feed ever grows large enough for this
+// to matter, swap to a Postgres full-text query in getArticles (db.js) instead.
+function articleMatchesSearch(article, query) {
+  if (!query) return true;
+  return (
+    (article.title || "").toLowerCase().includes(query) ||
+    (article.summary || "").toLowerCase().includes(query) ||
+    (article.source_url || "").toLowerCase().includes(query)
+  );
+}
+
+function renderFilteredArticles() {
+  const container = document.getElementById("news-articles");
+  const query = currentSearchQuery.trim().toLowerCase();
+  const filtered = lastLoadedArticles.filter((article) => articleMatchesSearch(article, query));
 
   container.innerHTML = "";
-  if (articles.length === 0) {
-    const message = currentArticleType === "news" ? "No news articles yet." : "No research papers yet.";
-    container.innerHTML = `<p class="empty-state">${message}</p>`;
+  if (filtered.length === 0) {
+    if (query) {
+      container.innerHTML = '<p class="empty-state">No matches.</p>';
+    } else {
+      const message = currentArticleType === "news" ? "No news articles yet." : "No research papers yet.";
+      container.innerHTML = `<p class="empty-state">${message}</p>`;
+    }
     return;
   }
-  articles.forEach((article) => container.appendChild(articleCard(article)));
+  filtered.forEach((article) => container.appendChild(articleCard(article)));
 }
 
 function articleCard(article) {
@@ -75,6 +128,12 @@ function articleCard(article) {
 // Called from the main menu's "News Feed" item.
 function openNewsFeedPage() {
   document.getElementById("news-feed-page").hidden = false;
+  // Item 93: a fresh ENTRY into this page (as opposed to switching chips while already on it)
+  // starts with a clear search box -- "keep the query while switching chips" only covers the
+  // latter.
+  document.getElementById("news-search-input").value = "";
+  currentSearchQuery = "";
+  updateNewsSearchClearBtnVisibility();
   setArticleType("news");
 }
 

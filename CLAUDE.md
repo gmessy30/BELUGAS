@@ -290,16 +290,50 @@ never just that playback started.
   without `activities`/`activity_note`/`confirmed_at`, and `is_tier_one_observer`/`confirm_sighting`
   simply don't exist yet — CONFIRM SIGHTING stays hidden (`cachedIsTierOneObserver` resolves to
   `false` on the RPC-not-found error, same as any other failure).
-- **Migration not yet applied**:
-  `supabase/migrations/20260924000000_add_article_moderation_rpcs.sql` (item 91 — article
-  moderation on `webapp/admin/`) has been written but NOT applied — apply via
-  `supabase db query --linked --file <path>`. Adds `'rejected'` to `article_status`, two new
-  columns (`reviewed_by`, `reviewed_at`), and `list_pending_articles`/`set_article_status` (gated
-  on `tier_admins`, same allow-list the tier-code RPCs use). No client-side schema-tolerance
-  fallback here unlike item 90/63's `sightingSchemaHasNewColumns` — this is an admin-only page one
-  person uses right after applying the migration themselves, not a public-facing path many
-  concurrent users hit before a migration lands, so a plain `console.error` + "nothing renders"
-  until it's applied is an acceptable, much lower-stakes failure mode.
+- **Migration applied and verified** (item 91 — article moderation on `webapp/admin/`):
+  `supabase/migrations/20260924000000_add_article_moderation_rpcs.sql` is live. Full on-device
+  pass confirmed: a real submission via the Suggest form lands as `pending_review` and shows up in
+  `list_pending_articles`; `list_pending_articles` correctly rejects an anon caller
+  (`not_authorized`, confirming the `tier_admins` gate); PUBLISH makes it render in the News Feed
+  on a fresh page load (no cache issue); UNPUBLISH (`set_article_status` back to
+  `'pending_review'`) removes it from the feed and returns it to the queue. No known issues.
+- **Migration applied and verified** (item 96 — article submission was broken by a signed-in
+  admin session): `supabase/migrations/20260925000000_allow_authenticated_article_submission.sql`
+  is live. Root cause: `20260823120000_add_articles.sql`'s original "Anon can submit pending
+  articles" INSERT policy was granted `to anon` only. Since the admin login (item 91's Supabase
+  Auth on `webapp/admin/`) shares one localStorage across the WHOLE `gmessy30.github.io` origin
+  (not scoped to `/admin/`), any device that had ever logged into admin carried that JWT into
+  ordinary main-app requests too — so a totally normal "+ SUGGEST AN ARTICLE OR PAPER" submission
+  from that device ran as the `authenticated` role, which had NO insert policy on this table at
+  all, and got rejected with `42501 new row violates row-level security policy for table
+  "articles"`. Confirmed on a real device (Stylus, `ZY22JSTXPW`, which had a live
+  `sb-vwbcrctzsqukutvlbqwy-auth-token` session from earlier item 91 testing) two ways: (1) a
+  `fetch()` intercept around a live `submitArticle()` call captured the exact outgoing payload —
+  `{"title":...,"summary":...,"source_url":...,"submitted_by":null,"content_type":"news"}`, fully
+  compliant with the original `WITH CHECK` (`status` omitted, defaults to `pending_review`; no
+  `reviewed_by`/`reviewed_at` sent) — proving the payload was never the problem; (2) `set local
+  role authenticated; insert into public.articles (...)` inside a rolled-back transaction against
+  the linked project reproduced the identical error with no client involved, isolating it to role,
+  not payload. Not a policy that got dropped or narrowed by `20260924000000` — that migration never
+  touched this policy; it's a gap that was harmless before admin auth and public submission shared
+  an origin. Fix replaces the policy with one covering `to anon, authenticated`, and additionally
+  requires `reviewed_by is null and reviewed_at is null` in the `WITH CHECK` (those two columns
+  postdate the original policy and were never covered by it) — restoring the complete intended
+  invariant: anon or a signed-in admin may INSERT only rows with `status = 'pending_review'` and no
+  `reviewed_by`/`reviewed_at` set. Re-verified on-device post-fix: the same `submitArticle()` call
+  from the still-authenticated Stylus session now succeeds (`{ok:true}`), and a crafted
+  self-publish attempt (`status = 'published'`) as `anon` is still correctly rejected — the
+  tightened check didn't loosen anything else.
+- **Dead-link handling for the News Feed (item 93c, spec only — not built)**: nightly check
+  (pg_cron or a scheduled edge function) does a HEAD/GET on each published article's `source_url`,
+  storing `last_checked_at`/`http_status`; two consecutive failures mark it `link_broken`, and the
+  feed shows a small "link unavailable" badge (not hidden entirely) with the admin page listing
+  broken links for review plus a fix-URL field. At publish time, request a Wayback Machine
+  snapshot (`web.archive.org/save/<url>`) and store the archive URL, so a broken card can offer
+  "View archived copy" instead. Papers with a DOI: store the DOI and link via `doi.org`, which
+  outlives publisher URLs. None of this is implemented yet — needs its own migration
+  (`link_broken` status/column, `last_checked_at`/`http_status`/`archive_url`/`doi` columns) and a
+  scheduled job, a bigger, separate piece of work from item 93's client-side search.
 - **Native-side parity item (item 90, web-only so far)**: the ACTIVITIES field (multi-select:
   Travelling, Milling, Feeding Observed, Benthic Feeding Evidenced, Courtship Behaviours, Other +
   a note) and its chip-picker modal (`webapp/index.html`'s `#activity-picker-modal`,
