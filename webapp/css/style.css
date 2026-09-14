@@ -1772,9 +1772,34 @@ button.camera-status.secondary {
     width: 64px;
     height: 64px;
   }
+  /* v8: v7's max-width:420px (matching portrait's own ~100px column width) kept the row from
+     ballooning taller than portrait, but centered it as a fixed-width block -- on this device's
+     full ~960px-wide viewport that left it bunched into the middle ~40% with big empty margins on
+     both sides, and the whales are the actual feature of this screen, not a footnote to work
+     around. Fix: columns get a FIXED width (not flex:1, which would just re-stretch to fill
+     whatever's left and reintroduce the original problem -- a wider column means a taller
+     aspect-ratio-locked image) sized to fill as much of the available band HEIGHT as this
+     viewport's vertical budget allows (measured via CDP: dial bottom ~248, panel bottom -40px
+     safe-area padding ~392, leaving ~140px total row height to work with -- barely more than
+     portrait's own ~132px, since the dial/top-row still cap how much vertical room exists at all;
+     "fill the band's height" is real but modest here). The row itself drops its max-width (spans
+     the panel's full width) and uses justify-content:space-around so the 4 fixed-width columns
+     distribute evenly across it instead of stacking edge-to-edge or bunching centered. */
   #manual-log-step .whale-count-row {
-    max-width: 420px;
-    margin: 0 auto;
+    max-width: none;
+    margin: 0;
+    justify-content: space-around;
+  }
+  #manual-log-step .whale-count-col {
+    flex: 0 0 auto;
+    width: 121px;
+  }
+  /* The readout's own base rule fixes it at top:60px, which was fine when nothing else lived up
+     there -- v7 moved SELF/OTHER + Unknown Direction + Activity into a fixed row at top:64px
+     (ending ~100px), so the two now directly overlapped. Its own slot, centered, right below that
+     row instead. */
+  #manual-coords-readout {
+    top: calc(env(safe-area-inset-top, 0px) + 108px);
   }
 }
 
