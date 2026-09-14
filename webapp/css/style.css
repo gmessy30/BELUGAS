@@ -1768,9 +1768,20 @@ button.camera-status.secondary {
     left: 440px;
     transform: none;
   }
+  /* v9: enlarged from 64px -- +25% (80px) left only 6px clearance above .whale-count-row on this
+     device's true full-screen landscape viewport (960x432 CSS px, matching its actual 1080x2400
+     physical resolution at 400dpi / 2.5 scale factor); 76px (+18.75%) is the largest size that
+     clears it with the requested >=8px margin, confirmed via getBoundingClientRect (top row and
+     the lat/lng readout both have far more slack than the whale row does -- the row is the
+     binding constraint). NOTE: Chrome's own URL bar sometimes shrinks the actual viewport to a
+     narrower ~918x348 mid-transition state (not this device's real resolution) -- at THAT size
+     the row already overlapped the ORIGINAL 64px dial, before this change; that's a pre-existing
+     issue in the current top-row/readout/row layout, not something introduced by resizing the
+     dial, and fixing it would mean moving the row/readout again -- out of scope here per "revert
+     rather than nudge other elements". */
   #bearing-dial {
-    width: 64px;
-    height: 64px;
+    width: 76px;
+    height: 76px;
   }
   /* v8: v7's max-width:420px (matching portrait's own ~100px column width) kept the row from
      ballooning taller than portrait, but centered it as a fixed-width block -- on this device's
@@ -1920,6 +1931,33 @@ button.camera-status.secondary {
   top: calc(env(safe-area-inset-top, 0px) + 64px);
   right: 16px;
   z-index: 5;
+}
+
+/* Item 92: the observer's own last-fetched position while on this screen -- a plain Leaflet
+   divIcon marker (see showObserverLocationDot, submit-view.js), purely a visual reference (a
+   boater/pilot seeing themselves relative to the crosshair), never interactive and never part of
+   the submitted record. Sized/colored deliberately distinct from the crosshair (blue dot vs. the
+   BearingDial's black/white ring+needle) so the two are never visually confused for each other. */
+.observer-location-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #2196f3;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 rgba(33, 150, 243, 0.6);
+  animation: observer-location-dot-pulse 2s ease-out infinite;
+}
+
+@keyframes observer-location-dot-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 16px rgba(33, 150, 243, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(33, 150, 243, 0);
+  }
 }
 
 /* Item 64: SET DATE/TIME normally sits inside .review-bottom-panel (portrait -- "fine as-is" per

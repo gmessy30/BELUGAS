@@ -59,6 +59,11 @@ let manualLat = DEFAULT_MAP_CENTER[0];
 let manualLng = DEFAULT_MAP_CENTER[1];
 let manualTravelBearingDegrees = null;
 let manualObserverType = "SELF";
+// Item 92: the Leaflet marker for showObserverLocationDot/clearObserverLocationDot below -- null
+// until the first successful "MY LOCATION" fix this visit, cleared on every exit from this
+// screen (resetManualPositionControls), never persisted across visits or submitted with the
+// sighting.
+let observerLocationMarker = null;
 // Item 90: multi-select, unlike every other .chip-toggle group on this screen -- a Set, not a
 // single active value, since any number of these can apply to one sighting at once. Reset between
 // sightings (resetManualPositionControls), never persisted.
@@ -477,6 +482,15 @@ function updateManualPhotoThumb() {
   }
 }
 
+// Item 92: shared by this file's own two GPS-driven map-centering moments -- the camera path's
+// automatic initial fix (centerManualMapFromGpsOnce, right below) and MY LOCATION's on-demand one
+// (handleMyLocationTap) -- one named constant so the two can never quietly drift apart. ~1-2km
+// visible across a typical phone screen at Cook Inlet's own latitude (60-61N): Leaflet's
+// meters-per-pixel at zoom z is 156543.034*cos(lat)/2^z, so a ~400px-wide viewport at zoom 14
+// spans roughly 1.9km -- comfortably in the requested range without being so tight a boat's own
+// slight GPS jitter looks like it's leaping around.
+const GPS_CENTER_ZOOM = 14;
+
 // Item 60: a rough GPS fix taken once, at capture time, used ONLY to center the map near the
 // observer's own position -- never stored, never the submitted position (that's still always
 // whatever the crosshair/map center reads at SUBMIT time, exactly like a plain Report Manually
@@ -484,7 +498,6 @@ function updateManualPhotoThumb() {
 // the fix arrives, so a slow fix can never yank the view out from under someone who's already
 // begun placing the pin. Best-effort and silent -- a denied/failed fix just leaves the map at its
 // DEFAULT_MAP_CENTER starting point, same as plain Report Manually always does.
-const CAMERA_GPS_CENTER_ZOOM = 14; // close enough to place a precise pin, not a region overview
 function centerManualMapFromGpsOnce() {
   if (!navigator.geolocation || !manualMapInstance) return;
   let userHasInteracted = false;
@@ -499,7 +512,7 @@ function centerManualMapFromGpsOnce() {
       if (userHasInteracted || document.getElementById("manual-log-step").hidden) return;
       manualMapInstance.setView(
         [position.coords.latitude, position.coords.longitude],
-        CAMERA_GPS_CENTER_ZOOM
+        GPS_CENTER_ZOOM
       );
     },
     (err) => console.warn("CAMERA_INITIAL_GPS_FIX_ERROR", err),
@@ -528,6 +541,7 @@ function resetManualPositionControls() {
   updateBearingDialNeedle(null);
   setManualObserverType("SELF");
   resetActivityPicker();
+  clearObserverLocationDot();
 }
 
 // Item 60: tapping the photo thumbnail on #manual-log-step discards the photo and returns to the
@@ -551,16 +565,20 @@ function openManualReportFlow() {
   document.getElementById("camera-step").hidden = true;
   document.getElementById("manual-log-step").hidden = false;
 
-  // GPS is deliberately NOT auto-fetched here. Confirmed against ManualLoggingScreen.kt's real
-  // source, native DOES call LaunchedEffect(Unit) { recenterOnGps() } on entry -- but only to set
-  // the map's STARTING center as a convenience; the submitted position is always whatever the
-  // fixed center pin reads at SUBMIT time (wherever the user has panned to), never locked to
-  // that initial fetch. This app overrides that on purpose anyway (explicitly confirmed, not an
+  // GPS is deliberately NOT auto-fetched on ENTRY here. Confirmed against ManualLoggingScreen.kt's
+  // real source, native DOES call LaunchedEffect(Unit) { recenterOnGps() } on entry -- but only to
+  // set the map's STARTING center as a convenience; the submitted position is always whatever the
+  // fixed center pin reads at SUBMIT time (wherever the user has panned to), never locked to that
+  // initial fetch. This app overrides that on purpose anyway (explicitly confirmed, not an
   // oversight): manual reporting is meant to be explicitly NOT "where I am now" from the moment
-  // this screen opens, not just at submit time. The map starts at DEFAULT_MAP_CENTER instead, and
-  // there is no manual GPS button at all here any more, matching native exactly. Item 60's own
-  // camera-path entry point (enterManualLogStepFromCamera) is the one deliberate exception to
-  // this, and takes its own separate GPS fix for that reason -- see its own comment.
+  // this screen opens, not just at submit time. The map starts at DEFAULT_MAP_CENTER instead.
+  // Item 60's own camera-path entry point (enterManualLogStepFromCamera) is the one deliberate
+  // exception to this on-ENTRY behavior, and takes its own separate GPS fix for that reason -- see
+  // its own comment. Item 92 later added a MY LOCATION button (initManualPositionControls) to
+  // BOTH entry points -- an explicit ON-DEMAND, view-only recentering aid, not a silent auto-fetch
+  // and not a "the whale was where I'm standing" shortcut, so it doesn't reopen the problem this
+  // comment originally described (a "Get My Location" that set the SUBMITTED position, removed
+  // entirely, see initManualPositionControls' own comment for the full distinction).
   initManualMapIfNeeded();
   setManualDatetimeInputToNow();
   updateManualDatetimeButtonLabel();
@@ -611,19 +629,111 @@ function updateManualPositionFromMapCenter() {
     `${manualLat.toFixed(4)}, ${manualLng.toFixed(4)}`;
 }
 
+// Item 92: MY LOCATION replaces the old plain RECENTER -- a TAP now takes a fresh GPS fix and
+// centers the MAP VIEW on it (handleMyLocationTap), distinct from the "Get My Location" this
+// screen deliberately removed once before (see openManualReportFlow's own comment): that one set
+// the SUBMITTED position to the observer's own fix, which conflated "where I am" with "where the
+// whale was" -- exactly what this screen exists to keep separate. This is purely a navigational
+// convenience, same category as panning/zooming by hand, and never writes to manualLat/manualLng
+// itself -- only updateManualPositionFromMapCenter (bound to the map's own "move" event) does
+// that, reading wherever the view ends UP after the fix, same as any other pan. A LONG-PRESS
+// keeps the OLD behavior (plain reset to the Cook Inlet overview, no GPS at all) as a fallback,
+// not a removal -- distinguished via a plain pointerdown/pointerup timer rather than a second
+// button, since there's no room left in this row for one.
 function initManualPositionControls() {
-  // View reset only -- no GPS refetch, matching ManualLoggingScreen's own RECENTER exactly (this
-  // screen marks where the whales were, not the observer's own position). "Get My Location" was
-  // removed entirely (see the HTML's own comment) -- it implied the observer's own position is
-  // the whale's, which this screen exists specifically to not assume.
-  document.getElementById("manual-recenter-btn").addEventListener("click", () => {
-    manualMapInstance.setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
+  const recenterBtn = document.getElementById("manual-recenter-btn");
+  const LONG_PRESS_MS = 550;
+  let longPressTimer = null;
+  let longPressFired = false;
+
+  recenterBtn.addEventListener("pointerdown", () => {
+    longPressFired = false;
+    longPressTimer = setTimeout(() => {
+      longPressFired = true;
+      manualMapInstance.setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
+    }, LONG_PRESS_MS);
+  });
+  const cancelLongPressTimer = () => {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  };
+  recenterBtn.addEventListener("pointerup", cancelLongPressTimer);
+  recenterBtn.addEventListener("pointerleave", cancelLongPressTimer);
+  recenterBtn.addEventListener("pointercancel", cancelLongPressTimer);
+
+  // The browser's own click event always fires right after pointerup on the same element --
+  // checking longPressFired here (rather than doing the tap's own work directly in pointerup)
+  // means a held-then-released press that already triggered the long-press branch doesn't ALSO
+  // fire a normal tap immediately afterward.
+  recenterBtn.addEventListener("click", () => {
+    if (longPressFired) {
+      longPressFired = false;
+      return;
+    }
+    handleMyLocationTap(recenterBtn);
   });
 
   document.getElementById("manual-datetime-btn").addEventListener("click", openManualDatetimePicker);
   document.getElementById("manual-datetime-input").addEventListener("change", updateManualDatetimeButtonLabel);
 
   initBearingDial();
+}
+
+// Item 92: reuses getCurrentPositionOnce (tier-code.js) -- the same never-rejects/carries-
+// accuracy wrapper around getCurrentPosition the departure-eligibility check already relies on,
+// rather than a second copy of the same plumbing. Briefly repurposes the button's own label to
+// show progress/accuracy/failure instead of adding a whole new status element to an already
+// crowded screen -- matches admin.js's handleCopyCode's own "flash a temporary label, then revert"
+// pattern.
+async function handleMyLocationTap(btn) {
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "📍 Locating…";
+
+  const result = await getCurrentPositionOnce({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+
+  btn.disabled = false;
+
+  if (!result.coords) {
+    console.warn("MY_LOCATION_GPS_ERROR", result.error);
+    btn.textContent = "📍 No fix";
+    setTimeout(() => { btn.textContent = originalLabel; }, 1800);
+    return;
+  }
+
+  manualMapInstance.setView([result.coords.lat, result.coords.lng], GPS_CENTER_ZOOM);
+  showObserverLocationDot(result.coords.lat, result.coords.lng);
+
+  btn.textContent = Number.isFinite(result.accuracy) ? `📍 ±${Math.round(result.accuracy)}m` : originalLabel;
+  setTimeout(() => { btn.textContent = originalLabel; }, 1800);
+}
+
+// Item 92: a small pulsing dot at the OBSERVER's own last-fetched position (see
+// .observer-location-dot, style.css) -- purely a visual aid so a boater/pilot can see themselves
+// relative to the crosshair, never interactive (a real tap must always land on the map/crosshair
+// underneath, never this marker) and never part of the submitted record. Updates in place on a
+// second fix rather than creating a duplicate marker.
+function showObserverLocationDot(lat, lng) {
+  if (observerLocationMarker) {
+    observerLocationMarker.setLatLng([lat, lng]);
+    return;
+  }
+  observerLocationMarker = L.marker([lat, lng], {
+    icon: L.divIcon({ className: "observer-location-dot", iconSize: [16, 16] }),
+    interactive: false,
+    keyboard: false
+  }).addTo(manualMapInstance);
+}
+
+// Client-only, this-screen-only, per the request -- called from resetManualPositionControls so
+// every exit path from #manual-log-step (both entry points funnel through goToCameraStep, see
+// that function's own comment) clears it, matching the bearing dial's own reset-between-visits
+// scope.
+function clearObserverLocationDot() {
+  if (observerLocationMarker) {
+    observerLocationMarker.remove();
+    observerLocationMarker = null;
+  }
 }
 
 // DatePickerDialog.kt as a compact trigger rather than a full-width bar -- the hidden input

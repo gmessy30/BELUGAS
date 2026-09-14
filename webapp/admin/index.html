@@ -58,6 +58,22 @@
         <div class="section-title">ISSUED CODES</div>
         <div id="tier-codes-list"></div>
       </div>
+      <hr class="section-divider">
+
+      <!-- Item 91: hidden entirely (not just an empty-state message) when there's nothing
+           waiting -- unlike ISSUED CODES/RECENTLY PUBLISHED below, an empty queue is the common
+           case, and a whole extra section header reading "No articles pending" every time an
+           admin opens this page is just noise. -->
+      <div class="subpage-section" id="pending-articles-section" hidden>
+        <div class="section-title">PENDING ARTICLES</div>
+        <div id="pending-articles-list"></div>
+      </div>
+      <hr class="section-divider" id="pending-articles-divider" hidden>
+
+      <div class="subpage-section">
+        <div class="section-title">RECENTLY PUBLISHED</div>
+        <div id="published-articles-list"></div>
+      </div>
     </section>
   </main>
 

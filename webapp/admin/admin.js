@@ -53,6 +53,8 @@ async function checkExistingSession() {
 
   showAdminContent();
   renderTierCodesList(data);
+  refreshPendingArticles();
+  refreshRecentlyPublished();
 }
 
 async function handleLogin() {
@@ -90,6 +92,8 @@ async function handleLogin() {
   document.getElementById("admin-password-input").value = "";
   showAdminContent();
   renderTierCodesList(data);
+  refreshPendingArticles();
+  refreshRecentlyPublished();
 }
 
 async function handleLogout() {
@@ -243,6 +247,207 @@ async function handleCopyCode() {
   } catch (e) {
     console.error("CLIPBOARD_COPY_ERROR", e);
   }
+}
+
+// Item 91: article moderation queue -- supabase/migrations/20260924000000_add_article_
+// moderation_rpcs.sql's list_pending_articles/set_article_status are the only door onto
+// public.articles beyond the public "published rows only" read (see that migration's own header
+// comment for why set_article_status also accepts 'pending_review' as a target, reused for
+// UNPUBLISH rather than adding a second RPC for what's really the same status transition).
+function articleTypeTag(contentType) {
+  return contentType === "research_paper" ? "RESEARCH" : "NEWS";
+}
+
+async function refreshPendingArticles() {
+  const { data, error } = await adminSupabase.rpc("list_pending_articles");
+  const section = document.getElementById("pending-articles-section");
+  const divider = document.getElementById("pending-articles-divider");
+
+  if (error) {
+    console.error("LIST_PENDING_ARTICLES_ERROR", error);
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    section.hidden = true;
+    divider.hidden = true;
+    return;
+  }
+
+  section.hidden = false;
+  divider.hidden = false;
+  const container = document.getElementById("pending-articles-list");
+  container.innerHTML = "";
+  data.forEach((article) => container.appendChild(pendingArticleCard(article)));
+}
+
+function pendingArticleCard(article) {
+  const card = document.createElement("div");
+  card.className = "article-review-card";
+
+  const header = document.createElement("div");
+  header.className = "article-review-header";
+  const tag = document.createElement("span");
+  tag.className = "article-review-tag";
+  tag.textContent = articleTypeTag(article.content_type);
+  const date = document.createElement("span");
+  date.className = "article-review-date";
+  date.textContent = new Date(article.created_at).toLocaleDateString();
+  header.append(tag, date);
+  card.appendChild(header);
+
+  if (article.submitted_by) {
+    const submitter = document.createElement("div");
+    submitter.className = "article-review-submitter";
+    submitter.textContent = `Submitted by ${article.submitted_by}`;
+    card.appendChild(submitter);
+  }
+
+  const urlLink = document.createElement("a");
+  urlLink.className = "article-review-url";
+  urlLink.href = article.source_url;
+  urlLink.target = "_blank";
+  urlLink.rel = "noopener";
+  urlLink.textContent = article.source_url;
+  card.appendChild(urlLink);
+
+  const titleInput = document.createElement("input");
+  titleInput.className = "suggest-input article-review-title-input";
+  titleInput.type = "text";
+  titleInput.value = article.title;
+  card.appendChild(titleInput);
+
+  const summaryInput = document.createElement("textarea");
+  summaryInput.className = "suggest-input article-review-summary-input";
+  summaryInput.rows = 3;
+  summaryInput.value = article.summary || "";
+  summaryInput.placeholder = "Summary (optional)";
+  card.appendChild(summaryInput);
+
+  const statusEl = document.createElement("p");
+  statusEl.className = "status-info article-review-status";
+  card.appendChild(statusEl);
+
+  const actions = document.createElement("div");
+  actions.className = "modal-actions";
+  const publishBtn = document.createElement("button");
+  publishBtn.type = "button";
+  publishBtn.className = "primary";
+  publishBtn.textContent = "Publish";
+  publishBtn.addEventListener("click", () =>
+    handleSetArticleStatus(article.id, "published", titleInput, summaryInput, statusEl, publishBtn,
+      `Publish "${titleInput.value.trim()}"? It will appear in the News Feed immediately.`));
+
+  const rejectBtn = document.createElement("button");
+  rejectBtn.type = "button";
+  rejectBtn.className = "secondary";
+  rejectBtn.textContent = "Reject";
+  rejectBtn.addEventListener("click", () =>
+    handleSetArticleStatus(article.id, "rejected", titleInput, summaryInput, statusEl, rejectBtn,
+      `Reject "${titleInput.value.trim()}"? It will not appear in the News Feed.`));
+
+  actions.append(publishBtn, rejectBtn);
+  card.appendChild(actions);
+
+  return card;
+}
+
+// Shared by PUBLISH/REJECT (pendingArticleCard) and UNPUBLISH (publishedArticleCard) -- same
+// two-step confirm() guard revoke_tier_code's own handleRevoke uses, since PUBLISH is just as
+// irreversible-feeling (goes live immediately) as a tier revocation is.
+async function handleSetArticleStatus(id, status, titleInput, summaryInput, statusEl, triggerBtn, confirmMessage) {
+  if (!confirm(confirmMessage)) return;
+
+  triggerBtn.disabled = true;
+  statusEl.textContent = "Saving…";
+
+  const { data, error } = await adminSupabase.rpc("set_article_status", {
+    p_id: id,
+    p_status: status,
+    p_title: titleInput ? titleInput.value.trim() : null,
+    p_summary: summaryInput ? summaryInput.value.trim() : null
+  });
+
+  if (error || !data) {
+    console.error("SET_ARTICLE_STATUS_ERROR", error);
+    statusEl.textContent = "Couldn't save -- try again.";
+    statusEl.className = "status-error article-review-status";
+    triggerBtn.disabled = false;
+    return;
+  }
+
+  await Promise.all([refreshPendingArticles(), refreshRecentlyPublished()]);
+}
+
+async function refreshRecentlyPublished() {
+  // No dedicated RPC needed here -- 20260823120000_add_articles.sql's own "Public read access to
+  // published articles" RLS policy already lets ANY caller (this admin session included) read
+  // status='published' rows directly, the same policy the News Feed's own getArticles (db.js)
+  // relies on. reviewed_at is null for nothing here since it's only ever populated when
+  // set_article_status runs, which is the only way a row's status becomes 'published' at all.
+  const { data, error } = await adminSupabase
+    .from("articles")
+    .select("id, title, summary, source_url, content_type, submitted_by, reviewed_at")
+    .eq("status", "published")
+    .order("reviewed_at", { ascending: false })
+    .limit(10);
+
+  const container = document.getElementById("published-articles-list");
+  if (error) {
+    console.error("LIST_RECENTLY_PUBLISHED_ERROR", error);
+    return;
+  }
+
+  container.innerHTML = "";
+  if (!data || data.length === 0) {
+    container.innerHTML = '<p class="empty-state">Nothing published yet.</p>';
+    return;
+  }
+  data.forEach((article) => container.appendChild(publishedArticleCard(article)));
+}
+
+function publishedArticleCard(article) {
+  const card = document.createElement("div");
+  card.className = "article-review-card article-published-card";
+
+  const header = document.createElement("div");
+  header.className = "article-review-header";
+  const tag = document.createElement("span");
+  tag.className = "article-review-tag";
+  tag.textContent = articleTypeTag(article.content_type);
+  const date = document.createElement("span");
+  date.className = "article-review-date";
+  date.textContent = article.reviewed_at ? new Date(article.reviewed_at).toLocaleDateString() : "";
+  header.append(tag, date);
+  card.appendChild(header);
+
+  const title = document.createElement("div");
+  title.className = "article-review-published-title";
+  title.textContent = article.title;
+  card.appendChild(title);
+
+  const urlLink = document.createElement("a");
+  urlLink.className = "article-review-url";
+  urlLink.href = article.source_url;
+  urlLink.target = "_blank";
+  urlLink.rel = "noopener";
+  urlLink.textContent = article.source_url;
+  card.appendChild(urlLink);
+
+  const statusEl = document.createElement("p");
+  statusEl.className = "status-info article-review-status";
+  card.appendChild(statusEl);
+
+  const unpublishBtn = document.createElement("button");
+  unpublishBtn.type = "button";
+  unpublishBtn.className = "secondary";
+  unpublishBtn.textContent = "Unpublish";
+  unpublishBtn.addEventListener("click", () =>
+    handleSetArticleStatus(article.id, "pending_review", null, null, statusEl, unpublishBtn,
+      `Unpublish "${article.title}"? It will be removed from the News Feed and returned to the pending queue.`));
+  card.appendChild(unpublishBtn);
+
+  return card;
 }
 
 document.addEventListener("DOMContentLoaded", () => {

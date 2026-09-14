@@ -190,7 +190,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v82</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v84</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -1030,8 +1030,14 @@
              top row), so it never competes with either. -->
         <div id="manual-coords-readout" class="manual-coords-readout" aria-live="polite"></div>
 
+        <!-- Item 92: tap centers the map on a fresh GPS fix (view only -- see
+             initManualPositionControls' own comment on why this doesn't reopen the "Get My
+             Location" problem item 60 deliberately removed); long-press keeps the OLD behavior
+             (plain reset to the Cook Inlet overview), a fallback rather than a removal. The title
+             attribute is the only affordance long-press gets -- there's no on-screen hint text
+             anywhere else on this crowded a screen. -->
         <div class="manual-locate-row">
-          <button id="manual-recenter-btn" class="secondary" type="button">📍 RECENTER</button>
+          <button id="manual-recenter-btn" class="secondary" type="button" title="Long-press to reset to the Cook Inlet overview">📍 MY LOCATION</button>
         </div>
 
         <!-- Item 60: the camera path's attached photo, shown as a small corner thumbnail rather

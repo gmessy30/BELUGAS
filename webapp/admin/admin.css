@@ -27,12 +27,14 @@
 }
 
 #admin-login-status.status-info,
-#issue-status.status-info {
+#issue-status.status-info,
+.article-review-status.status-info {
   color: rgba(255, 255, 255, 0.85);
 }
 
 #admin-login-status.status-error,
-#issue-status.status-error {
+#issue-status.status-error,
+.article-review-status.status-error {
   color: #ffdada;
 }
 
@@ -129,4 +131,84 @@
   font-size: 0.75rem;
   font-weight: 700;
   white-space: nowrap;
+}
+
+/* Item 91: article moderation -- same dark-card treatment as .tier-code-row (see that rule's own
+   comment on why: Mae's own pale sketch behind this page means a card needs real contrast, not
+   just a border-bottom divider), but stacked vertically (title input full-width, textarea below
+   it) rather than a single row -- these fields are edited in place, not just displayed. */
+#pending-articles-list,
+#published-articles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.article-review-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--dark-card-bg);
+  border: 1px solid var(--dark-card-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.article-review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.article-review-tag {
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: #000000;
+  background: var(--brand-cyan);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.article-review-date {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.article-review-submitter {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* Deliberately not the same yellow .text-link the News Feed's own article-card uses -- that
+   yellow reads fine on this page's link buttons but gets lost against .article-review-tag's own
+   cyan pill right above it; a plain, slightly muted white keeps the URL legible without
+   competing for attention with the tag/title. */
+.article-review-url {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.8);
+  word-break: break-all;
+  text-decoration: underline;
+}
+
+.article-review-title-input {
+  font-weight: 700;
+}
+
+.article-review-summary-input {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.article-review-status:empty {
+  display: none;
+}
+
+.article-published-card {
+  opacity: 0.9;
+}
+
+.article-review-published-title {
+  font-weight: 700;
+  color: #ffffff;
 }

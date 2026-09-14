@@ -275,6 +275,16 @@ never just that playback started.
   without `activities`/`activity_note`/`confirmed_at`, and `is_tier_one_observer`/`confirm_sighting`
   simply don't exist yet — CONFIRM SIGHTING stays hidden (`cachedIsTierOneObserver` resolves to
   `false` on the RPC-not-found error, same as any other failure).
+- **Migration not yet applied**:
+  `supabase/migrations/20260924000000_add_article_moderation_rpcs.sql` (item 91 — article
+  moderation on `webapp/admin/`) has been written but NOT applied — apply via
+  `supabase db query --linked --file <path>`. Adds `'rejected'` to `article_status`, two new
+  columns (`reviewed_by`, `reviewed_at`), and `list_pending_articles`/`set_article_status` (gated
+  on `tier_admins`, same allow-list the tier-code RPCs use). No client-side schema-tolerance
+  fallback here unlike item 90/63's `sightingSchemaHasNewColumns` — this is an admin-only page one
+  person uses right after applying the migration themselves, not a public-facing path many
+  concurrent users hit before a migration lands, so a plain `console.error` + "nothing renders"
+  until it's applied is an acceptable, much lower-stakes failure mode.
 - **Native-side parity item (item 90, web-only so far)**: the ACTIVITIES field (multi-select:
   Travelling, Milling, Feeding Observed, Benthic Feeding Evidenced, Courtship Behaviours, Other +
   a note) and its chip-picker modal (`webapp/index.html`'s `#activity-picker-modal`,
@@ -350,6 +360,20 @@ never just that playback started.
   `AboutScreen.kt` yet) with a handful of short lines on today's user-visible changes. Apply the
   same text to `ResourcesScreen.kt`/`AboutScreen.kt` for parity, alongside the other pending items
   above.
+- **Native-side parity item (item 92, web-only so far)**: `ManualLoggingScreen`'s own RECENTER
+  (`webapp/index.html`'s `#manual-recenter-btn`, shared by both entry points since item 60) is now
+  MY LOCATION — a tap takes a fresh GPS fix (`getCurrentPositionOnce`, tier-code.js) and centers
+  the MAP VIEW on it at `GPS_CENTER_ZOOM` (14, ~1-2km visible), plus a small pulsing dot
+  (`.observer-location-dot`) at the observer's own last-fetched position for the duration of this
+  screen — client-only, cleared on exit, never stored or submitted. A long-press keeps the OLD
+  plain "reset to the Cook Inlet overview" behavior (`DEFAULT_MAP_CENTER`/`DEFAULT_MAP_ZOOM`) as a
+  fallback gesture, not a removal. Crucially, this does NOT reopen the "Get My Location" problem
+  item 60 deliberately removed (see `openManualReportFlow`'s own comment in `submit-view.js`) —
+  that one set the SUBMITTED position to the observer's fix; this one only ever calls
+  `map.setView`, and the crosshair/`manualLat`/`manualLng` still read from wherever the map ends up
+  panned to at SUBMIT time, exactly as before. `ManualLoggingScreen.kt`'s own RECENTER has no
+  equivalent yet — worth porting the same tap/long-press split, the accuracy-fix zoom level, and
+  the pulsing observer-position dot there too, alongside the other pending items above.
 - **Native-side parity item (item 66, web-only so far)**: the PWA's BearingDial no longer draws
   the decorative teardrop pin at the ring's north point — the crosshair was always the sole
   position marker (both here and in `BearingDial.kt`), so the pin was pure decoration removed to
