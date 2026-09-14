@@ -90,6 +90,21 @@ that table. Admin-only RPCs (`issue_tier_code`, `list_tier_codes`, `revoke_tier_
 require the caller's `auth.uid()` to be listed in `tier_admins` — being merely logged in via
 Supabase Auth is not enough on its own.
 
+**Admin roles/zones/audit log (item 101, PENDING — migration written, NOT yet applied as of this
+writing; see "Migrations" below for the applied/pending list)**: `tier_admins` carries an `owner`
+boolean (exactly one such row ever, enforced by a partial unique index — keeneyeapps@gmail.com is
+the owner) and a `zone_slug`. A non-owner admin's every action (`issue_tier_code`/
+`list_tier_codes`/`revoke_tier_code`) is scoped server-side to their own zone, not just hidden in
+the admin UI — the owner alone sees/acts on every zone. `tier_roster` records `issued_by` and
+`zone_slug` at issuance. Owner-device protection: `tier_roster.is_owner_device` (settable only at
+issuance, only by the owner) marks a code `revoke_tier_code` refuses to touch for anyone but the
+owner, regardless of zone. `tier_admins` membership itself (`add_tier_admin`/`remove_tier_admin`/
+`update_tier_admin_zone`) is owner-only; `remove_tier_admin` refuses the owner row even when the
+owner is the one calling it (no self-lockout). No RPC anywhere changes the `owner` flag itself —
+transferring ownership is deliberately left a manual, out-of-band operation, not a casual
+admin-page action. Every admin RPC (issue/revoke/publish/reject/unpublish/add-remove-update-admin)
+writes to `admin_actions`, readable only via `list_admin_actions` (owner-only).
+
 ### Migrations
 
 `supabase/migrations/20260920000000_add_server_side_outer_geofence_check.sql` and
@@ -382,6 +397,18 @@ never just that playback started.
   apply a migration itself" rule above — this migration qualified as low-risk/additive and doesn't
   touch `get_kenai_presence_state`/sightings/`tier_roster`, so it was applied directly rather than
   handed to the user, per that rule's own stated exception.
+- **Migration WRITTEN, NOT applied — needs the user's explicit go-ahead** (item 101):
+  `supabase/migrations/20260929000000_add_tier_admin_roles_zones_and_audit_log.sql` adds owner/
+  zone scoping to `tier_admins`/`tier_roster` and a new `admin_actions` audit log — full design in
+  this file's own "Tier codes" section above, full reasoning (including one flagged design
+  assumption — how "a device the owner holds" is represented, since nothing in the existing schema
+  links a `tier_admins` row to a specific `tier_roster` row) in the migration's own header comment.
+  Touches `tier_roster` directly — **do not apply without the user's explicit go-ahead**, per
+  CLAUDE.md's own "Hard rule" above. `webapp/admin/admin.js`/`index.html`/`admin.css` are already
+  updated to match (zone header, owner-only ADMINS/AUDIT LOG sections, richer revoke confirmation)
+  but will not actually work correctly until this migration is applied — the new RPCs it adds
+  (`get_my_admin_info`, `list_tier_admins`, `add_tier_admin`, `remove_tier_admin`,
+  `update_tier_admin_zone`, `list_admin_actions`) don't exist yet.
 - **Migration WRITTEN, NOT applied — needs the user's explicit go-ahead** (item 97b):
   `supabase/migrations/20260927000000_add_kenai_red_qualifying_sightings_rpc.sql` adds
   `get_kenai_red_qualifying_sightings`, a new read-only RPC returning the actual RED-qualifying

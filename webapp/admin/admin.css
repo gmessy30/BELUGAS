@@ -212,3 +212,90 @@
   font-weight: 700;
   color: #ffffff;
 }
+
+/* Item 101: admin roles/zones/audit log. */
+
+.admin-zone-label {
+  margin: 2px 0 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--brand-yellow);
+  text-transform: uppercase;
+}
+
+.admin-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 0.85rem;
+  color: #ffffff;
+}
+
+#admins-status.status-info {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+#admins-status.status-error {
+  color: #ffdada;
+}
+
+.admin-add-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-add-row .suggest-input {
+  margin-top: 0;
+}
+
+#admins-list,
+#audit-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-row,
+.audit-log-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--dark-card-bg);
+  border: 1px solid var(--dark-card-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.admin-row-info,
+.audit-log-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.admin-row-email {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.admin-row-meta,
+.audit-log-meta {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.audit-log-action {
+  font-weight: 700;
+  color: var(--brand-cyan);
+  font-size: 0.85rem;
+}
+
+.audit-log-time {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+}

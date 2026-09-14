@@ -16,7 +16,13 @@
      page reuses them directly rather than inventing a separate light theme just for admin use. -->
 <body class="admin-screen mae-background">
   <div class="subpage-top-row">
-    <h1 class="subpage-title">TIER CODES</h1>
+    <div>
+      <h1 class="subpage-title">TIER CODES</h1>
+      <!-- Item 101: which zone's codes this admin is looking at -- populated by
+           get_my_admin_info() right after login, "OWNER" instead of a zone name for the one
+           admin who sees every zone regardless. Empty/hidden until that call resolves. -->
+      <p id="admin-zone-label" class="admin-zone-label" hidden></p>
+    </div>
     <button id="admin-logout-btn" class="subpage-back-btn" hidden>Sign Out</button>
   </div>
 
@@ -37,6 +43,14 @@
         <input id="issue-name-input" class="suggest-input" type="text" placeholder="Name" style="margin-top: 0;">
         <input id="issue-contact-input" class="suggest-input" type="text" placeholder="Contact (email or phone, optional)">
         <input id="issue-device-input" class="suggest-input" type="text" placeholder="Device (e.g. iPhone, work tablet)">
+        <!-- Item 101: owner-only -- a non-owner admin always issues into their own zone (server-
+             enforced regardless of what's sent, see issue_tier_code's own comment), so there's
+             nothing for them to pick here at all. Shown/hidden by admin.js based on
+             get_my_admin_info()'s own `owner` field. -->
+        <input id="issue-zone-input" class="suggest-input" type="text" placeholder="Zone slug (blank = your own zone)" hidden>
+        <label id="issue-owner-device-label" class="admin-checkbox-label" hidden>
+          <input id="issue-owner-device-checkbox" type="checkbox"> This is my own device
+        </label>
         <div class="modal-actions" style="justify-content: flex-start; margin-top: 12px;">
           <button id="issue-tier-1-btn" class="chip-toggle active" data-tier="1" type="button">Tier 1</button>
           <button id="issue-tier-2-btn" class="chip-toggle" data-tier="2" type="button">Tier 2</button>
@@ -73,6 +87,27 @@
       <div class="subpage-section">
         <div class="section-title">RECENTLY PUBLISHED</div>
         <div id="published-articles-list"></div>
+      </div>
+
+      <!-- Item 101: owner-only -- hidden entirely for a zone-scoped admin, same "not even an
+           empty-state hint that this exists" treatment PENDING ARTICLES gives an empty queue,
+           since a non-owner admin has no use for either section at all. -->
+      <hr class="section-divider" id="admins-divider" hidden>
+      <div class="subpage-section" id="admins-section" hidden>
+        <div class="section-title">ADMINS</div>
+        <div id="admins-list"></div>
+        <div class="admin-add-row">
+          <input id="add-admin-email-input" class="suggest-input" type="email" placeholder="Admin's email (account already created in Supabase dashboard)" style="margin-top: 12px;">
+          <input id="add-admin-zone-input" class="suggest-input" type="text" placeholder="Zone slug (e.g. kenai)">
+          <button id="add-admin-btn" class="secondary" type="button">Add Admin</button>
+        </div>
+        <p id="admins-status" class="status-info"></p>
+      </div>
+
+      <hr class="section-divider" id="audit-log-divider" hidden>
+      <div class="subpage-section" id="audit-log-section" hidden>
+        <div class="section-title">AUDIT LOG</div>
+        <div id="audit-log-list"></div>
       </div>
     </section>
   </main>

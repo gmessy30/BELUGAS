@@ -4,12 +4,25 @@
 // in tier_admins is (see supabase/migrations/20260921000000_add_tier_admin_rpcs.sql). Not linked
 // from the main app's menu at all -- reachable only by knowing this URL.
 //
+// Item 101: tier_admins now also carries an owner flag and a zone_slug (supabase/migrations/
+// 20260929000000_add_tier_admin_roles_zones_and_audit_log.sql). A zone-scoped (non-owner) admin
+// only ever sees/acts on codes in their own zone -- enforced server-side in list_tier_codes/
+// issue_tier_code/revoke_tier_code, not just hidden here -- and never sees the ADMINS/AUDIT LOG
+// sections at all. The owner sees every zone and both of those sections. Every admin RPC
+// (issue/revoke/publish/reject/unpublish/add-remove-update-admin) writes to admin_actions;
+// list_admin_actions (owner-only) is that log's only read path.
+//
 // Its own Supabase client instance (separate from webapp/js/db.js's anon-only one) since this is
 // the only page in the whole app that ever calls supabase.auth -- the main app has no login
 // concept and never needs one.
 const adminSupabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let selectedIssueTier = 1;
+// Item 101: this caller's own admin status, fetched once per session via get_my_admin_info()
+// (self-scoped, any admin can call it -- see that RPC's own comment) -- drives the zone-label
+// header, the owner-only sections (ADMINS/AUDIT LOG), and the issue form's zone/owner-device
+// fields, which only ever matter for the owner.
+let myAdminInfo = { zoneSlug: null, owner: false };
 
 function setLoginStatus(message, isError = false) {
   const el = document.getElementById("admin-login-status");
@@ -51,10 +64,45 @@ async function checkExistingSession() {
     return;
   }
 
+  await loadMyAdminInfo();
   showAdminContent();
   renderTierCodesList(data);
   refreshPendingArticles();
   refreshRecentlyPublished();
+}
+
+// Item 101: fetches this caller's own zone/owner status and applies every UI consequence of it
+// (header label, owner-only sections, issue-form fields) -- called once right after a successful
+// login/session-restore, before anything else renders.
+async function loadMyAdminInfo() {
+  const { data, error } = await adminSupabase.rpc("get_my_admin_info");
+  if (error || !data || data.length === 0) {
+    console.error("GET_MY_ADMIN_INFO_ERROR", error);
+    myAdminInfo = { zoneSlug: null, owner: false };
+  } else {
+    myAdminInfo = { zoneSlug: data[0].zone_slug, owner: data[0].owner };
+  }
+
+  const zoneLabel = document.getElementById("admin-zone-label");
+  zoneLabel.textContent = myAdminInfo.owner
+    ? "OWNER · ALL ZONES"
+    : myAdminInfo.zoneSlug
+      ? `ZONE: ${myAdminInfo.zoneSlug.toUpperCase()}`
+      : "";
+  zoneLabel.hidden = !zoneLabel.textContent;
+
+  document.getElementById("issue-zone-input").hidden = !myAdminInfo.owner;
+  document.getElementById("issue-owner-device-label").hidden = !myAdminInfo.owner;
+
+  document.getElementById("admins-section").hidden = !myAdminInfo.owner;
+  document.getElementById("admins-divider").hidden = !myAdminInfo.owner;
+  document.getElementById("audit-log-section").hidden = !myAdminInfo.owner;
+  document.getElementById("audit-log-divider").hidden = !myAdminInfo.owner;
+
+  if (myAdminInfo.owner) {
+    refreshAdmins();
+    refreshAuditLog();
+  }
 }
 
 async function handleLogin() {
@@ -90,6 +138,7 @@ async function handleLogin() {
   loginBtn.disabled = false;
   setLoginStatus("");
   document.getElementById("admin-password-input").value = "";
+  await loadMyAdminInfo();
   showAdminContent();
   renderTierCodesList(data);
   refreshPendingArticles();
@@ -103,6 +152,8 @@ async function handleLogout() {
   document.getElementById("admin-password-input").value = "";
   document.getElementById("issued-code-result").hidden = true;
   setLoginStatus("");
+  myAdminInfo = { zoneSlug: null, owner: false };
+  document.getElementById("admin-zone-label").hidden = true;
 }
 
 async function refreshTierCodesList() {
@@ -138,7 +189,13 @@ function renderTierCodesList(rows) {
     const metaLine = document.createElement("div");
     metaLine.className = "tier-code-meta";
     const contactText = row.contact ? `${row.contact} · ` : "";
-    metaLine.textContent = `${contactText}Tier ${row.tier}`;
+    // Item 101: zone/issuer only really add information once more than one exists to tell
+    // apart -- the owner (who can see every zone at once) is the one who actually needs this on
+    // screen; a zone-scoped admin only ever sees their own zone/their own issuances anyway.
+    const zoneText = myAdminInfo.owner && row.zone_slug ? ` · ${row.zone_slug}` : "";
+    const issuerText = myAdminInfo.owner && row.issued_by_email ? ` · issued by ${row.issued_by_email}` : "";
+    const ownerDeviceText = row.is_owner_device ? " · OWNER'S DEVICE" : "";
+    metaLine.textContent = `${contactText}Tier ${row.tier}${zoneText}${issuerText}${ownerDeviceText}`;
 
     const codeLine = document.createElement("div");
     codeLine.className = "tier-code-code";
@@ -164,22 +221,36 @@ function renderTierCodesList(rows) {
     // Nothing to revoke on an unclaimed code -- claimed_subscriber_id is already null, and
     // revoke_tier_code only ever clears that column.
     revokeBtn.disabled = !row.is_used;
-    revokeBtn.addEventListener("click", () => handleRevoke(row.code, row.name));
+    revokeBtn.addEventListener("click", () => handleRevoke(row));
 
     item.append(info, statusEl, revokeBtn);
     container.appendChild(item);
   });
 }
 
-async function handleRevoke(code, name) {
-  if (!confirm(`Revoke ${name}'s code? That device loses its tier immediately.`)) return;
+// Item 101: names the person, device, zone, and who issued the code -- the confirmation is the
+// last thing standing between an admin and an irreversible-feeling action, so it names everything
+// that could matter for that decision, not just whose name is on the code.
+async function handleRevoke(row) {
+  const deviceText = row.device || "device";
+  const zoneText = row.zone_slug || "unknown zone";
+  const issuerText = row.issued_by_email || "unknown";
+  const message = `Revoke ${row.name}'s ${deviceText} code?\n\nZone: ${zoneText}\nIssued by: ${issuerText}\n\nThat device loses its tier immediately.`;
+  if (!confirm(message)) return;
 
-  const { data, error } = await adminSupabase.rpc("revoke_tier_code", { p_code: code });
+  const { data, error } = await adminSupabase.rpc("revoke_tier_code", { p_code: row.code });
   if (error || !data) {
-    alert("Couldn't revoke that code -- try again.");
+    if (error?.message?.includes("owner_device_protected")) {
+      alert("This code is flagged as the owner's own device -- only the owner can revoke it.");
+    } else if (error?.message?.includes("not_authorized")) {
+      alert("That code belongs to a different zone -- you can only revoke codes in your own zone.");
+    } else {
+      alert("Couldn't revoke that code -- try again.");
+    }
     return;
   }
   await refreshTierCodesList();
+  if (myAdminInfo.owner) refreshAuditLog();
 }
 
 function setSelectedIssueTier(tier) {
@@ -192,6 +263,11 @@ async function handleIssue() {
   const name = document.getElementById("issue-name-input").value.trim();
   const contact = document.getElementById("issue-contact-input").value.trim();
   const device = document.getElementById("issue-device-input").value.trim();
+  // Both only ever meaningful for the owner -- the server silently ignores/forces these for a
+  // non-owner caller regardless of what's sent (see issue_tier_code's own comment), so it's safe
+  // to always include them rather than branching on myAdminInfo.owner here too.
+  const zone = document.getElementById("issue-zone-input").value.trim();
+  const isOwnerDevice = document.getElementById("issue-owner-device-checkbox").checked;
 
   if (!name) {
     setIssueStatus("Enter a name.", true);
@@ -206,7 +282,9 @@ async function handleIssue() {
     p_name: name,
     p_contact: contact || null,
     p_tier: selectedIssueTier,
-    p_device: device || null
+    p_device: device || null,
+    p_zone_slug: zone || null,
+    p_is_owner_device: isOwnerDevice
   });
 
   submitBtn.disabled = false;
@@ -221,8 +299,11 @@ async function handleIssue() {
   document.getElementById("issue-name-input").value = "";
   document.getElementById("issue-contact-input").value = "";
   document.getElementById("issue-device-input").value = "";
+  document.getElementById("issue-zone-input").value = "";
+  document.getElementById("issue-owner-device-checkbox").checked = false;
   showIssuedCode(code);
   await refreshTierCodesList();
+  if (myAdminInfo.owner) refreshAuditLog();
 }
 
 function showIssuedCode(code) {
@@ -377,6 +458,183 @@ async function handleSetArticleStatus(id, status, titleInput, summaryInput, stat
   }
 
   await Promise.all([refreshPendingArticles(), refreshRecentlyPublished()]);
+  if (myAdminInfo.owner) refreshAuditLog();
+}
+
+// Item 101: owner-only admin management -- ADMINS section is hidden entirely for a non-owner
+// (loadMyAdminInfo), so these are only ever called when myAdminInfo.owner is true.
+async function refreshAdmins() {
+  const { data, error } = await adminSupabase.rpc("list_tier_admins");
+  if (error) {
+    console.error("LIST_TIER_ADMINS_ERROR", error);
+    return;
+  }
+  renderAdminsList(data);
+}
+
+function renderAdminsList(rows) {
+  const container = document.getElementById("admins-list");
+  container.innerHTML = "";
+  if (!rows || rows.length === 0) {
+    container.innerHTML = '<p class="empty-state">No admins yet.</p>';
+    return;
+  }
+
+  rows.forEach((row) => {
+    const item = document.createElement("div");
+    item.className = "admin-row";
+
+    const info = document.createElement("div");
+    info.className = "admin-row-info";
+    const emailLine = document.createElement("div");
+    emailLine.className = "admin-row-email";
+    emailLine.textContent = row.email;
+    const metaLine = document.createElement("div");
+    metaLine.className = "admin-row-meta";
+    metaLine.textContent = row.owner ? "OWNER · all zones" : `Zone: ${row.zone_slug}`;
+    info.append(emailLine, metaLine);
+    item.appendChild(info);
+
+    // Owner row gets no zone/remove controls at all -- ownership isn't changeable here (see the
+    // migration's own comment on why that's deliberately out of scope), and remove_tier_admin
+    // refuses the owner row server-side regardless, so there's nothing these controls could
+    // actually do for that row.
+    if (!row.owner) {
+      const zoneInput = document.createElement("input");
+      zoneInput.className = "suggest-input";
+      zoneInput.type = "text";
+      zoneInput.value = row.zone_slug;
+      zoneInput.style.width = "120px";
+      zoneInput.style.marginTop = "0";
+
+      const saveBtn = document.createElement("button");
+      saveBtn.type = "button";
+      saveBtn.className = "secondary";
+      saveBtn.textContent = "Save Zone";
+      saveBtn.addEventListener("click", () => handleUpdateAdminZone(row.user_id, zoneInput.value.trim(), saveBtn));
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "secondary";
+      removeBtn.textContent = "Remove";
+      removeBtn.addEventListener("click", () => handleRemoveAdmin(row.user_id, row.email));
+
+      item.append(zoneInput, saveBtn, removeBtn);
+    }
+
+    container.appendChild(item);
+  });
+}
+
+function setAdminsStatus(message, isError = false) {
+  const el = document.getElementById("admins-status");
+  el.textContent = message;
+  el.className = isError ? "status-error" : "status-info";
+}
+
+async function handleAddAdmin() {
+  const email = document.getElementById("add-admin-email-input").value.trim();
+  const zone = document.getElementById("add-admin-zone-input").value.trim();
+  if (!email || !zone) {
+    setAdminsStatus("Enter both an email and a zone slug.", true);
+    return;
+  }
+
+  const btn = document.getElementById("add-admin-btn");
+  btn.disabled = true;
+  setAdminsStatus("Adding…");
+
+  const { error } = await adminSupabase.rpc("add_tier_admin", { p_email: email, p_zone_slug: zone });
+  btn.disabled = false;
+
+  if (error) {
+    console.error("ADD_TIER_ADMIN_ERROR", error);
+    setAdminsStatus(
+      error.message?.includes("user_not_found")
+        ? "No account with that email -- create it in the Supabase dashboard first."
+        : "Couldn't add that admin -- try again.",
+      true
+    );
+    return;
+  }
+
+  setAdminsStatus("");
+  document.getElementById("add-admin-email-input").value = "";
+  document.getElementById("add-admin-zone-input").value = "";
+  await refreshAdmins();
+  refreshAuditLog();
+}
+
+async function handleUpdateAdminZone(userId, newZone, triggerBtn) {
+  if (!newZone) return;
+  triggerBtn.disabled = true;
+  const { error } = await adminSupabase.rpc("update_tier_admin_zone", { p_user_id: userId, p_zone_slug: newZone });
+  triggerBtn.disabled = false;
+  if (error) {
+    console.error("UPDATE_TIER_ADMIN_ZONE_ERROR", error);
+    setAdminsStatus("Couldn't update that admin's zone -- try again.", true);
+    return;
+  }
+  setAdminsStatus("");
+  await refreshAdmins();
+  refreshAuditLog();
+}
+
+async function handleRemoveAdmin(userId, email) {
+  if (!confirm(`Remove ${email} as an admin? They immediately lose all admin access.`)) return;
+
+  const { error } = await adminSupabase.rpc("remove_tier_admin", { p_user_id: userId });
+  if (error) {
+    console.error("REMOVE_TIER_ADMIN_ERROR", error);
+    setAdminsStatus("Couldn't remove that admin -- try again.", true);
+    return;
+  }
+  await refreshAdmins();
+  refreshAuditLog();
+}
+
+// Item 101: audit log, owner-only -- read-only, no actions here, just a history of who did what.
+async function refreshAuditLog() {
+  const { data, error } = await adminSupabase.rpc("list_admin_actions");
+  if (error) {
+    console.error("LIST_ADMIN_ACTIONS_ERROR", error);
+    return;
+  }
+  renderAuditLog(data);
+}
+
+function renderAuditLog(rows) {
+  const container = document.getElementById("audit-log-list");
+  container.innerHTML = "";
+  if (!rows || rows.length === 0) {
+    container.innerHTML = '<p class="empty-state">No admin actions logged yet.</p>';
+    return;
+  }
+
+  rows.forEach((row) => {
+    const item = document.createElement("div");
+    item.className = "audit-log-row";
+
+    const info = document.createElement("div");
+    info.className = "audit-log-info";
+    const actionLine = document.createElement("div");
+    actionLine.className = "audit-log-action";
+    actionLine.textContent = row.action;
+    const metaLine = document.createElement("div");
+    metaLine.className = "audit-log-meta";
+    const detailText = row.detail && Object.keys(row.detail).length > 0
+      ? Object.entries(row.detail).map(([k, v]) => `${k}: ${v}`).join(", ")
+      : "";
+    metaLine.textContent = `${row.admin_email || "unknown"} → ${row.target_table}${detailText ? " · " + detailText : ""}`;
+    info.append(actionLine, metaLine);
+
+    const timeEl = document.createElement("div");
+    timeEl.className = "audit-log-time";
+    timeEl.textContent = new Date(row.created_at).toLocaleString();
+
+    item.append(info, timeEl);
+    container.appendChild(item);
+  });
 }
 
 async function refreshRecentlyPublished() {
@@ -461,6 +719,8 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("issue-tier-2-btn").addEventListener("click", () => setSelectedIssueTier(2));
   document.getElementById("issue-submit-btn").addEventListener("click", handleIssue);
   document.getElementById("issued-code-copy-btn").addEventListener("click", handleCopyCode);
+
+  document.getElementById("add-admin-btn").addEventListener("click", handleAddAdmin);
 
   checkExistingSession();
 });
