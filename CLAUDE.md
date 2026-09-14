@@ -149,11 +149,13 @@ beluga vocalizations, not a synthesized tone.
   otherwise): both windows were chosen by scoring every 100ms-stepped window of the source clip on
   loudness (RMS) minus spectral centroid (a "how high-pitched" proxy), favoring loud AND
   low-pitched over just loud alone.
-  - `alert-red`: 11.8s–13.8s (2.0s) of the original clip, mono, fade in 0.08s / fade out 0.28s,
-    light compression (`acompressor=threshold=-18dB:ratio=2.5:attack=20:release=250:makeup=1`),
-    then gained to a measured **-1.0 dBFS peak** (RMS **-17.5 dBFS**; 99.4% of spectral energy
-    below 2kHz, dominant content under 500Hz — nothing near the 6kHz+ range that would read as
-    thin/harsh on a phone speaker).
+  - `alert-red`: 11.8s–14.3s (2.5s — extended from an original 11.8s–13.8s cut that ended just
+    before a louder, more audible squeal; the fade-out was shortened to 0.12s at the same time so
+    that squeal isn't faded away right as it arrives) of the original clip, mono, fade in 0.08s /
+    fade out 0.12s, light compression (`acompressor=threshold=-18dB:ratio=2.5:attack=20:
+    release=250:makeup=1`), then gained to a measured **-1.0 dBFS peak** (RMS **-19.0 dBFS**; 92.0%
+    of spectral energy below 500Hz, 99.0% below 2kHz — nothing near the 6kHz+ range that would
+    read as thin/harsh on a phone speaker).
   - `alert-yellow`: 12.2s–13.4s (1.2s, within the same passage), same fade/compression shape,
     gained to a measured **-6.0 dBFS peak** (RMS **-20.5 dBFS**) — quieter on purpose, the "step
     down" cut for RED → YELLOW, not a new emergency.
@@ -246,6 +248,16 @@ that button or its own descendant, a tap there will hit the wrong thing, e.g. an
 higher-z-index element like the BearingDial). Prefer this over pure bounding-rect-overlap math,
 which can miss a real conflict (or flag a false one) whenever z-index/`pointer-events` decide the
 outcome, not just geometry.
+
+**"Played" is not "audible"** — confirming that a `BufferSourceNode`/`<audio>` element was created
+and `start()`ed (or `.play()`ed) with the right `buffer.duration` only proves playback was
+*attempted*, not that the buffer contains actual signal: a silent (all-zero) buffer passes that
+exact same check. This is a real bug that shipped and went undetected this way (item 87/88's alert
+clips were pure digital silence — `ffmpeg -af volumedetect` showed `-91.0 dB` mean/max on all four
+files — while every "did it play" check kept passing). When verifying audio, always report the
+buffer's actual peak and RMS in dBFS (`ffmpeg -i <file> -af volumedetect -f null -`, or decode it
+in-page via `AudioContext.decodeAudioData` and compute peak/RMS directly from the channel data) —
+never just that playback started.
 
 ### Open items / not yet done
 
