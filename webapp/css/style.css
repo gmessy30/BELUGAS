@@ -2614,10 +2614,28 @@ button.secondary {
 }
 
 /* --- Tier code modal --- */
+/* Item 94: was z-index:900, LOWER than every subpage screen's own z-index:960 (.about-screen,
+   .resources-screen, .news-screen, .alerts-screen, .share-screen -- all position:fixed, each its
+   own stacking context at the body level, same family as the Leaflet-isolation issue documented
+   in CLAUDE.md: two independently-stacked fixed elements competing in the SAME parent stacking
+   context, not a DOM-order question). Since a modal-backdrop's own trigger is very often a button
+   on one of those subpages (confirmed: News Feed's "+ SUGGEST AN ARTICLE OR PAPER" -- the ONLY
+   .modal-backdrop instance actually opened from inside a z-index:960 screen, the rest all launch
+   from Report/Map/List which carry no such elevated z-index), the modal's `hidden` attribute
+   flipped correctly (confirmed via CDP: `hidden` went false, the click handler ran) while the
+   opaque z-index:960 page underneath painted OVER the entire backdrop+card, front to back --
+   not a click-handler wiring bug (item 78b/93 were both ruled out; neither actually touches this
+   code path) but a total, silent visual blackout: the form "opened" in state only, never in
+   pixels, so every control inside it (Cancel included, confirmed via elementFromPoint returning
+   the page behind it, not the button) was equally untappable. Bumped above .presence-banner's
+   970 too (991, still under .picker-overlay's 980... no -- picker-overlay is 980 and splash is
+   1000, so 991 sits cleanly between both) so a modal a user is actively filling out is never
+   partially obscured by the presence banner either, matching every other overlay-above-a-screen
+   relationship already established (picker-overlay 980 > screen 960, splash 1000 > everything). */
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 900;
+  z-index: 991;
   background: rgba(10, 20, 20, 0.5);
   display: flex;
   align-items: center;
