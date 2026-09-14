@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BELUGAS Status Page Sign</title>
+<!--
+  Item 98: a printable sign for the status page (item 97's /webapp/status/), meant to be posted at
+  a boat launch/viewing area so someone without the app can scan straight to the live presence
+  status for that spot. Letter/A4-agnostic on purpose -- no @page size is set here, so the
+  browser's own print dialog lets the person printing pick whichever their printer/paper actually
+  is; only @page margin is set, generous enough to look right either way. Every element below uses
+  absolute CSS units (in/pt), which map to real physical size when printed, unlike px.
+
+  Item 97c: zone-parameterized via ?zone=<slug> (default "kenai", matching the status page's own
+  default) -- print/status-sign.html?zone=turnagain_arm_upper for a different watched zone's own
+  sign, heading text and all. Kenai keeps its own established phrase ("...before you launch",
+  aimed at boaters); every other zone gets a generic parallel phrase built from its own real name.
+  ZONE_DISPLAY_NAMES is a small static lookup (not a live DB call) -- deliberate for a print
+  artifact: a PDF export of this page should never depend on network timing/availability at the
+  moment it's generated, unlike the status page itself (which already needs a live connection to
+  mean anything). Falls back to a readable Title Case of the slug for any zone not in the map.
+
+  Entirely black-on-white -- no reliance on the app's own teal/yellow brand colors anywhere on this
+  page -- so it stays fully legible printed in plain black-and-white/grayscale on an ordinary home
+  printer, per the brief. The QR is generated client-side via qrcodejs (davidshimjs, same CDN
+  build the Share page already uses -- see webapp/index.html), error-correction level H, rather
+  than a pre-baked static SVG -- this page now needs to draw a DIFFERENT QR per ?zone=, so a
+  static per-zone SVG would mean hand-regenerating one file per zone by hand every time a new zone
+  gets flagged banner-watched. Renders synchronously off a fixed URL string (never touches
+  location.origin, so this also works correctly opened directly from disk, e.g. as the source for
+  a headless-Chrome PDF export) -- no network call beyond the CDN script itself, so there's no
+  render-timing race against a print/PDF trigger once that script has loaded.
+-->
+<style>
+  * { box-sizing: border-box; }
+  @page { margin: 0.6in; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    color: #000000;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 100vh;
+    padding: 0.4in 0.3in;
+  }
+  .sign-icon {
+    width: 1.1in;
+    height: 1.1in;
+    margin-bottom: 0.25in;
+  }
+  .sign-heading {
+    font-size: 30pt;
+    font-weight: 800;
+    line-height: 1.25;
+    max-width: 6.5in;
+    margin: 0 0 0.4in;
+  }
+  .sign-qr-wrap {
+    background: #ffffff;
+    border: 3pt solid #000000;
+    padding: 0.25in;
+    margin-bottom: 0.25in;
+    line-height: 0;
+  }
+  /* qrcodejs draws its own canvas/table at the width/height passed to its constructor (below) --
+     sized here in physical inches for print, same reasoning as every other sign element. */
+  #sign-qr-code canvas, #sign-qr-code table, #sign-qr-code img {
+    width: 3.4in !important;
+    height: 3.4in !important;
+  }
+  .sign-url {
+    font-family: "Courier New", Courier, monospace;
+    font-size: 14pt;
+    font-weight: 700;
+    word-break: break-all;
+    max-width: 6in;
+    margin: 0 0 0.6in;
+  }
+  .sign-footer {
+    font-size: 9pt;
+    color: #000000;
+    margin-top: auto;
+    padding-top: 0.3in;
+  }
+</style>
+</head>
+<body>
+  <img class="sign-icon" src="../icons/icon-512.png" alt="">
+  <h1 class="sign-heading" id="sign-heading"></h1>
+
+  <div class="sign-qr-wrap">
+    <div id="sign-qr-code"></div>
+  </div>
+
+  <p class="sign-url" id="sign-url"></p>
+
+  <p class="sign-footer">© 2026 Keen Eye Apps &middot; Artwork © 2026 Luna Montgomery</p>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    // Real deployed origin, hardcoded -- never location.origin (this file is also meant to be
+    // opened directly from disk, e.g. as a headless-Chrome PDF source, where that would resolve
+    // to "file://" instead).
+    var STATUS_PAGE_BASE_URL = "https://gmessy30.github.io/BELUGAS/webapp/status/";
+
+    var ZONE_DISPLAY_NAMES = {
+      kenai: "Kenai",
+      turnagain_arm_upper: "Upper Turnagain Arm",
+      turnagain_arm_mid: "Mid Turnagain Arm",
+      turnagain_arm_northern: "Northern Turnagain Arm",
+      turnagain_arm_southern: "Southern Turnagain Arm",
+      ship_creek_knik_arm_anchorage: "Ship Creek / Knik Arm / Anchorage",
+      lower_inlet_south: "Lower Inlet South",
+      susitna_delta: "Susitna Delta",
+      entire_inlet: "Entire Inlet"
+    };
+
+    function zoneDisplayNameFallback(slug) {
+      return slug.replace(/_/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+    }
+
+    var zoneSlug = new URLSearchParams(window.location.search).get("zone") || "kenai";
+    var zoneName = ZONE_DISPLAY_NAMES[zoneSlug] || zoneDisplayNameFallback(zoneSlug);
+    var statusUrl = zoneSlug === "kenai"
+      ? STATUS_PAGE_BASE_URL
+      : STATUS_PAGE_BASE_URL + "?zone=" + encodeURIComponent(zoneSlug);
+
+    document.getElementById("sign-heading").textContent = zoneSlug === "kenai"
+      ? "Belugas in the river? Scan before you launch."
+      : "Belugas in " + zoneName + "? Scan for the latest.";
+    document.getElementById("sign-url").textContent = statusUrl;
+    document.title = "BELUGAS Status Page Sign — " + zoneName;
+
+    new QRCode(document.getElementById("sign-qr-code"), {
+      text: statusUrl,
+      width: 326, // 3.4in @ 96dpi -- matches the CSS override above, which also covers print's own DPI
+      height: 326,
+      colorDark: "#000000",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.H
+    });
+  </script>
+</body>
+</html>

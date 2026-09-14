@@ -13,6 +13,14 @@ deliberate deviation from native in a code comment rather than silently divergin
   root so Pages doesn't try to run Jekyll over it.
 - Admin page (tier-code issuance) at `/webapp/admin/` — login-gated (Supabase Auth + `tier_admins`
   allow-list), not linked from the main app's menu.
+- Standalone status page (item 97/97b/97c) at `/webapp/status/` — its own `index.html`/`status.js`,
+  deliberately NOT part of the main SPA/service-worker `APP_SHELL`, zone-aware via `?zone=<slug>`
+  (default `kenai`). See that directory's own header comments for the full design.
+- Printable signs (item 98) at `/webapp/print/` — `status-sign.html`/`.pdf` (zone-parameterized,
+  same `?zone=` convention as `/status/`) and `app-sign.html`/`.pdf` (zone-agnostic). PDFs
+  generated via headless Chrome (`chrome --headless --print-to-pdf`); regenerate by hand after any
+  content change to the matching `.html` — no build step ties them together, same as
+  `PRIVACY.html`/`LICENSE.html` below.
 
 ### Service worker
 
@@ -298,15 +306,15 @@ never just that playback started.
 
 ### Open items / not yet done
 
-- **Migration not yet applied**:
-  `supabase/migrations/20260923000000_add_sighting_activities_and_tier1_confirmation.sql` (items
-  90/63 — the ACTIVITIES field + tier-1 confirmation of an existing sighting) has been written but
-  NOT applied — the user reviews the `get_kenai_presence_state` diff first, then applies it
-  themselves via `supabase db query --linked --file <path>`. Until it's applied, the client's own
-  tolerant fallback (`db.js`'s `sightingSchemaHasNewColumns`) keeps everything else working
-  without `activities`/`activity_note`/`confirmed_at`, and `is_tier_one_observer`/`confirm_sighting`
-  simply don't exist yet — CONFIRM SIGHTING stays hidden (`cachedIsTierOneObserver` resolves to
-  `false` on the RPC-not-found error, same as any other failure).
+- **Migration applied and verified** (correcting stale docs — items 90/63):
+  `supabase/migrations/20260923000000_add_sighting_activities_and_tier1_confirmation.sql` IS live
+  — this entry previously (wrongly) said "not yet applied." Found and corrected during item 97b's
+  migration work: querying the linked project's live `get_kenai_presence_state` definition
+  directly showed item 63's `or s.confirmed_at is not null` clause already present, and
+  `is_tier_one_observer`/`confirm_sighting` both already exist with the expected signatures.
+  `activities`/`activity_note`/`confirmed_at` are live on `sightings` too. CONFIRM SIGHTING should
+  work normally now, not stay hidden — worth a real on-device check next time someone's in that
+  flow, since this drift means it was never re-verified after whenever this actually got applied.
 - **Migration applied and verified** (item 91 — article moderation on `webapp/admin/`):
   `supabase/migrations/20260924000000_add_article_moderation_rpcs.sql` is live. Full on-device
   pass confirmed: a real submission via the Suggest form lands as `pending_review` and shows up in
@@ -364,6 +372,46 @@ never just that playback started.
   apply a migration itself" rule above — this migration qualified as low-risk/additive and doesn't
   touch `get_kenai_presence_state`/sightings/`tier_roster`, so it was applied directly rather than
   handed to the user, per that rule's own stated exception.
+- **Migration WRITTEN, NOT applied — needs the user's explicit go-ahead** (item 97b):
+  `supabase/migrations/20260927000000_add_kenai_red_qualifying_sightings_rpc.sql` adds
+  `get_kenai_red_qualifying_sightings`, a new read-only RPC returning the actual RED-qualifying
+  sighting row(s) (position, counts, `travel_bearing_degrees`) for `/webapp/status/`'s RED-state
+  compact map — `get_kenai_presence_state` itself only ever returns the newest qualifying
+  timestamp, never the rows. Its body is the RED-branch logic from `get_kenai_presence_state`
+  copied verbatim (same cycle-low/departure-report ratchet/tier/confirmed/banner-area check) so
+  the map can never show a sighting that isn't actually why the banner is RED. This is exactly the
+  kind of migration CLAUDE.md's own "Hard rule" above exists for (touches
+  `get_kenai_presence_state`'s own logic and sightings data directly) — **do not apply it without
+  showing the user this diff and getting an explicit go-ahead first**, regardless of how
+  mechanical the copy looks. Apply via `supabase db query --linked --file <path>` once approved.
+- **Standalone status page** (items 97/97b/97c) at `/webapp/status/`: full design/rationale lives
+  in that directory's own file header comments (`index.html`, `status.js`,
+  `kenai-landmarks.js`) — summarized here for discoverability. Reads
+  `get_kenai_presence_state`/`get_watched_zone_statuses` directly via `fetch()` (never loads
+  supabase-js) to stay fast on a weak connection; refreshes every 5 minutes while open; zone-aware
+  via `?zone=<slug>` (default `kenai`) for every `is_banner_watched` zone, not just Kenai. RED
+  state additionally shows a compact, lazily-loaded Leaflet map (geofence.js/kenai-landmarks.js
+  also lazy-loaded, only then) of the actual RED-qualifying sighting(s), each with a
+  `travel_bearing_degrees`-rotated direction arrow and a "Last seen … " plain-text line — Kenai
+  gets river-relative "heading upriver/downriver" phrasing (geofence.js's real
+  `KENAI_RIVER_CENTERLINE`) plus the small `kenai-landmarks.js` "near X" lookup; every other zone
+  gets a plain compass point and no landmark (no lookup exists for them). Currently only `kenai` is
+  `is_banner_watched` live, so `?zone=` for anything else renders an honest "UNKNOWN ZONE" state
+  rather than silently substituting Kenai's data — this is expected until/unless another zone gets
+  flagged, not a bug. The Share page's STATUS PAGE chip mode has its own zone picker (only shown
+  when more than one zone is watched), driven by the same `get_watched_zone_statuses` list.
+- **Printable signs** (item 98) at `/webapp/print/`: `status-sign.html` is zone-parameterized (same
+  `?zone=` convention as `/status/`, generates its QR client-side via qrcodejs since it now needs a
+  different code per zone) and keeps Kenai's own established "…before you launch" phrase, with a
+  generic "Belugas in {Zone}? Scan for the latest." for every other zone (`ZONE_DISPLAY_NAMES` is a
+  small static lookup there, deliberately NOT a live DB call — a PDF export shouldn't depend on
+  network timing). `app-sign.html` is zone-agnostic and stays fully static (pre-generated inline
+  SVG QR, `python`'s `qrcode` library, error-correction level H) since the app link never varies by
+  zone. Both signs are deliberately plain black-on-white (no app brand colors) for home-printer
+  grayscale friendliness, and letter/A4-agnostic (`@page` sets only a margin, never a `size`, so
+  the browser's print dialog picks). The two `.pdf` files alongside them were generated via
+  `chrome --headless --print-to-pdf` from each `.html` — regenerate by hand after any content
+  change, same as `PRIVACY.html`/`LICENSE.html`'s own PDF-less but analogous hand-sync convention.
 - **Dead-link handling for the News Feed (item 93c, spec only — not built)**: nightly check
   (pg_cron or a scheduled edge function) does a HEAD/GET on each published article's `source_url`,
   storing `last_checked_at`/`http_status`; two consecutive failures mark it `link_broken`, and the

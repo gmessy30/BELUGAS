@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BELUGAS Status</title>
+<link rel="icon" href="../icons/icon-192.png">
+<!--
+  Item 97: a minimal, standalone presence status page -- own index.html, no menu, no map (except
+  the RED-only compact one, item 97b), and deliberately NOT part of the main app's SPA
+  (index.html/app.js/nav-stack.js) or its Leaflet/markercluster/supabase-js CDN scripts. Meant to
+  load fast over a weak connection (e.g. someone scanning the Share page's "Status page" QR code
+  on 4G while standing at a viewing spot) and show exactly one thing: is a whale expected in the
+  given zone right now.
+
+  Item 97c: zone-aware via ?zone=<slug> (default "kenai" when omitted, matching the original
+  single-zone design). Kenai keeps its own rich tide-gate-aware path (get_kenai_presence_state) --
+  every OTHER zone reads from get_watched_zone_statuses, the SAME RPC the main app's map/banner
+  already use for every non-Kenai zone (see presence-banner.js's rebuildPresenceBannerCards and
+  its own computeBelugaPresenceStatus/effectivePresenceStatus composition, reused verbatim here).
+  Only zones flagged is_banner_watched in the zones table are ever valid here -- see status.js's
+  own header comment for the full split.
+
+  Loads only config.js (SUPABASE_URL/SUPABASE_ANON_KEY) and presence.js (pure RED/YELLOW/BLUE/
+  UNKNOWN status/color/label math, no DOM or supabase-js-client coupling -- confirmed by reading
+  it end to end before reusing it here) from the main app, both tiny and side-effect-free at
+  parse time, so this page can never disagree with the main app about what a color/label means
+  without ever loading the ~40KB+ supabase-js UMD bundle db.js's own getKenaiPresenceState needs --
+  status.js instead calls PostgREST's RPC endpoints directly with plain fetch() calls, same
+  underlying RPCs the main app itself calls, just without the client library or its own init
+  overhead.
+
+  This page lives inside the main service worker's scope (/webapp/) and so IS opportunistically
+  cached by sw.js's generic same-origin fetch handler after a first visit (see that file's own
+  comment on why that's fine: it explicitly bypasses caching for anything cross-origin, which
+  covers every Supabase call this page makes) -- but it's deliberately left OUT of APP_SHELL,
+  since precaching it at PWA-install time would grow the installed app for a page most users will
+  only ever reach via a direct link/QR code, not from within the app itself.
+-->
+<style>
+  :root {
+    --status-fg: #ffffff;
+    --status-fg-dim: rgba(255, 255, 255, 0.78);
+    --status-bg: #616161;
+  }
+  /* Matches presence.js/presence-banner.js's own black-on-yellow convention (see that file's
+     "Item 53" comment) -- white text reads as barely-there against the app's true #FFFF00
+     yellow. */
+  body.on-yellow {
+    --status-fg: #000000;
+    --status-fg-dim: rgba(0, 0, 0, 0.78);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+  }
+  body {
+    background: var(--status-bg);
+    color: var(--status-fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    text-align: center;
+    /* Same color transition every presence-color surface in this app already uses (the banner,
+       the map shading) -- a fresh reading never feels like a jump-cut. */
+    transition: background-color 0.6s ease;
+  }
+  /* Item 97c: which zone this page is showing -- necessary now that more than one exists.
+     Uppercase/letter-spaced like a small eyebrow label sitting above the main status text. */
+  .status-zone-name {
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--status-fg-dim);
+    margin-bottom: 6px;
+  }
+  .status-label {
+    font-size: clamp(1.6rem, 7vw, 3rem);
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    line-height: 1.15;
+    text-transform: uppercase;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    max-width: 640px;
+  }
+  .status-updated {
+    margin-top: 18px;
+    font-size: 0.95rem;
+    color: var(--status-fg-dim);
+    min-height: 1.3em;
+  }
+  /* Item 97b: RED-only compact map of the actual RED-qualifying sighting(s) -- see status.js's
+     own header comment for why this whole block (Leaflet, geofence.js's river centerline,
+     kenai-landmarks.js) is lazy-loaded only once the status is actually RED, never on the far
+     more common YELLOW/BLUE path. isolation:isolate is REQUIRED on any element hosting an
+     L.map(...) instance in this app -- see CLAUDE.md's "Known pattern: Leaflet's internal z-index
+     escapes an unisolated container" -- without it Leaflet's own internal panes (tile pane
+     z-index 200+) would escape this container and paint over the last-seen line/link below it. */
+  .status-map-wrap {
+    margin-top: 20px;
+    width: 100%;
+    max-width: 420px;
+  }
+  #status-map {
+    width: 100%;
+    height: 220px;
+    border-radius: 12px;
+    isolation: isolate;
+    background: #cfd8dc;
+  }
+  .status-last-seen-line {
+    margin-top: 12px;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    color: var(--status-fg);
+  }
+  /* qrcodejs-style permanent tooltip labels (Leaflet's own .leaflet-tooltip), styled to read
+     clearly against the map's own tiles regardless of status color -- always white-on-dark since
+     the map itself is never yellow, unlike the rest of this page. */
+  .status-sighting-tooltip {
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .status-sighting-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #C62828;
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+  /* Rotated via inline style (transform: rotate(...)) per-marker, from travel_bearing_degrees --
+     a simple triangle pointing "up" (0deg = north) before rotation, same convention as the main
+     app's own BearingDial. Only added to a marker's icon when a bearing is actually known. */
+  .status-sighting-arrow {
+    width: 0;
+    height: 0;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-bottom: 14px solid #C62828;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    margin-left: -7px;
+    margin-top: -22px;
+    transform-origin: 7px 22px;
+  }
+  .status-open-app-link {
+    position: fixed;
+    left: 50%;
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%);
+    color: var(--status-fg);
+    opacity: 0.85;
+    font-size: 0.85rem;
+    text-decoration: none;
+    border: 1px solid var(--status-fg-dim);
+    border-radius: 999px;
+    padding: 8px 18px;
+  }
+  .status-open-app-link:active {
+    opacity: 1;
+  }
+</style>
+</head>
+<body>
+  <div class="status-zone-name" id="status-zone-name"></div>
+  <div class="status-label" id="status-text" role="status" aria-live="polite">LOADING…</div>
+  <div class="status-updated" id="status-updated"></div>
+
+  <!-- Item 97b: RED only -- populated/shown by status.js's renderRedMap/renderLastSeenLine,
+       hidden (and left empty) for every other status. -->
+  <div class="status-map-wrap" id="status-map-wrap" hidden>
+    <div id="status-map"></div>
+    <div class="status-last-seen-line" id="status-last-seen-line"></div>
+  </div>
+
+  <a class="status-open-app-link" href="../">Open the full app →</a>
+
+  <script src="../js/config.js"></script>
+  <script src="../js/presence.js"></script>
+  <script src="status.js"></script>
+</body>
+</html>

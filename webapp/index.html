@@ -190,7 +190,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v87</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v88</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -318,8 +318,25 @@
     </div>
 
     <div class="subpage-content">
+      <!-- Item 97c: one QR/link/copy/share block, driven by which chip is selected -- APP is the
+           default every time this page is freshly opened (openSharePage), same "fresh entry
+           resets to the default" convention item 93's search page established for its own chips.
+           Reuses .news-filter-row/.news-filter-chip as-is (generic pill-chip styling, not actually
+           News Feed-specific) rather than duplicating nearly-identical CSS under a new name. -->
+      <div class="news-filter-row">
+        <button id="share-chip-app" class="news-filter-chip active" data-kind="app">APP</button>
+        <button id="share-chip-status" class="news-filter-chip" data-kind="status">STATUS PAGE</button>
+      </div>
+
+      <!-- Item 97c: only shown while the STATUS PAGE chip above is selected -- one zone's QR at a
+           time (same "show one at a time" rule the APP/STATUS PAGE chips themselves follow).
+           Populated lazily (share.js's ensureShareZonesLoaded) from get_watched_zone_statuses,
+           filtered server-side to is_banner_watched zones -- the same live list the status page's
+           own "unknown zone" fallback is checked against, so a zone can never appear here that the
+           status page itself wouldn't recognize. -->
+      <div class="news-filter-row" id="share-zone-row" hidden></div>
+
       <div class="subpage-section">
-        <div class="section-title">APP LINK</div>
         <p id="share-url-text" class="share-url-text"></p>
         <button id="share-copy-btn" class="secondary share-action-btn" type="button">📋 Copy Link</button>
       </div>
@@ -340,7 +357,10 @@
              QR's own pixel data -- visually identical to a scanner either way, and far simpler
              than canvas manipulation. High error-correction (level H, ~30% redundancy) is what
              makes overlaying anything here safe at all -- see share.js's own comment on why the
-             icon is capped at ~22% of the code's width instead of dropping the level down. -->
+             icon is capped at ~22% of the code's width instead of dropping the level down.
+             share.js's renderShareQrCode clears and redraws #share-qr-code from scratch on every
+             chip switch (qrcodejs has no "update the text" API), so this stays the single QR
+             element in the DOM regardless of which link is selected. -->
         <div id="share-qr-container" class="share-qr-container">
           <div id="share-qr-code"></div>
           <div class="share-qr-icon-wrap">
