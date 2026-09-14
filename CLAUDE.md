@@ -94,6 +94,23 @@ Claude), so never omit it:
 & "$env:LOCALAPPDATA\supabase-cli\supabase.exe" db query --linked --file supabase\migrations\<FILENAME>.sql
 ```
 
+**When Claude may apply a migration itself** (as opposed to always handing the user the line
+above): only for a small, additive, low-risk change — the kind where the blast radius is obvious
+from reading the file, e.g. widening an existing RLS policy's role list or adding a genuinely new
+policy/grant. Even then, show the migration's content (or diff) in the same message before running
+it — applying it silently is never appropriate regardless of how low-risk it looks.
+
+**Hard rule, no exception for "it looked safe": never apply a migration that touches
+`get_kenai_presence_state`, sightings data (the `sightings` table itself, or any RPC/column that
+reads or writes it), or `tier_roster` (including the RPCs that are tier_roster's only door in --
+`issue_tier_code`, `redeem_tier_code`, `list_tier_codes`, `revoke_tier_code`) without first showing
+the user the full diff and getting an explicit go-ahead.** These three are the app's core
+observer-tier and presence-state logic — get_kenai_presence_state in particular has already had
+its own header comment rewritten well over a dozen times chasing subtle gate-timing bugs (see its
+migration history, 20260903030000 through 20260923000000) precisely because small-looking changes
+here have repeatedly had non-obvious real-world effects. This applies no matter how small the
+change looks, and regardless of the general allowance above for low-risk additive changes.
+
 ### Legal pages
 
 `PRIVACY.html` and `LICENSE.html` at the **repo root** (not under `webapp/`) are static, hand-
@@ -324,6 +341,29 @@ never just that playback started.
   from the still-authenticated Stylus session now succeeds (`{ok:true}`), and a crafted
   self-publish attempt (`status = 'published'`) as `anon` is still correctly rejected — the
   tightened check didn't loosen anything else.
+- **Migration applied and verified** (item 96 follow-up — full audit for the same anon-only gap):
+  `supabase/migrations/20260926000000_widen_anon_only_policies_to_authenticated.sql` is live.
+  Queried the linked project directly (`pg_policies` for schemas `public` and `storage`, plus
+  every `public.*` function's actual EXECUTE grants via `pg_proc`/`aclexplode`) rather than
+  trusting migration file text, same lesson as item 96 itself. Found 10 policies still scoped
+  `to anon` only: `device_tokens` (INSERT/SELECT/UPDATE — register, the upsert-conflict SELECT,
+  and refresh), `kenai_departure_reports` (SELECT), `subscriptions` (INSERT/SELECT/UPDATE/DELETE),
+  and `storage.objects` for the `sighting-photos` bucket (INSERT/UPDATE). Fixed with
+  `alter policy ... to anon, authenticated` (a pure role-widening, no check-expression changes
+  needed, unlike item 96's own fix) so each keeps its original name/identity. Confirmed clean
+  elsewhere: every `public.*` function already grants EXECUTE to both roles wherever it grants to
+  anon at all (Supabase's default-privileges template applies regardless of what any one
+  migration's own `grant ... to anon;` line says) — tier-code redemption specifically was already
+  fine; `sightings`' own insert/read policies are already `to public`, which already covers
+  authenticated; and `tier_roster`/`tier_code_redeem_attempts`/`subscriber_identities`/
+  `tier_admins` have RLS enabled with zero table-level policies for anon OR authenticated by
+  design (RPC-only access, see "Tier codes" above), so there was no anon-only policy to widen
+  there. Re-verified on-device post-fix on the same authenticated Stylus session: a real
+  `registerDeviceToken()` upsert and a real `createPointSubscription()` insert both now succeed
+  (previously would have hit the same 42501 as item 96). See CLAUDE.md's own new "When Claude may
+  apply a migration itself" rule above — this migration qualified as low-risk/additive and doesn't
+  touch `get_kenai_presence_state`/sightings/`tier_roster`, so it was applied directly rather than
+  handed to the user, per that rule's own stated exception.
 - **Dead-link handling for the News Feed (item 93c, spec only — not built)**: nightly check
   (pg_cron or a scheduled edge function) does a HEAD/GET on each published article's `source_url`,
   storing `last_checked_at`/`http_status`; two consecutive failures mark it `link_broken`, and the
