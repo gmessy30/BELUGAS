@@ -162,6 +162,11 @@ beluga vocalizations, not a synthesized tone.
   - Encoded to both `.mp3` (libmp3lame, 96kbps) and `.ogg` (libvorbis, q:a 4) — small files
     (11–25KB each), `presence-alert.js` tries mp3 first, falls back to ogg. Re-verify with
     `volumedetect` after any future re-cut — it would have caught this bug immediately.
+- **iOS behavior, documented not fixed**: plain Web Audio API playback (this app's own
+  `AudioContext`, no special audio-session category) respects the iPhone's physical Ring/Silent
+  switch — flip it to silent and the alert sound is silenced along with everything else in-page,
+  while `navigator.vibrate` and the local notification still fire. Noted on Resources' "HOW TO USE
+  THIS APP" so this reads as expected platform behavior, not a bug report.
 
 ### Live device inspection (adb + Chrome DevTools Protocol)
 
