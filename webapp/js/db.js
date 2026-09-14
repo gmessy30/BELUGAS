@@ -495,8 +495,19 @@ async function getArticles(contentType) {
 /**
  * Submits a user-suggested article/paper. Always lands as pending_review (the RLS insert policy
  * enforces this server-side too, via a WITH CHECK, not just relying on the column default) --
- * matches SupabaseApi.submitArticle exactly. No moderation UI yet, so approval is a manual
- * status edit in the Supabase dashboard, same as native.
+ * matches SupabaseApi.submitArticle exactly. Moderation itself (publish/reject) is now a real
+ * in-app admin queue (item 91, webapp/admin/), not a manual dashboard edit.
+ *
+ * Item 95: returns a result object, not a plain boolean -- {ok:false} alone can't tell the caller
+ * WHY it failed, which is exactly what made every failure here render as the same generic "check
+ * your connection" text regardless of cause. `error.code` is the distinguishing signal: a real
+ * PostgREST/Postgres rejection (RLS violation, constraint, etc.) always carries a non-empty
+ * SQLSTATE-shaped code (e.g. "42501"); supabase-js's own fetch wrapper catches a genuine
+ * network-level failure (offline, DNS, CORS, a dropped connection) and reports it as an error
+ * object with an EMPTY code and just a raw message like "Failed to fetch" -- confirmed against
+ * this exact client version (dist/umd/supabase.min.js@2 loaded in index.html) by forcing both
+ * shapes live: an explicit RLS violation (status:'published' in the payload) came back
+ * {code:"42501", message:"new row violates row-level security policy..."}, matching this.
  */
 async function submitArticle(title, sourceUrl, summary, submittedBy, contentType) {
   const { error } = await supabaseClient.from("articles").insert({
@@ -509,9 +520,13 @@ async function submitArticle(title, sourceUrl, summary, submittedBy, contentType
 
   if (error) {
     console.error("ARTICLE_SUBMIT_ERROR", error);
-    return false;
+    return {
+      ok: false,
+      isNetworkError: !error.code,
+      message: error.message || null
+    };
   }
-  return true;
+  return { ok: true };
 }
 
 /**

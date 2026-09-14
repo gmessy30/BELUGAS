@@ -125,15 +125,23 @@ async function submitSuggestedArticle() {
   statusEl.textContent = "Submitting…";
   statusEl.className = "status-info";
 
-  const ok = await submitArticle(title, url, note || null, name || null, suggestArticleType);
+  const result = await submitArticle(title, url, note || null, name || null, suggestArticleType);
 
   submitBtn.disabled = false;
-  if (ok) {
+  if (result.ok) {
     statusEl.textContent = "Thanks! Submitted for review -- it'll appear here once approved.";
     statusEl.className = "status-info";
     setTimeout(closeSuggestArticleModal, 1500);
-  } else {
+  } else if (result.isNetworkError) {
+    // Item 95: only the genuinely network-shaped failure (empty error.code, see submitArticle's
+    // own comment) gets this text -- a real server-side rejection below gets its own message
+    // instead, so a rejection never again reads as a connectivity problem.
     statusEl.textContent = "Couldn't submit -- check your connection and try again.";
+    statusEl.className = "status-error";
+  } else {
+    statusEl.textContent = result.message
+      ? `Couldn't submit: ${result.message}`
+      : "Couldn't submit -- the server rejected this submission.";
     statusEl.className = "status-error";
   }
 }
