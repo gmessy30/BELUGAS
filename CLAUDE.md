@@ -79,6 +79,21 @@ Supabase Auth is not enough on its own.
 project (via `supabase db query --linked --file <path>`) — don't tell the user to run them again.
 **Convention: apply migrations via that CLI command, never the Supabase web SQL editor.**
 
+**Standard way the user applies a migration by hand:** `tools\apply-latest-migration.ps1` — finds
+the newest file in `supabase\migrations\`, prints its name, asks for a Y/N confirm, then runs it
+via the same CLI command below and prints the result. Point the user at this script rather than
+having them type the raw command, unless they specifically want to apply something other than the
+newest migration.
+
+**Whenever a migration file is created, end that message with the exact PowerShell line the user
+runs to apply it** (real filename filled in, in its own code block) — this is not a security risk
+(it uses the linked project's own saved credentials, and the user is the one who runs it, never
+Claude), so never omit it:
+
+```powershell
+& "$env:LOCALAPPDATA\supabase-cli\supabase.exe" db query --linked --file supabase\migrations\<FILENAME>.sql
+```
+
 ### Legal pages
 
 `PRIVACY.html` and `LICENSE.html` at the **repo root** (not under `webapp/`) are static, hand-
