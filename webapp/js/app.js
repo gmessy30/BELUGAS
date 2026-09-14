@@ -96,6 +96,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initResourcesPage();
   initSharePage();
   initNewsFeedPage();
+  initExportPage();
   initAlertsPage();
   initPresenceBanner();
   // Item 87: must come AFTER initPresenceBanner -- both register an onPresenceStateChanged

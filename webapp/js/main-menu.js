@@ -7,8 +7,8 @@
 // Item set/order/wording here mirrors native's own menu order exactly: Camera (CAMERA),
 // Report Manually (REPORT MANUALLY -- opens ManualLoggingScreen.kt's port directly, see
 // openManualReportFlow in submit-view.js), Sightings List, Sightings Map, News Feed, Resources,
-// About, Alerts, in that same relative order. EXPORT DATA has no web equivalent yet, so it's
-// just omitted rather than reordering what's left. "Share" (item 43) is appended after Alerts --
+// About, Export Data (item 100), Alerts, in that same relative order. "Share" (item 43) is
+// appended after Alerts --
 // a genuinely web-only addition with no native counterpart at all (native is distributed through
 // the app stores, which already have their own listing/share mechanics), so it has no "correct"
 // native position to match; tacked on at the end rather than interleaved into the ported order.
@@ -124,6 +124,17 @@ function initMainMenu() {
     openAboutPage();
     pushNavLayer("about-page", () => {
       document.getElementById("about-page").hidden = true;
+      menu.hidden = false;
+    });
+  });
+
+  // Item 100: same nav-stack pattern as every other full-screen page above, positioned here (not
+  // after Alerts/Share below) to match native's own menu order -- see index.html's own comment.
+  document.getElementById("menu-export-item").addEventListener("click", () => {
+    menu.hidden = true;
+    openExportPage();
+    pushNavLayer("export-page", () => {
+      document.getElementById("export-page").hidden = true;
       menu.hidden = false;
     });
   });

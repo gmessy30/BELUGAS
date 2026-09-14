@@ -633,3 +633,29 @@ async function confirmSighting(sightingId, subscriberId) {
   }
   return data === true;
 }
+
+/**
+ * Item 100: raw rows for the Export Data page -- matches SupabaseApi.exportSightings' own RPC
+ * call (native's ExportScreen.kt/ExportUtils.kt is this feature's reference; see export-view.js's
+ * own header comment for the full port/deviation notes). Returns the FULL row shape
+ * export_sightings itself returns (including observer_id/observer_tier/subscriber_id-adjacent
+ * columns the RPC happens to return) -- export-view.js's own CSV/GeoJSON builders are what
+ * actually narrow this down to the public-only field allowlist before anything is ever offered
+ * for download, so this wrapper stays a plain, honest passthrough of what the RPC returns rather
+ * than duplicating that filtering logic here too.
+ */
+async function exportSightings(startMs, endMs, minLat, maxLat, minLng, maxLng) {
+  const { data, error } = await supabaseClient.rpc("export_sightings", {
+    p_start_ms: startMs,
+    p_end_ms: endMs,
+    p_min_lat: minLat,
+    p_max_lat: maxLat,
+    p_min_lng: minLng,
+    p_max_lng: maxLng
+  });
+  if (error) {
+    console.error("EXPORT_SIGHTINGS_FETCH_ERROR", error);
+    return null;
+  }
+  return data ?? [];
+}

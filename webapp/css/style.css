@@ -1080,6 +1080,41 @@ button.text-link {
   overflow: hidden;
 }
 
+/* Item 100: same position:fixed/z-index:960 subpage treatment as .share-screen/.alerts-screen/
+   .news-screen/.about-screen/.resources-screen -- see the tier-code modal's own comment below for
+   why this specific value matters (a lower z-index there silently painted UNDER these screens). */
+.export-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 960;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.export-date-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.export-date-input {
+  flex: 1;
+  margin-top: 0;
+}
+
+.export-date-sep {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.85rem;
+}
+
+.export-row-count {
+  color: #ffffff;
+  font-size: 0.9rem;
+  margin: 0 0 12px;
+  min-height: 1.3em;
+}
+
 .share-url-text {
   color: #ffffff;
   font-family: monospace;
@@ -2643,8 +2678,9 @@ button.secondary {
 
 /* --- Tier code modal --- */
 /* Item 94: was z-index:900, LOWER than every subpage screen's own z-index:960 (.about-screen,
-   .resources-screen, .news-screen, .alerts-screen, .share-screen -- all position:fixed, each its
-   own stacking context at the body level, same family as the Leaflet-isolation issue documented
+   .resources-screen, .news-screen, .alerts-screen, .share-screen, .export-screen -- all
+   position:fixed, each its own stacking context at the body level, same family as the
+   Leaflet-isolation issue documented
    in CLAUDE.md: two independently-stacked fixed elements competing in the SAME parent stacking
    context, not a DOM-order question). Since a modal-backdrop's own trigger is very often a button
    on one of those subpages (confirmed: News Feed's "+ SUGGEST AN ARTICLE OR PAPER" -- the ONLY

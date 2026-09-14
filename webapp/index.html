@@ -131,6 +131,11 @@
     <button id="menu-news-feed-item" class="menu-nav-item">News Feed</button>
     <button id="menu-resources-item" class="menu-nav-item">Resources</button>
     <button id="menu-about-item" class="menu-nav-item">About</button>
+    <!-- Item 100: EXPORT DATA -- previously web-only-missing (native's own menu order has this
+         between About and Alerts; PRIVACY.md already promises a public data download this page
+         is what actually delivers). Ported from native's ExportScreen.kt/ExportUtils.kt -- see
+         export-view.js's own header comment for the full field-allowlist/format deviations. -->
+    <button id="menu-export-item" class="menu-nav-item">Export Data</button>
     <button id="menu-alerts-item" class="menu-nav-item">Alerts</button>
     <!-- Item 43: web-only, no native equivalent (native is distributed via the app stores, which
          already have their own share/listing mechanics) -- opens share.js's dedicated page. -->
@@ -190,7 +195,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v89</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v90</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -295,16 +300,18 @@
            time, and shouldn't push the credits/artwork/share attributions above it around as it
            does. -->
       <div class="subpage-section">
-        <div class="section-title">WHAT'S NEW -- SEPTEMBER 27, 2026</div>
+        <div class="section-title">WHAT'S NEW -- SEPTEMBER 28, 2026</div>
         <ul class="tip-list">
-          <li>Red and yellow presence alerts now play a real sound -- actual beluga vocalizations, not silence.</li>
+          <li>Red and yellow presence alerts now play a real sound -- actual beluga vocalizations, not silence -- with a toggle and a preview button in the menu so you can hear it before deciding.</li>
+          <li>Added a Share page with a QR code, for handing someone your phone or a link instead of spelling out the app name.</li>
+          <li>Added a standalone status page you can bookmark or share -- shows just the current beluga status, no need to open the full app.</li>
+          <li>Printable signs with a QR code to that status page are now available, for posting at a boat launch or viewing spot.</li>
           <li>Reporting can now note what the whales were doing -- travelling, milling, feeding, and more.</li>
           <li>Trusted observers can now confirm someone else's sighting, adding extra confidence to a report.</li>
           <li>Suggested articles and papers now go through a real review queue before showing up in the News Feed.</li>
           <li>The reporting map's RECENTER button now centers on your real location with one tap.</li>
           <li>The News Feed has a search box now, so you can find a specific article without scrolling.</li>
-          <li>Added a standalone status page you can bookmark or share -- shows just the current beluga status, no need to open the full app.</li>
-          <li>Printable signs with a QR code to that status page are now available, for posting at a boat launch or viewing spot.</li>
+          <li>Added an Export Data page -- download public sighting data as CSV or GeoJSON, no account needed.</li>
         </ul>
       </div>
     </div>
@@ -437,12 +444,13 @@
 
       <div class="subpage-section">
         <div class="section-title">HOW TO USE THIS APP</div>
-        <p class="section-body">To log a sighting: tap Camera and take a photo, or skip it if you don't have one. Then pan the map so the crosshair marks where the whale actually was, and drag the ring around it if you know which way it was heading. Enter how many you saw and confirm. No photo at all? Report Manually skips straight to that same map.</p>
+        <p class="section-body">To log a sighting: tap Camera and take a photo, or skip it if you don't have one. Then pan the map so the crosshair marks where the whale actually was -- tap MY LOCATION to center the map on where you're standing as a starting point -- and drag the ring around it if you know which way it was heading. If you noticed what the whales were doing, tag it under ACTIVITIES (travelling, milling, feeding, and a few others). Enter how many you saw and confirm. No photo at all? Report Manually skips straight to that same map.</p>
         <p class="section-body">This app asks for the whale's position, not yours -- that's deliberate. A report is far more useful to other observers and researchers when it marks where the animal actually was, so take the extra moment to centre the crosshair there rather than just leaving it on your own location.</p>
         <p class="section-body">Many good viewing spots along the Kenai and Kasilof are on or accessed through private property. Always get permission before crossing a fence line or cutting through someone's yard to reach the water -- public road pullouts and posted public access points exist for a reason.</p>
         <p class="section-body">The blue banner shows the earliest time the rising tide is deep enough for belugas to enter the river -- they're often visible milling in the inlet before that. Red means someone has actually seen them in the current tide cycle, and tapping it jumps straight to the map. Yellow is a caution: a verified sighting in the last few cycles, but none confirmed right now. Both yellow and blue show the same next-window estimate; yellow just means it's happened recently.</p>
-        <p class="section-body">Reporting is open to anyone -- no account or login needed. A small number of credentialed observers carry a verification code that unlocks a couple of extra tools, like confirming once a group has clearly moved on from a watched area.</p>
-        <p class="section-body">Sound Alerts (in the menu) plays a short alert and vibrates when a zone's status steps up to red, or back down from red to yellow. On iPhone, this respects your phone's physical Ring/Silent switch -- flip it to silent and the alert sound stays silent too, same as any other in-page audio; vibration and the notification itself still happen.</p>
+        <p class="section-body">Reporting is open to anyone -- no account or login needed. A small number of credentialed (tier-1) observers carry a verification code that unlocks a couple of extra tools: confirming once a group has clearly moved on from a watched area, and vouching for another observer's already-submitted sighting to give it extra confidence -- look for a CONFIRM option on a sighting's own details.</p>
+        <p class="section-body">The Share page (in the menu) has a QR code for the full app, plus its own QR code for a standalone status page -- good for sending someone a quick beluga-status check without asking them to install anything. Both work as plain links too, and the status page is bookmarkable on its own.</p>
+        <p class="section-body">Sound Alerts, in the menu, plays a short alert and vibrates when a zone's status steps up to red, or back down from red to yellow -- tap it to turn the sound on or off, or tap the preview button next to it to hear the alert before deciding. On iPhone, this respects your phone's physical Ring/Silent switch -- flip it to silent and the alert sound stays silent too, same as any other in-page audio; vibration and the notification itself still happen.</p>
       </div>
       <hr class="section-divider">
 
@@ -542,6 +550,50 @@
       <div id="same-point-list" class="same-point-list"></div>
       <div class="modal-actions">
         <button id="same-point-close-btn" class="secondary" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Item 100: EXPORT DATA -- ported from native's ExportScreen.kt (the explicit reference for
+       this feature), then narrowed to this app's own data-model/privacy conventions -- see
+       export-view.js's own header comment for the full field-allowlist/format/scope deviations
+       (no region/zone picker, GeoJSON alongside CSV, all-time default, row count shown first). -->
+  <div id="export-page" class="export-screen mae-background" hidden>
+    <div class="subpage-top-row">
+      <h1 class="subpage-title">EXPORT DATA</h1>
+      <button id="export-back-btn" class="subpage-back-btn">← BACK</button>
+    </div>
+
+    <div class="subpage-content">
+      <div class="subpage-section">
+        <div class="section-title">DATE RANGE</div>
+        <p class="section-body">Leave either side blank for all time.</p>
+        <div class="export-date-row">
+          <input type="date" id="export-start-date" class="suggest-input export-date-input" aria-label="Start date">
+          <span class="export-date-sep">to</span>
+          <input type="date" id="export-end-date" class="suggest-input export-date-input" aria-label="End date">
+        </div>
+      </div>
+      <hr class="section-divider">
+
+      <div class="subpage-section">
+        <div class="section-title">FORMAT</div>
+        <div class="news-filter-row">
+          <button id="export-format-csv" class="news-filter-chip active" type="button">CSV</button>
+          <button id="export-format-geojson" class="news-filter-chip" type="button">GEOJSON</button>
+        </div>
+      </div>
+      <hr class="section-divider">
+
+      <div class="subpage-section">
+        <p id="export-row-count" class="export-row-count" aria-live="polite"></p>
+        <button id="export-download-btn" class="primary share-action-btn" type="button" disabled>⬇ DOWNLOAD</button>
+        <p id="export-status" class="status-info" hidden></p>
+        <p class="section-body" style="margin-top: 16px;">
+          Only public sighting data is included -- position, time, counts, travel direction,
+          activities, photo link, and whether a trusted observer confirmed it. No reporter
+          identity of any kind is ever exported.
+        </p>
       </div>
     </div>
   </div>
@@ -1176,6 +1228,7 @@
   <script src="js/about.js"></script>
   <script src="js/resources.js"></script>
   <script src="js/news-feed.js"></script>
+  <script src="js/export-view.js"></script>
   <script src="js/subscriptions.js"></script>
   <script src="js/presence-banner.js"></script>
   <script src="js/presence-alert.js"></script>

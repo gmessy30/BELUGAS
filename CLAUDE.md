@@ -37,6 +37,16 @@ scrollable content, so it's always visible regardless of scroll position or the 
 state. No build step ties the two together: bump `.about-version`'s number by hand every time
 `CACHE_NAME` changes, so they never drift apart.
 
+**Standing rule: every commit that ships a user-visible change updates About's WHAT'S NEW section
+in the SAME commit** — not a later cleanup pass. This was not being followed (items 87/88/90/63/91/
+92/93/97/97b/97c/98 all shipped without a WHAT'S NEW update, caught and backfilled all at once by
+item 99) — the whole point of catching it is to stop doing that again, not to have caught it once.
+`.about-version`'s own bump-on-every-push discipline (above) is the model to match: WHAT'S NEW
+should never again need a dedicated backfill pass. Resources' "HOW TO USE THIS APP" section
+(`webapp/index.html`) is held to the same standard whenever a change affects something that section
+actually describes (a reporting-flow control, a banner-color meaning, a menu item's behavior) —
+it drifted out of date the same way WHAT'S NEW did, for the same reason.
+
 ### Known pattern: Leaflet's internal z-index escapes an unisolated container
 
 Leaflet's bundled CSS gives its own internal panes real z-index values (tile pane 200, overlay
@@ -412,6 +422,31 @@ never just that playback started.
   the browser's print dialog picks). The two `.pdf` files alongside them were generated via
   `chrome --headless --print-to-pdf` from each `.html` — regenerate by hand after any content
   change, same as `PRIVACY.html`/`LICENSE.html`'s own PDF-less but analogous hand-sync convention.
+- **EXPORT DATA page** (item 100, `webapp/js/export-view.js`): the one deliberate PWA↔native
+  parity exception — direction is normally PWA→native (PWA is authoritative when the two
+  disagree), but this page had no PWA equivalent at all despite `PRIVACY.md` already promising a
+  public data download, so native's `ExportScreen.kt`/`ExportUtils.kt` was the explicit reference
+  to port FROM, then narrowed to this app's own current data-model/privacy conventions on top.
+  Menu position matches native exactly (About → Export Data → Alerts). Calls `export_sightings`
+  (already updated for `activities`/`confirmed_at`) across the full `OUTER_GEOFENCE_*` bounding
+  box — no region/zone picker, unlike native's `Regions.ALL` + per-region named zones, since this
+  app has never exposed a region concept anywhere else in its own UI. Exports CSV or GeoJSON (not
+  native's CSV-only, optionally zipped with a `photos/` folder — this app links `photo_url`
+  directly in both formats instead of bundling actual image bytes) with a plain HTML date-range
+  picker defaulting to ALL TIME (native defaults to a trailing 30 days — an explicit, deliberate
+  difference for this item, not an oversight), and shows the matching row count BEFORE download
+  (native has no such preview). **Field allowlist is the actual privacy boundary, enforced by
+  construction**: `export-view.js`'s `buildExportCsv`/`buildExportGeoJson` only ever read
+  position/time/counts/`travel_bearing_degrees`/`activities`/`activity_note`/`photo_url`/a
+  `confirmed` boolean (`confirmed_at != null`) off each row — never `subscriber_id`,
+  `confirmed_by_subscriber_id`, `observer_id`, or `observer_tier`, even though
+  `export_sightings`' own RPC response includes several of those (confirmed directly against its
+  live return columns during this item's own work) — narrower than native's own CSV, which also
+  includes `observer_type`/`is_geofence_verified`/`observer_tier`/`position_source`/
+  `uncertainty_*`/`travel_bearing_source`. Verified end-to-end on a real device via CDP + adb: a
+  real CSV and a real GeoJSON file both actually landed in `/sdcard/Download/` on Android Chrome
+  (`Browser.setDownloadBehavior` over CDP, `adb pull` to inspect the bytes), confirming the field
+  list matches this allowlist exactly with nothing extra leaking through.
 - **Dead-link handling for the News Feed (item 93c, spec only — not built)**: nightly check
   (pg_cron or a scheduled edge function) does a HEAD/GET on each published article's `source_url`,
   storing `last_checked_at`/`http_status`; two consecutive failures mark it `link_broken`, and the
