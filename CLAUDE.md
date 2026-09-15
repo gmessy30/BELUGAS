@@ -90,8 +90,7 @@ that table. Admin-only RPCs (`issue_tier_code`, `list_tier_codes`, `revoke_tier_
 require the caller's `auth.uid()` to be listed in `tier_admins` — being merely logged in via
 Supabase Auth is not enough on its own.
 
-**Admin roles/zones/audit log (item 101, PENDING — migration written, NOT yet applied as of this
-writing; see "Migrations" below for the applied/pending list)**: `tier_admins` carries an `owner`
+**Admin roles/zones/audit log (item 101, APPLIED — see "Migrations" below)**: `tier_admins` carries an `owner`
 boolean (exactly one such row ever, enforced by a partial unique index — keeneyeapps@gmail.com is
 the owner) and a `zone_slug`. A non-owner admin's every action (`issue_tier_code`/
 `list_tier_codes`/`revoke_tier_code`) is scoped server-side to their own zone, not just hidden in
@@ -397,18 +396,41 @@ never just that playback started.
   apply a migration itself" rule above — this migration qualified as low-risk/additive and doesn't
   touch `get_kenai_presence_state`/sightings/`tier_roster`, so it was applied directly rather than
   handed to the user, per that rule's own stated exception.
-- **Migration WRITTEN, NOT applied — needs the user's explicit go-ahead** (item 101):
-  `supabase/migrations/20260929000000_add_tier_admin_roles_zones_and_audit_log.sql` adds owner/
-  zone scoping to `tier_admins`/`tier_roster` and a new `admin_actions` audit log — full design in
-  this file's own "Tier codes" section above, full reasoning (including one flagged design
-  assumption — how "a device the owner holds" is represented, since nothing in the existing schema
-  links a `tier_admins` row to a specific `tier_roster` row) in the migration's own header comment.
-  Touches `tier_roster` directly — **do not apply without the user's explicit go-ahead**, per
-  CLAUDE.md's own "Hard rule" above. `webapp/admin/admin.js`/`index.html`/`admin.css` are already
-  updated to match (zone header, owner-only ADMINS/AUDIT LOG sections, richer revoke confirmation)
-  but will not actually work correctly until this migration is applied — the new RPCs it adds
-  (`get_my_admin_info`, `list_tier_admins`, `add_tier_admin`, `remove_tier_admin`,
-  `update_tier_admin_zone`, `list_admin_actions`) don't exist yet.
+- **Migration applied and verified** (item 101 — admin roles, zone scoping, audit log):
+  `supabase/migrations/20260929000000_add_tier_admin_roles_zones_and_audit_log.sql` is live —
+  applied by the user directly (not by Claude — this migration touches `tier_roster`, squarely in
+  CLAUDE.md's own "Hard rule" territory). Full design in this file's own "Tier codes" section
+  above; full reasoning (including the flagged design choice — how "a device the owner holds" is
+  represented, via an explicit `is_owner_device` flag rather than inferred, since nothing in the
+  existing schema links a `tier_admins` row to a specific `tier_roster` row) in the migration's
+  own header comment. **Known gap, corrected**: the migration's own backfill only covered `owner`/
+  `issued_by` — it did not retroactively flag the owner's 4 pre-existing devices as
+  `is_owner_device`, so those went unprotected by `revoke_tier_code`'s owner-device check until
+  noticed. Fixed by hand (direct SQL against the linked project, not a re-run of this file); the
+  migration file itself was updated afterward to add that same backfill (by row id, not by
+  matching on `name`) so it now honestly describes what was actually needed to reach the live
+  database's real state — see its own "CORRECTION FOR THE RECORD" comment. `webapp/admin/`
+  (`admin.js`/`index.html`/`admin.css`)'s own rendering logic is confirmed correct against the
+  live schema (a real device, stubbed RPC responses matching the actual confirmed row shapes) --
+  the zone header and, for the owner, the ADMINS/AUDIT LOG sections all render correctly. The RPCs
+  THEMSELVES have a live bug found right after, see the next entry below -- that mock pass
+  couldn't have caught it (it never called the real function bodies).
+- **Migration WRITTEN, NOT applied — needs the user's explicit go-ahead** (item 101 bug fix):
+  `supabase/migrations/20260929010000_fix_email_type_mismatch_in_tier_admin_rpcs.sql`.
+  `list_tier_codes`/`list_tier_admins`/`list_admin_actions` (all three, 20260929000000) select
+  `auth.users.email` straight into a `RETURNS TABLE` column declared `text` -- but that column is
+  actually `character varying(255)`, and PL/pgSQL's `RETURN QUERY` requires an exact type match
+  (a plain `select` would coerce this fine; `RETURN QUERY` does not). Confirmed live for all three
+  functions individually (`set local role authenticated; set local request.jwt.claims =
+  '{"sub":"<owner uuid>", ...}'` against the linked project) -- each fails outright with
+  "structure of query does not match function result type ... character varying(255) does not
+  match expected type text." **This is a live regression, not just a new-feature bug**:
+  `list_tier_codes` is the SAME function the admin page's pre-existing ISSUED CODES list has
+  always used, so the admin page's core code list is currently broken in production, not just the
+  three new item 101 sections. Fix is a one-word `::text` cast at each `u.email` reference, CREATE
+  OR REPLACE, identical signatures, no schema change. Still touches tier_roster/tier_admins-reading
+  function bodies, so it's flagged for the user's go-ahead per the Hard rule despite the urgency,
+  same as everything else in this category.
 - **Migration WRITTEN, NOT applied — needs the user's explicit go-ahead** (item 97b):
   `supabase/migrations/20260927000000_add_kenai_red_qualifying_sightings_rpc.sql` adds
   `get_kenai_red_qualifying_sightings`, a new read-only RPC returning the actual RED-qualifying

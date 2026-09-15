@@ -26,6 +26,17 @@
 -- STATEMENT ORDER (see 20260923000000's own header comment on why this matters): every schema
 -- change runs before any function that references it.
 --
+-- CORRECTION FOR THE RECORD (added after this migration was already applied): the original
+-- version of this file only backfilled `owner` (tier_admins) and `issued_by` (tier_roster) --
+-- it did NOT retroactively flag any of the owner's own already-issued codes as
+-- is_owner_device, since that flag was designed as issuance-time-only (see the design-choice
+-- note above). That left the owner's 4 pre-existing devices unprotected by revoke_tier_code's
+-- own owner-device check until the gap was noticed, at which point the actual backfill below was
+-- run BY HAND against the linked project (direct SQL, not this file) rather than by re-running
+-- this migration. It's added here now, after the fact, purely so this file honestly describes
+-- what was actually needed to reach the live database's real state -- not because it still needs
+-- to be run again.
+--
 -- Run this via `supabase db query --linked --file <path>` -- never the Supabase web SQL editor.
 -- Per CLAUDE.md's own "Hard rule": this touches tier_roster directly -- DO NOT apply without the
 -- user's explicit go-ahead after reviewing this diff, regardless of how mechanical it looks.
@@ -77,6 +88,19 @@ where user_id = '993183af-1bce-45f0-b6bf-da7c4960cb1e'; -- keeneyeapps@gmail.com
 
 update public.tier_roster set issued_by = '993183af-1bce-45f0-b6bf-da7c4960cb1e'
 where issued_by is null;
+
+-- Added after the fact (see this file's own "CORRECTION FOR THE RECORD" note above) -- the
+-- owner's own 4 pre-existing devices, identified by row id (not by matching on `name`, which
+-- this file's own design-choice note already flagged as too fragile for a security boundary,
+-- for the exact same reason here as at issuance time). Confirmed against the linked project's
+-- live data before writing these ids -- not a guess.
+update public.tier_roster set is_owner_device = true
+where id in (
+  '83922a6c-a9c8-4b56-91ef-1358f6480022', -- Ryan Messimer (Moto G Stylus)
+  'e234cc6a-5d00-463d-8aa6-36c702fd6720', -- Ryan Messimer (Edge 2024)
+  '200695bf-9008-4233-9ed0-8192646e5620', -- Ryan Messimer
+  '19624114-3a75-446f-ae37-825f3f2b8ae6'  -- Ryan Messimer
+);
 
 
 -- =========================================================================================
