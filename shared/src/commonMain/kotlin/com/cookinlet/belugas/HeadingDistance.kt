@@ -6,18 +6,6 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 
-enum class HeadingSource { SENSOR, MANUAL }
-
-/**
- * A compass bearing (0..359.99, from true/magnetic north) from the observer to the sighting.
- */
-data class HeadingEstimate(
-    val degrees: Double,
-    val source: HeadingSource,
-    // null for MANUAL; degrees of uncertainty reported by the platform sensor for SENSOR
-    val accuracyDegrees: Double? = null
-)
-
 enum class DistanceBucket(val label: String) {
     CLOSE("Close"),
     MEDIUM("Medium"),
@@ -82,23 +70,6 @@ fun destinationPoint(lat: Double, lng: Double, bearingDegrees: Double, distanceM
     )
 
     return Pair(lat2 * 180.0 / PI, lng2 * 180.0 / PI)
-}
-
-/**
- * Whether the far edge of a heading+distance sector still falls within the region's water
- * geofence — reuses the same altitude-aware shoreline buffer already applied to pin locations,
- * so shore vs. aerial observer status drives the same orientation constraint here too.
- */
-fun sectorEndpointWithinGeofence(
-    originLat: Double,
-    originLng: Double,
-    heading: HeadingEstimate,
-    radiusMeters: Double,
-    altitudeMeters: Double,
-    region: RegionConfig
-): Boolean {
-    val (endLat, endLng) = destinationPoint(originLat, originLng, heading.degrees, radiusMeters)
-    return GeofenceUtils.isWithin3DFunnel(endLat, endLng, altitudeMeters, region)
 }
 
 /**

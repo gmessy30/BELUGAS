@@ -42,7 +42,6 @@ enum class Screen {
     // as TIER_CLAIM below -- only App()'s own startup routing puts the user here.
     ACKNOWLEDGEMENT_GATE,
     CAPTURE,
-    PHOTO_LOGGING,
     MANUAL_LOGGING,
     MAP,
     MENU,
@@ -365,14 +364,13 @@ fun App() {
     }
 
     // Bottom banner: hidden on every screen that hosts WhaleCountRow (CAPTURE has no counts
-    // itself, but PHOTO_LOGGING and MANUAL_LOGGING both do -- nobody entering a report should
+    // itself, but MANUAL_LOGGING does, photo attached or not -- nobody entering a report should
     // have the banner sitting over their count controls), AND only shown elsewhere when this
     // device is subscribed to a watched zone or physically near one -- unlike the map's shading
     // above, which every screen renders unconditionally once it's on the map. Within that gate,
     // BLUE is still a real, shown state -- it only disappears because neither gate applies,
     // never because of its own color.
     val showPresenceBanner = currentScreen != Screen.CAPTURE &&
-        currentScreen != Screen.PHOTO_LOGGING &&
         currentScreen != Screen.MANUAL_LOGGING &&
         currentScreen != Screen.ACKNOWLEDGEMENT_GATE &&
         presenceBannerCards.isNotEmpty()
@@ -391,15 +389,14 @@ fun App() {
     // vs. presenceBannerHeightDp on its own.
     val bottomContentInset = if (showPresenceBanner) presenceBannerHeightDp else 0.dp
 
-    // Landscape while actively capturing or entering a report -- the same three screens
-    // WhaleCountRow lives on. Computed once here (rather than one lock per screen) so moving
-    // directly between two of them doesn't release-then-reacquire the lock and flicker back
-    // toward portrait for a frame. Android-only in effect: iOS's Info.plist has been
-    // landscape-only, app-wide, since before this feature existed (no portrait orientations
-    // declared at all) -- that looks like a leftover default rather than a deliberate choice,
-    // but it's left as-is here; see LockLandscapeOrientation's iOS actual.
+    // Landscape while actively capturing or entering a report -- the two screens WhaleCountRow
+    // lives on. Computed once here (rather than one lock per screen) so moving directly between
+    // them doesn't release-then-reacquire the lock and flicker back toward portrait for a frame.
+    // Android-only in effect: iOS's Info.plist has been landscape-only, app-wide, since before
+    // this feature existed (no portrait orientations declared at all) -- that looks like a
+    // leftover default rather than a deliberate choice, but it's left as-is here; see
+    // LockLandscapeOrientation's iOS actual.
     val wantsLandscape = currentScreen == Screen.CAPTURE ||
-        currentScreen == Screen.PHOTO_LOGGING ||
         currentScreen == Screen.MANUAL_LOGGING
     LockLandscapeOrientation(wantsLandscape)
 
@@ -428,50 +425,20 @@ fun App() {
             }
             Screen.CAPTURE -> {
                 CaptureScreen(
+                    // Item 60: capturing a photo (or skipping the camera -- see CaptureScreen's
+                    // own onOpenMenu, unchanged) now goes straight into ManualLoggingScreen with
+                    // the photo attached, replacing the old separate photo-review step
+                    // (LoggingScreen, its heading/distance picker, and the automatic whale-
+                    // position projection it drove, all removed entirely -- matches the web
+                    // port's own item 60 redesign, webapp/js/submit-view.js's
+                    // enterManualLogStepFromCamera).
                     onPhotoCaptured = { path ->
                         capturedPhotoPath = path
-                        currentScreen = Screen.PHOTO_LOGGING
+                        currentScreen = Screen.MANUAL_LOGGING
                     },
                     onOpenMenu = { currentScreen = Screen.MENU },
                     storage = storage,
                     currentAltitude = currentAltitude
-                )
-            }
-            Screen.PHOTO_LOGGING -> {
-                LoggingScreen(
-                    capturedPhotoPath = capturedPhotoPath,
-                    storage = storage,
-                    locationService = locationService,
-                    appPreferences = appPreferences,
-                    region = activeRegion,
-                    onDoneClick = {
-                        capturedPhotoPath = null
-                        currentScreen = Screen.CAPTURE
-                        refreshRemoteSightings() // Refresh after new data
-                    },
-                    onRetakeClick = {
-                        capturedPhotoPath?.let { path ->
-                            scope.launch {
-                                storage.deleteFile(path)
-                            }
-                        }
-                        capturedPhotoPath = null
-                        currentScreen = Screen.CAPTURE
-                    },
-                    // The camera flow couldn't place this sighting at all (no heading given,
-                    // and no water confirmed near the observer to guess from) -- same cleanup
-                    // as RETAKE, since there's no way to carry the captured photo into the
-                    // manual flow (ManualLoggingScreen takes no photo path), then hand off to
-                    // manual pin-drop logging instead of losing the report entirely.
-                    onNavigateToManualLogging = {
-                        capturedPhotoPath?.let { path ->
-                            scope.launch {
-                                storage.deleteFile(path)
-                            }
-                        }
-                        capturedPhotoPath = null
-                        currentScreen = Screen.MANUAL_LOGGING
-                    }
                 )
             }
             Screen.MANUAL_LOGGING -> {
@@ -480,11 +447,37 @@ fun App() {
                     locationService = locationService,
                     appPreferences = appPreferences,
                     region = activeRegion,
+                    // Non-null only when this visit came from CAPTURE with a photo taken; null
+                    // for the plain "Report Manually" MENU entry point (MainMenuDrawer's
+                    // onNavigateToManualLog below never sets capturedPhotoPath).
+                    capturedPhotoPath = capturedPhotoPath,
                     onDoneClick = {
+                        capturedPhotoPath = null
                         currentScreen = Screen.CAPTURE
                         refreshRemoteSightings() // Refresh after new data
                     },
-                    onOpenMenuClick = { currentScreen = Screen.MENU }
+                    onOpenMenuClick = {
+                        // Item 60: abandoning a camera-path report via MENU discards its photo,
+                        // same cleanup onRetakePhotoClick below does -- otherwise a stale photo
+                        // could silently reattach the next time "Report Manually" is opened from
+                        // MENU (capturedPhotoPath would still be set from this visit).
+                        capturedPhotoPath?.let { path ->
+                            scope.launch { storage.deleteFile(path) }
+                        }
+                        capturedPhotoPath = null
+                        currentScreen = Screen.MENU
+                    },
+                    // Only ever shown/invoked when capturedPhotoPath is non-null (see this
+                    // screen's own photo-thumbnail block) -- replaces LoggingScreen's old
+                    // onRetakeClick, same cleanup, now reached by tapping that thumbnail instead
+                    // of a dedicated RETAKE button.
+                    onRetakePhotoClick = {
+                        capturedPhotoPath?.let { path ->
+                            scope.launch { storage.deleteFile(path) }
+                        }
+                        capturedPhotoPath = null
+                        currentScreen = Screen.CAPTURE
+                    }
                 )
             }
             Screen.MENU -> {

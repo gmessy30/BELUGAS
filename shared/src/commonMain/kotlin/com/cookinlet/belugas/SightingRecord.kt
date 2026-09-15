@@ -26,7 +26,8 @@ data class SightingRecord(
     @SerialName("heading_degrees")
     val headingDegrees: Double? = null,
 
-    // "SENSOR" or "MANUAL" — see HeadingSource
+    // "SENSOR" or "MANUAL" -- historical only now (item 60 removed the compass-sensor reading
+    // path, HeadingSource/HeadingEstimate, entirely); still written to reading existing rows.
     @SerialName("heading_source")
     val headingSource: String? = null,
 

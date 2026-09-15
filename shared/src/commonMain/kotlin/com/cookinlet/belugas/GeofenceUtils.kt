@@ -56,8 +56,7 @@ object GeofenceUtils {
     // Ground-level water line & active tidal river channel points. Sparse (only 7 points
     // across a coastline that's actually ~300km long) -- kept only as the last-resort
     // fallback isWithin3DFunnel now uses when CoastlineGeometry's real polygon data doesn't
-    // cover a location (see that function's doc comment). Also referenced directly by
-    // CoastlineGeometry.computeDefaultOffshoreHeadingDegrees's own coarse fallback.
+    // cover a location (see that function's doc comment).
     val COOK_INLET_WATER_BASE = listOf(
         Pair(59.20, -151.90), // Lower Inlet West
         Pair(60.5544, -151.2583), // Kenai River Mouth

@@ -27,10 +27,8 @@ import kotlin.math.sin
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.draw.clip
 import org.maplibre.compose.map.GestureOptions
 import org.maplibre.compose.map.MaplibreMap
 import org.maplibre.compose.map.OrnamentOptions
@@ -53,8 +51,19 @@ fun ManualLoggingScreen(
     locationService: LocationService,
     appPreferences: AppPreferences,
     region: RegionConfig = Regions.COOK_INLET,
+    // Item 60: non-null only when this screen was reached via the CAPTURE flow (a photo was
+    // taken, or CAPTURE was skipped straight into MANUAL_LOGGING) -- null for the plain
+    // "Report Manually" entry point from MENU, which never has a photo to attach. Matches the
+    // web port's own capturedPhotoBlob/manualLogStepReachedViaCameraPath split (webapp/js/
+    // submit-view.js): one screen, one optional photo, not two separate screens.
+    capturedPhotoPath: String? = null,
     onDoneClick: () -> Unit,
-    onOpenMenuClick: () -> Unit
+    onOpenMenuClick: () -> Unit,
+    // Item 60: only ever invoked (and only ever shown, see the photo-thumbnail block below) when
+    // capturedPhotoPath is non-null -- the caller (App.kt) owns deleting the discarded photo file
+    // and routing back to Screen.CAPTURE, same split of responsibility the old LoggingScreen's
+    // onRetakeClick already used.
+    onRetakePhotoClick: (() -> Unit)? = null
 ) {
     // Sighting Position State (Defaults safely to region center)
     var sightingLat by remember { mutableStateOf(region.defaultCenterLat) }
@@ -149,7 +158,7 @@ fun ManualLoggingScreen(
                     whaleLat = center.latitude,
                     whaleLng = center.longitude
                 )
-                OfflineSightingRepository.queueSighting(storage, updatedRecord)
+                OfflineSightingRepository.queueSighting(storage, updatedRecord, localPhotoPath = capturedPhotoPath)
                 // Wait for the sync attempt to actually finish before handing control back --
                 // otherwise the caller's post-save refresh races the sync and may run before
                 // the new sighting has landed remotely.
@@ -366,6 +375,39 @@ fun ManualLoggingScreen(
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Text("📍 RECENTER", color = Color.Yellow, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+
+        // --- 3c. CAPTURED PHOTO THUMBNAIL (CAMERA ENTRY POINT ONLY) ---
+        // Item 60: only ever present when this screen was reached via CAPTURE with a photo taken
+        // -- absent (no space reserved, nothing rendered) for the plain "Report Manually" entry
+        // point, matching the web port's own updateManualPhotoThumb (webapp/js/submit-view.js:
+        // "visible only when this visit actually has a captured photo attached"). Tapping it is
+        // the only "retake" affordance now that there's no separate photo-review screen to retake
+        // FROM -- discards the photo and returns to CAPTURE (onRetakePhotoClick, owned by App.kt).
+        // BottomStart is the one corner nothing else on this screen already occupies (TopStart/
+        // TopEnd: SUBMIT/MENU header row; TopCenter: coordinate readout; BottomEnd: RECENTER;
+        // BottomCenter: the counts panel) -- anchored to the same measured bottomPanelHeightDp
+        // RECENTER already uses, for the same reason.
+        if (capturedPhotoPath != null && onRetakePhotoClick != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 16.dp, bottom = bottomPanelHeightDp + 16.dp)
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .border(2.dp, Color.White, RoundedCornerShape(8.dp))
+                    .clickable { onRetakePhotoClick() }
+            ) {
+                LocalPhotoPreview(filePath = capturedPhotoPath, modifier = Modifier.fillMaxSize())
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(topStart = 6.dp))
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Text("↻", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
 
         // --- 4. FLOATING TRANSPARENT CONTROLS PANEL ---
@@ -653,7 +695,6 @@ fun ManualLoggingScreen(
 // shoreline around it.
 private val BEARING_DIAL_OUTER_RADIUS = 65.dp
 private val BEARING_DIAL_RING_THICKNESS = 14.dp
-private val BEARING_DIAL_PIN_SIZE = 30.dp
 // Black outline width added to each side of the ring/crosshair/needle strokes -- see the Canvas
 // block's own comment for why (the pin can land on anything from pale channel to dark shoreline
 // fill).
@@ -673,32 +714,6 @@ private val BEARING_DIAL_OUTLINE_WIDTH = 2.dp
 private const val COOK_INLET_OVERVIEW_ZOOM = 7.4
 
 /**
- * The teardrop map-pin shape, extracted from what used to be ManualLoggingScreen's standalone
- * center marker -- now reused at a smaller scale as BearingDial's decorative north point.
- */
-@Composable
-private fun PinGraphic(modifier: Modifier = Modifier, color: Color = Color.Red) {
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        val path = Path().apply {
-            moveTo(w * 0.5f, h)
-            cubicTo(w * 0.2f, h * 0.7f, 0f, h * 0.5f, 0f, h * 0.35f)
-            arcTo(
-                rect = Rect(0f, 0f, w, h * 0.7f),
-                startAngleDegrees = 180f,
-                sweepAngleDegrees = 180f,
-                forceMoveTo = false
-            )
-            cubicTo(w, h * 0.5f, w * 0.8f, h * 0.7f, w * 0.5f, h)
-            close()
-        }
-        drawPath(path, color, style = Fill)
-        drawCircle(Color.White, radius = w * 0.15f, center = Offset(w * 0.5f, h * 0.35f))
-    }
-}
-
-/**
  * Fused location-marker + travel-direction control for ManualLoggingScreen's dropped pin,
  * replacing the old standalone pin AND the old floating CompassRose (which sat in the bottom
  * panel and, once the panel's stack grew, ended up visually overlapping this exact spot -- see
@@ -708,8 +723,12 @@ private fun PinGraphic(modifier: Modifier = Modifier, color: Color = Color.Red) 
  * A crosshair -- not the old teardrop tip -- now marks the exact whale position at the ring's
  * center: unlike a teardrop (whose "point" sits at the bottom of its bounding box, needing a
  * compensating vertical offset to align with the true target), a crosshair is symmetric around
- * its own center, so this needs no such offset. The teardrop pin graphic itself moves onto the
- * ring at the north position -- decorative in this control now, not a location marker.
+ * its own center, so this needs no such offset. The teardrop pin graphic (PinGraphic) originally
+ * moved onto the ring at the north position as a purely decorative element once the crosshair
+ * took over as the real position marker -- removed entirely (not just repositioned) once it was
+ * clear the crosshair was always the sole position marker and the pin was only ever competing
+ * with it for attention, matching the same removal on the web port (see webapp/js/
+ * submit-view.js's BearingDial-equivalent, which never drew a pin at all after this change).
  *
  * Not relative AWAY/LEFT/RIGHT arrows like LoggingScreen's: this screen has no reliable observer
  * vantage point to be relative to (a dropped pin can be placed from memory, panned to a spot
@@ -812,13 +831,6 @@ private fun BearingDial(
                 drawLine(Color.Yellow, start = center, end = needleEnd, strokeWidth = needleWidth, cap = StrokeCap.Round)
             }
         }
-
-        PinGraphic(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .offset(y = -ringCenterlineRadius)
-                .size(BEARING_DIAL_PIN_SIZE)
-        )
     }
 }
 
