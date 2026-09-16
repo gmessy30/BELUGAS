@@ -15,6 +15,7 @@
 // exist on old rows, just never read here going forward.
 let mapInstance = null;
 let mapShadingLayer = null;
+let mapTravelStubsLayer = null;
 let mapMarkersLayer = null;
 let lastCombinedSightings = [];
 let mapVerifiedOnly = false;
@@ -106,8 +107,15 @@ function initMap() {
   }).addTo(mapInstance);
 
   // Shading added before the markers layer so it always paints underneath sighting pins,
-  // matching SightingsMapScreen's own draw order (shading, then pins).
+  // matching SightingsMapScreen's own draw order (shading, then travel-direction stubs, then pins).
   mapShadingLayer = L.layerGroup().addTo(mapInstance);
+
+  // Item 104: its own non-clustered layer, NOT mapMarkersLayer -- same reason item 73's
+  // uncertainty circles got their own layer (mapUncertaintyLayer, since removed by item 103):
+  // L.markerClusterGroup counts any addLayer'd child, marker or not, so a stub with no icon of
+  // its own would silently inflate cluster badge counts and get a spiderfy "leg" with nothing at
+  // the end of it.
+  mapTravelStubsLayer = L.layerGroup().addTo(mapInstance);
 
   // zoomToBoundsOnClick: false -- clusterClick below decides between zooming in (the normal case)
   // and showing the same-point sightings sheet (when every pin in the cluster shares one exact
@@ -240,6 +248,7 @@ const SIGHTING_DOT_LOCAL_COLOR = "#9E9E9E";
 function drawMapMarkers(skipFitBounds = false) {
   if (!mapInstance) return;
   mapMarkersLayer.clearLayers();
+  mapTravelStubsLayer.clearLayers();
 
   // BUG FIX (item 86): date range and fade window used to be entangled behind one
   // `playbackIsOpen` gate -- closing the panel dropped ALL filtering (showing literally
@@ -275,6 +284,22 @@ function drawMapMarkers(skipFitBounds = false) {
       className: "sighting-label"
     });
     mapMarkersLayer.addLayer(marker);
+
+    // Item 104: plain travel-direction line stub -- this never actually rendered on the PWA
+    // before now (checked: even before item 103, travel_bearing_degrees only ever fed
+    // formatTravelDirection's popup TEXT, never a drawn line), so this is a straight port of
+    // SightingsMapScreen's existing "sighting-travel-stubs" LineLayer, not a regression fix.
+    // Same fixed 40m length/no-arrowhead/nearest-8-compass-point snap as
+    // buildTravelStubGeoJsonFeature there; destinationPoint below is the same spherical-earth
+    // forward-geodesic formula as HeadingDistance.kt's own destinationPoint.
+    if (s.travel_bearing_degrees != null) {
+      const snappedBearing = snapToNearestCompass8Degrees(s.travel_bearing_degrees);
+      const stubEnd = destinationPoint(s.whale_lat, s.whale_lng, snappedBearing, TRAVEL_STUB_LENGTH_METERS);
+      L.polyline([[s.whale_lat, s.whale_lng], stubEnd], {
+        color: "#FFFFFF",
+        weight: 2
+      }).addTo(mapTravelStubsLayer);
+    }
   });
 
   if (!skipFitBounds && visible.length > 0) {
@@ -366,14 +391,42 @@ async function handleConfirmSightingClick(sighting, btn) {
 }
 
 // Same 8-point display-only snapping SightingsMapScreen's own travel-bearing stub rendering
-// uses (SightingRecord.kt's snapToNearestCompass8Degrees) -- the stored value keeps its full
-// precision, only the label shown here is snapped.
+// uses (HeadingDistance.kt's snapToNearestCompass8Degrees) -- the stored value keeps its full
+// precision, only the label/stub direction shown here is snapped. Shared by formatTravelDirection
+// (the popup text) and the map's own line-stub drawing (item 104) so the two can never disagree
+// about which of the 8 points a given bearing rounds to.
+function snapToNearestCompass8Degrees(bearingDegrees) {
+  const snapped = Math.round(bearingDegrees / 45) * 45;
+  return ((snapped % 360) + 360) % 360;
+}
+
 const COMPASS_POINT_LABELS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 function formatTravelDirection(bearingDegrees) {
   if (bearingDegrees == null) return "Direction: unknown";
-  const normalized = ((bearingDegrees % 360) + 360) % 360;
-  const index = Math.round(normalized / 45) % 8;
+  const index = snapToNearestCompass8Degrees(bearingDegrees) / 45;
   return `Direction: ${COMPASS_POINT_LABELS[index]}`;
+}
+
+// Item 104: ported from HeadingDistance.kt's own destinationPoint -- identical spherical-earth
+// forward-geodesic formula, used here only to draw the travel-direction line stub (never for
+// whale-position placement, which item 60 removed entirely in favor of human map placement).
+const TRAVEL_STUB_LENGTH_METERS = 40;
+function destinationPoint(lat, lng, bearingDegrees, distanceMeters) {
+  const earthRadiusMeters = 6371000;
+  const angularDistance = distanceMeters / earthRadiusMeters;
+  const bearingRad = bearingDegrees * Math.PI / 180;
+  const lat1 = lat * Math.PI / 180;
+  const lng1 = lng * Math.PI / 180;
+
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(angularDistance) + Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearingRad)
+  );
+  const lng2 = lng1 + Math.atan2(
+    Math.sin(bearingRad) * Math.sin(angularDistance) * Math.cos(lat1),
+    Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2)
+  );
+
+  return [lat2 * 180 / Math.PI, lng2 * 180 / Math.PI];
 }
 
 function formatCounts(s) {
