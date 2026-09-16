@@ -755,6 +755,19 @@ button.text-link {
   font-weight: 700;
 }
 
+/* Item 106: per-date subheading inside About's WHAT'S NEW section. */
+.whats-new-date {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  margin: 0 0 4px;
+}
+
+.tip-list + .whats-new-date {
+  margin-top: 12px;
+}
+
 .tip-list {
   list-style: none;
   margin: 0;

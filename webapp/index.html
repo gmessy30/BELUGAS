@@ -213,7 +213,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v95</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v96</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -311,28 +311,44 @@
       </div>
       <hr class="section-divider">
 
-      <!-- Item 65b: plain, brief changelog -- a date plus a handful of short lines on what a
-           returning user would actually notice, not a full technical changelog. Update the date
-           and swap the lines for whatever the next round of user-visible changes turns out to be;
-           this isn't meant to accumulate every past entry. Kept LAST (item 68) -- it grows over
-           time, and shouldn't push the credits/artwork/share attributions above it around as it
-           does. -->
+      <!-- Item 65b: plain, brief changelog -- short lines on what a returning user would actually
+           notice, not a full technical changelog. Kept LAST (item 68) -- it grows over time, and
+           shouldn't push the credits/artwork/share attributions above it around as it does.
+           Item 106: grouped by the REAL date each change shipped (newest first), not one shared
+           date on the whole section -- a single heading kept getting set to a guessed/future date
+           (SEPTEMBER 27, then 28, both actually written on Sept 14) and then left stale while
+           newer lines were added under it. Each group's date is its commit date (git log); add a
+           new change under today's real date, starting a new group if today has none yet. Prune
+           the oldest groups when this gets long -- it isn't meant to accumulate every past entry. -->
       <div class="subpage-section">
-        <div class="section-title">WHAT'S NEW -- SEPTEMBER 28, 2026</div>
+        <div class="section-title">WHAT'S NEW</div>
+        <div class="whats-new-date">SEPTEMBER 16, 2026</div>
         <ul class="tip-list">
           <li>VERIFIED ONLY now means a sighting was reported or confirmed by a credentialed observer -- a photo alone no longer counts, and confirmed sightings now show up. Export Data has the same filter.</li>
-          <li>Red and yellow presence alerts now play a real sound -- actual beluga vocalizations, not silence -- with a toggle and a preview button in the menu so you can hear it before deciding.</li>
-          <li>Added a Share page with a QR code, for handing someone your phone or a link instead of spelling out the app name.</li>
+        </ul>
+        <div class="whats-new-date">SEPTEMBER 15, 2026</div>
+        <ul class="tip-list">
+          <li>The Sightings Map now shows a short line on a pin when a travel direction was recorded, pointing the way the whale was heading.</li>
+          <li>The Sightings Map no longer draws a circle around each pin -- reported positions are exact now, not an estimated range.</li>
+        </ul>
+        <div class="whats-new-date">SEPTEMBER 14, 2026</div>
+        <ul class="tip-list">
+          <li>Added an Export Data page -- download public sighting data as CSV or GeoJSON, no account needed.</li>
           <li>Added a standalone status page you can bookmark or share -- shows just the current beluga status, no need to open the full app.</li>
           <li>Printable signs with a QR code to that status page are now available, for posting at a boat launch or viewing spot.</li>
+          <li>The News Feed has a search box now, so you can find a specific article without scrolling.</li>
+        </ul>
+        <div class="whats-new-date">SEPTEMBER 13, 2026</div>
+        <ul class="tip-list">
+          <li>Red and yellow presence alerts now play a real sound -- actual beluga vocalizations, not silence -- with a toggle and a preview button in the menu so you can hear it before deciding.</li>
           <li>Reporting can now note what the whales were doing -- travelling, milling, feeding, and more.</li>
           <li>Trusted observers can now confirm someone else's sighting, adding extra confidence to a report.</li>
           <li>Suggested articles and papers now go through a real review queue before showing up in the News Feed.</li>
           <li>The reporting map's RECENTER button now centers on your real location with one tap.</li>
-          <li>The News Feed has a search box now, so you can find a specific article without scrolling.</li>
-          <li>Added an Export Data page -- download public sighting data as CSV or GeoJSON, no account needed.</li>
-          <li>The Sightings Map no longer draws a circle around each pin -- reported positions are exact now, not an estimated range.</li>
-          <li>The Sightings Map now shows a short line on a pin when a travel direction was recorded, pointing the way the whale was heading.</li>
+        </ul>
+        <div class="whats-new-date">SEPTEMBER 12, 2026</div>
+        <ul class="tip-list">
+          <li>Added a Share page with a QR code, for handing someone your phone or a link instead of spelling out the app name.</li>
         </ul>
       </div>
     </div>

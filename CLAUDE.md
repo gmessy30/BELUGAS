@@ -42,7 +42,15 @@ in the SAME commit** — not a later cleanup pass. This was not being followed (
 92/93/97/97b/97c/98 all shipped without a WHAT'S NEW update, caught and backfilled all at once by
 item 99) — the whole point of catching it is to stop doing that again, not to have caught it once.
 `.about-version`'s own bump-on-every-push discipline (above) is the model to match: WHAT'S NEW
-should never again need a dedicated backfill pass. Resources' "HOW TO USE THIS APP" section
+should never again need a dedicated backfill pass.
+
+**WHAT'S NEW dates: use the REAL current date, never a guessed or rounded one.** The section is
+grouped by date (`.whats-new-date` subheadings, newest first) — add each entry under the actual
+date it ships (check the environment's "Today's date" or `git log`'s commit date, never infer it),
+starting a new group if today has none yet; never re-date an existing group to "today" just
+because a new line landed. This went wrong twice (item 106): the old single heading was set to
+SEPTEMBER 27 and then SEPTEMBER 28, 2026 — both in commits actually made on Sept 14 — and then
+stayed that way while Sept 15/16 entries were added under it. Resources' "HOW TO USE THIS APP" section
 (`webapp/index.html`) is held to the same standard whenever a change affects something that section
 actually describes (a reporting-flow control, a banner-color meaning, a menu item's behavior) —
 it drifted out of date the same way WHAT'S NEW did, for the same reason.
