@@ -264,8 +264,8 @@ function drawMapMarkers(skipFitBounds = false) {
     if (s.whale_lat == null || s.whale_lng == null) return false;
     if (!isWithinDateRange(s)) return false;
     if (isPlaybackCursorActive && !isWithinPlaybackFadeWindow(s)) return false;
-    if (s.is_local) return true; // never filtered by VERIFIED ONLY -- see isHighConfidence's own comment
-    return !mapVerifiedOnly || isHighConfidence(s);
+    if (s.is_local) return true; // never filtered by VERIFIED ONLY -- see isVerifiedSighting's own comment
+    return !mapVerifiedOnly || isVerifiedSighting(s);
   });
 
   visible.forEach((s) => {
@@ -356,10 +356,21 @@ function sightingPopupHtml(s) {
 // know that for an arbitrary fetched sighting (subscriber_id is never anon-readable), so that
 // refusal reason is left entirely to confirm_sighting itself, same "visibility is UX, enforcement
 // is server-side" split as the departure-report button.
+// Item 105: a row that's already verified (isVerifiedSighting, db.js) gets a badge instead of the
+// button -- a tier-1/2 observer's own report has nothing left to elevate, so CONFIRM SIGHTING is
+// hidden there too, not just on already-confirmed rows. Visibility is still tier-1-viewer-only,
+// unchanged from item 63.
 function confirmSightingButtonHtml(s) {
   if (s.is_local || !cachedIsTierOneObserver) return "";
-  if (s.confirmed_at) return `<div class="confirmed-sighting-badge">✓ Confirmed</div>`;
+  if (isVerifiedSighting(s)) return `<div class="confirmed-sighting-badge">${verifiedBadgeLabel(s)}</div>`;
   return `<button type="button" class="confirm-sighting-btn" data-sighting-id="${escapeHtml(s.id)}">Confirm Sighting</button>`;
+}
+
+// Item 105: "✓ Confirmed" when a tier-1 observer actually vouched for it (confirmed_at set, the
+// more specific fact), otherwise "✓ Verified" for a tier-1/2 observer's own report. Only
+// meaningful for a row isVerifiedSighting already accepted. Shared by map popup and list item.
+function verifiedBadgeLabel(s) {
+  return s.confirmed_at ? "✓ Confirmed" : "✓ Verified";
 }
 
 // Item 63: shared by the map popup (called on Leaflet's own popupopen, since the popup's HTML is

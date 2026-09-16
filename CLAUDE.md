@@ -506,6 +506,22 @@ never just that playback started.
   outlives publisher URLs. None of this is implemented yet — needs its own migration
   (`link_broken` status/column, `last_checked_at`/`http_status`/`archive_url`/`doi` columns) and a
   scheduled job, a bigger, separate piece of work from item 93's client-side search.
+- **Native-side parity item (item 105, web-only so far) -- "verified" definition**: the PWA's
+  one shared rule is `isVerifiedSighting` (`webapp/js/db.js`) = `observer_tier` 1/2 OR
+  `confirmed_at` set; a photo alone never counts. It drives the map/list VERIFIED ONLY toggles,
+  the "✓ Verified"/"✓ Confirmed" badge (CONFIRM SIGHTING hidden on any already-verified row,
+  including a tier-1/2 observer's own report -- nothing to elevate), and Export Data's own
+  VERIFIED ONLY filter plus its `confirmed` column's value (column name kept, value now from this
+  rule). `tier_roster.is_owner_device` is an admin revoke-immunity flag only, never read by this
+  rule -- owner devices are ordinary tier 1 for reporting. Native's
+  `SightingRecord.isHighConfidence` (`SightingRecord.kt`) is still `photoUrl != null ||
+  observerTier == 1 || observerTier == 2` -- the same gap in both directions: it counts a bare
+  photo, and ignores `confirmed_at` (a tier-1-confirmed tier-3 sighting stays hidden under
+  "high confidence only"). Port the same rule there (the model also needs `confirmedAt`), used by
+  `SightingsMapScreen.kt`/`App.kt`'s `OfflineSightingsList`, alongside the other pending items.
+  Not a bug, deliberately left as-is: `observer_tier` is tier at SUBMISSION time, so a sighting
+  submitted before its device redeemed a code stays unverified (two such live rows, `a29c0f59`/
+  `58f3fa47`, Sept 13 2026 -- historically accurate, not backfilled).
 - **Native-side parity item (item 90, web-only so far)**: the ACTIVITIES field (multi-select:
   Travelling, Milling, Feeding Observed, Benthic Feeding Evidenced, Courtship Behaviours, Other +
   a note) and its chip-picker modal (`webapp/index.html`'s `#activity-picker-modal`,

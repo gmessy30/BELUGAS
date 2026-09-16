@@ -213,7 +213,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v94</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v95</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -320,6 +320,7 @@
       <div class="subpage-section">
         <div class="section-title">WHAT'S NEW -- SEPTEMBER 28, 2026</div>
         <ul class="tip-list">
+          <li>VERIFIED ONLY now means a sighting was reported or confirmed by a credentialed observer -- a photo alone no longer counts, and confirmed sightings now show up. Export Data has the same filter.</li>
           <li>Red and yellow presence alerts now play a real sound -- actual beluga vocalizations, not silence -- with a toggle and a preview button in the menu so you can hear it before deciding.</li>
           <li>Added a Share page with a QR code, for handing someone your phone or a link instead of spelling out the app name.</li>
           <li>Added a standalone status page you can bookmark or share -- shows just the current beluga status, no need to open the full app.</li>
@@ -468,7 +469,7 @@
         <p class="section-body">This app asks for the whale's position, not yours -- that's deliberate. A report is far more useful to other observers and researchers when it marks where the animal actually was, so take the extra moment to centre the crosshair there rather than just leaving it on your own location.</p>
         <p class="section-body">Many good viewing spots along the Kenai and Kasilof are on or accessed through private property. Always get permission before crossing a fence line or cutting through someone's yard to reach the water -- public road pullouts and posted public access points exist for a reason.</p>
         <p class="section-body">The blue banner shows the earliest time the rising tide is deep enough for belugas to enter the river -- they're often visible milling in the inlet before that. Red means someone has actually seen them in the current tide cycle, and tapping it jumps straight to the map. Yellow is a caution: a verified sighting in the last few cycles, but none confirmed right now. Both yellow and blue show the same next-window estimate; yellow just means it's happened recently.</p>
-        <p class="section-body">Reporting is open to anyone -- no account or login needed. A small number of credentialed (tier-1) observers carry a verification code that unlocks a couple of extra tools: confirming once a group has clearly moved on from a watched area, and vouching for another observer's already-submitted sighting to give it extra confidence -- look for a CONFIRM option on a sighting's own details.</p>
+        <p class="section-body">Reporting is open to anyone -- no account or login needed. A small number of credentialed (tier-1) observers carry a verification code that unlocks a couple of extra tools: confirming once a group has clearly moved on from a watched area, and vouching for another observer's already-submitted sighting to give it extra confidence -- look for a CONFIRM option on a sighting's own details. VERIFIED ONLY (on the map, the list, and Export Data) shows sightings reported by a credentialed observer or confirmed by one; a photo on its own doesn't make a sighting verified.</p>
         <p class="section-body">The Share page (in the menu) has a QR code for the full app, plus its own QR code for a standalone status page -- good for sending someone a quick beluga-status check without asking them to install anything. Both work as plain links too, and the status page is bookmarkable on its own.</p>
         <p class="section-body">Sound Alerts, in the menu, plays a short alert and vibrates when a zone's status steps up to red, or back down from red to yellow -- tap it to turn the sound on or off, or tap the preview button next to it to hear the alert before deciding. On iPhone, this respects your phone's physical Ring/Silent switch -- flip it to silent and the alert sound stays silent too, same as any other in-page audio; vibration and the notification itself still happen.</p>
       </div>
@@ -596,6 +597,16 @@
       </div>
       <hr class="section-divider">
 
+      <!-- Item 105: same isVerifiedSighting rule as the map/list VERIFIED ONLY toggles. -->
+      <div class="subpage-section">
+        <div class="section-title">SIGHTINGS</div>
+        <div class="news-filter-row">
+          <button id="export-filter-all" class="news-filter-chip active" type="button">ALL</button>
+          <button id="export-filter-verified" class="news-filter-chip" type="button">VERIFIED ONLY</button>
+        </div>
+      </div>
+      <hr class="section-divider">
+
       <div class="subpage-section">
         <div class="section-title">FORMAT</div>
         <div class="news-filter-row">
@@ -611,7 +622,7 @@
         <p id="export-status" class="status-info" hidden></p>
         <p class="section-body" style="margin-top: 16px;">
           Only public sighting data is included -- position, time, counts, travel direction,
-          activities, photo link, and whether a trusted observer confirmed it. No reporter
+          activities, photo link, and whether it's verified (reported or confirmed by a trusted observer). No reporter
           identity of any kind is ever exported.
         </p>
       </div>

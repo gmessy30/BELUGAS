@@ -47,15 +47,27 @@ function isMissingColumnError(error) {
   return /column .* does not exist/i.test(error.message || "");
 }
 
-// Matches SightingRecord.isHighConfidence in shared/src/commonMain/kotlin/com/cookinlet/belugas/
-// SightingRecord.kt exactly: a photo is direct evidence regardless of who logged it; absent
-// that, tier 1/2 (credentialed observer) is next-best. Used by both the map and list "VERIFIED
-// ONLY" toggles (SightingsMapScreen.kt / OfflineSightingsList in App.kt each have their own
-// independent copy of this same toggle natively) -- never applied to this device's own queued-
-// but-not-yet-synced sightings, same as native (a local sighting has no observer_tier yet at all,
-// server-computed only on insert).
-function isHighConfidence(sighting) {
-  return sighting.photo_url != null || sighting.observer_tier === 1 || sighting.observer_tier === 2;
+// The ONE shared definition of a "verified" sighting (item 105) -- used by the map and list
+// "VERIFIED ONLY" toggles, the map popup/list item's "✓ Verified"/"✓ Confirmed" badge and
+// CONFIRM SIGHTING button, and the Export Data page's own VERIFIED ONLY filter and exported
+// `confirmed` column. Verified means either:
+//   - observer_tier 1/2 -- a credentialed observer's OWN report counts automatically, no separate
+//     confirm tap (confirm_sighting refuses the caller's own row anyway, so confirmed_at would
+//     otherwise stay null forever on exactly the reports that most deserve to count). Tier comes
+//     only from tier_roster.tier via the insert trigger -- tier_roster.is_owner_device is an
+//     admin revoke-immunity flag, never a different sighting tier, and is deliberately not read
+//     here; or
+//   - confirmed_at set -- a tier-1 observer vouched for someone else's (tier-3) sighting (item 63).
+// A photo alone NEVER counts. DELIBERATE DEVIATION FROM NATIVE: SightingRecord.isHighConfidence
+// (shared/src/commonMain/kotlin/com/cookinlet/belugas/SightingRecord.kt) is still
+// `photoUrl != null || observerTier == 1 || observerTier == 2` -- it counts a bare photo AND
+// ignores confirmed_at (a confirmed tier-3 row stays hidden there). See CLAUDE.md's native-parity
+// item 105. observer_tier is the tier at SUBMISSION time -- a row submitted before its device
+// redeemed a code stays unverified (historically accurate, not backfilled). Never applied to this
+// device's own queued-but-not-yet-synced sightings (no observer_tier/confirmed_at yet at all,
+// server-computed only on insert/confirm), same as native.
+function isVerifiedSighting(sighting) {
+  return sighting.observer_tier === 1 || sighting.observer_tier === 2 || sighting.confirmed_at != null;
 }
 
 /**

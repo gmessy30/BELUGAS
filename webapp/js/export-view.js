@@ -23,6 +23,14 @@
 //     want rather than downloading every one regardless of need.
 //   - Default date range is ALL TIME, not native's trailing 30 days -- an explicit, deliberate
 //     product decision for this item, not an oversight.
+//   - Item 105: an ALL / VERIFIED ONLY filter (native has none), using the SAME isVerifiedSighting
+//     rule (db.js) as the map/list VERIFIED ONLY toggles -- observer_tier 1/2 OR confirmed_at set,
+//     a photo alone never counts. Applied client-side over the rows export_sightings already
+//     returned (the RPC itself is unchanged), so toggling it never refetches. The exported
+//     `confirmed` column keeps its name (no schema churn for anyone already consuming these files)
+//     but its VALUE now comes from isVerifiedSighting too, so a tier-1/2 observer's own report
+//     reads true, not only rows where confirmed_at is actually set. observer_tier itself is still
+//     never exported -- only this derived boolean.
 //   - Row count is shown BEFORE download -- native has no equivalent preview; DOWNLOAD itself is
 //     native's only signal, and a truly huge or empty result isn't obvious until the file's
 //     already been produced.
@@ -32,6 +40,7 @@ const EXPORT_ALL_TIME_START_MS = Date.UTC(2020, 0, 1); // safely before this app
 let exportCachedRecords = null; // last successful fetch's raw rows
 let exportCacheKey = null; // `${startMs}|${endMs}` the cache above was fetched for
 let exportSelectedFormat = "csv"; // "csv" | "geojson"
+let exportVerifiedOnly = false; // item 105 -- see this file's own header comment
 let exportFetchToken = 0; // guards a slower, now-superseded fetch from overwriting a newer result
 
 function initExportPage() {
@@ -39,6 +48,9 @@ function initExportPage() {
 
   document.getElementById("export-format-csv").addEventListener("click", () => setExportFormat("csv"));
   document.getElementById("export-format-geojson").addEventListener("click", () => setExportFormat("geojson"));
+
+  document.getElementById("export-filter-all").addEventListener("click", () => setExportVerifiedOnly(false));
+  document.getElementById("export-filter-verified").addEventListener("click", () => setExportVerifiedOnly(true));
 
   document.getElementById("export-start-date").addEventListener("change", refreshExportRowCount);
   document.getElementById("export-end-date").addEventListener("change", refreshExportRowCount);
@@ -50,6 +62,25 @@ function setExportFormat(format) {
   exportSelectedFormat = format;
   document.getElementById("export-format-csv").classList.toggle("active", format === "csv");
   document.getElementById("export-format-geojson").classList.toggle("active", format === "geojson");
+}
+
+function setExportVerifiedOnly(verifiedOnly) {
+  exportVerifiedOnly = verifiedOnly;
+  document.getElementById("export-filter-all").classList.toggle("active", !verifiedOnly);
+  document.getElementById("export-filter-verified").classList.toggle("active", verifiedOnly);
+  // Cached rows are the full date-range result regardless of this filter -- just recount them.
+  if (exportCachedRecords != null) showExportRowCount();
+}
+
+// Item 105: the one place the VERIFIED ONLY filter is applied -- both the row-count preview and
+// the actual download read through this, so the two can never disagree.
+function exportFilteredRecords(records) {
+  return exportVerifiedOnly ? records.filter(isVerifiedSighting) : records;
+}
+
+function showExportRowCount() {
+  const n = exportFilteredRecords(exportCachedRecords).length;
+  document.getElementById("export-row-count").textContent = n === 1 ? "1 sighting matches." : `${n} sightings match.`;
 }
 
 // Empty date input -- ALL TIME on that side, per this item's own default.
@@ -89,7 +120,7 @@ async function refreshExportRowCount() {
 
   exportCachedRecords = records;
   exportCacheKey = cacheKey;
-  statusEl.textContent = records.length === 1 ? "1 sighting matches." : `${records.length} sightings match.`;
+  showExportRowCount();
   downloadBtn.disabled = false;
 }
 
@@ -117,9 +148,10 @@ async function handleExportDownload() {
     exportCacheKey = cacheKey;
   }
 
+  records = exportFilteredRecords(records);
   if (records.length === 0) {
     statusEl.hidden = false;
-    statusEl.textContent = "No sightings match this range.";
+    statusEl.textContent = exportVerifiedOnly ? "No verified sightings match this range." : "No sightings match this range.";
     return;
   }
 
@@ -173,7 +205,7 @@ function buildExportCsv(records) {
     (r.activities || []).join(";"),
     r.activity_note ?? "",
     r.photo_url ?? "",
-    r.confirmed_at != null
+    isVerifiedSighting(r) // item 105: column still named "confirmed", value is the shared verified rule
   ]);
   return [EXPORT_CSV_HEADER, ...rows].map((row) => row.map(csvEscape).join(",")).join("\r\n") + "\r\n";
 }
@@ -197,16 +229,17 @@ function buildExportGeoJson(records) {
         activities: r.activities || [],
         activity_note: r.activity_note ?? null,
         photo_url: r.photo_url ?? null,
-        confirmed: r.confirmed_at != null
+        confirmed: isVerifiedSighting(r) // item 105 -- same as the CSV column above
       }
     }));
   return JSON.stringify({ type: "FeatureCollection", features }, null, 2);
 }
 
-// Called from the main menu's "Export Data" item. Always resets to CSV/all-time -- same "fresh
+// Called from the main menu's "Export Data" item. Always resets to CSV/all sightings/all-time -- same "fresh
 // entry resets to the default" convention item 93's search page established for its own chips.
 function openExportPage() {
   setExportFormat("csv");
+  setExportVerifiedOnly(false);
   document.getElementById("export-start-date").value = "";
   document.getElementById("export-end-date").value = "";
   document.getElementById("export-status").hidden = true;

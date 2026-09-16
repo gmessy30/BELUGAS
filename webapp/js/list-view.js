@@ -37,7 +37,7 @@ function drawSightingsList() {
   // "Applies only to REMOTE DATABASE... QUEUED FOR SYNC is never filtered" -- same rule as
   // OfflineSightingsList's own filteredRemoteSightings.
   const filteredRemote = listVerifiedOnly
-    ? lastRemoteSightings.filter(isHighConfidence)
+    ? lastRemoteSightings.filter(isVerifiedSighting)
     : lastRemoteSightings;
 
   if (lastQueuedSightings.length === 0 && filteredRemote.length === 0) {
@@ -132,11 +132,13 @@ function sightingListItem(s) {
   // (confirmSightingButtonHtml/wireConfirmSightingButton, map-view.js) -- built as a real DOM
   // element here instead of an HTML string, since this list is never re-parsed the way a Leaflet
   // popup is; wiring happens once, right after the button is actually in the document.
+  // Item 105: badge (and no button) for any verified row, not just confirmed_at -- see
+  // confirmSightingButtonHtml's own comment.
   if (!s.is_local && cachedIsTierOneObserver) {
-    if (s.confirmed_at) {
+    if (isVerifiedSighting(s)) {
       const badge = document.createElement("div");
       badge.className = "confirmed-sighting-badge";
-      badge.textContent = "✓ Confirmed";
+      badge.textContent = verifiedBadgeLabel(s);
       details.appendChild(badge);
     } else {
       const btn = document.createElement("button");
