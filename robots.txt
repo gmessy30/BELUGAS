@@ -1,4 +1,4 @@
 User-agent: *
-Disallow: /admin/
+Disallow: /BELUGAS/webapp/admin/
 
 Sitemap: https://gmessy30.github.io/BELUGAS/sitemap.xml
