@@ -3,8 +3,28 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>BELUGAS Status</title>
+<title>BELUGAS Status — Cook Inlet Beluga Whale Alerts</title>
+<meta name="description" content="Live beluga whale presence status for Cook Inlet, Alaska -- check before you head out.">
 <link rel="icon" href="../icons/icon-192.png">
+
+<!-- Item 102: basic SEO/link-preview metadata, same reasoning as index.html's own (see that
+     file's comment) -- reuses the same Luna artwork image for a consistent preview across both
+     pages. Deliberately generic/Kenai-framed rather than reflecting whatever ?zone= a given
+     shared link carries: a link-preview scraper fetches this document once, unparameterized, and
+     never runs status.js, so it can never see which zone a specific shared URL actually points
+     to -- this is a real limitation, not an oversight, same class of thing as this page's other
+     documented zone-awareness caveats (see this file's own header comment above). -->
+<link rel="canonical" href="https://gmessy30.github.io/BELUGAS/webapp/status/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="BELUGAS">
+<meta property="og:title" content="BELUGAS Status — Cook Inlet Beluga Whale Alerts">
+<meta property="og:description" content="Live beluga whale presence status for Cook Inlet, Alaska -- check before you head out.">
+<meta property="og:url" content="https://gmessy30.github.io/BELUGAS/webapp/status/">
+<meta property="og:image" content="https://gmessy30.github.io/BELUGAS/webapp/img/breaching_belugas_sketches.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="BELUGAS Status — Cook Inlet Beluga Whale Alerts">
+<meta name="twitter:description" content="Live beluga whale presence status for Cook Inlet, Alaska -- check before you head out.">
+<meta name="twitter:image" content="https://gmessy30.github.io/BELUGAS/webapp/img/breaching_belugas_sketches.png">
 <!--
   Item 97: a minimal, standalone presence status page -- own index.html, no menu, no map (except
   the RED-only compact one, item 97b), and deliberately NOT part of the main app's SPA

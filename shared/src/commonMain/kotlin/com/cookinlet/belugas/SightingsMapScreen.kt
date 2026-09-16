@@ -80,12 +80,11 @@ fun SightingsMapScreen(
     }
 
     // "High confidence only" -- photo_url is not null OR observer_tier in (1,2), hiding plain
-    // manual tier-3 reports. Applied once here, before any of the three places downstream that
-    // read remoteSightings (this combine step, circleGeoJsonString, travelStubGeoJsonString),
-    // rather than three separate filters that could drift -- an uncertainty circle or travel
-    // stub with no matching pin (or vice versa) would be a confusing half-filtered map.
-    // localSightings (this device's own not-yet-synced queue) is deliberately never filtered --
-    // see isHighConfidence's own comment on why.
+    // manual tier-3 reports. Applied once here, before both places downstream that read
+    // remoteSightings (this combine step, travelStubGeoJsonString), rather than two separate
+    // filters that could drift -- a travel stub with no matching pin (or vice versa) would be a
+    // confusing half-filtered map. localSightings (this device's own not-yet-synced queue) is
+    // deliberately never filtered -- see isHighConfidence's own comment on why.
     var showHighConfidenceOnly by remember { mutableStateOf(false) }
     val filteredRemoteSightings = remember(remoteSightings, showHighConfidenceOnly) {
         if (showHighConfidenceOnly) remoteSightings.filter { it.isHighConfidence } else remoteSightings
@@ -359,39 +358,13 @@ fun SightingsMapScreen(
                     }
                 }
 
-                // Uncertainty circles — always shown in standard mode regardless of the
-                // playback fade timeline (a separate, independent estimate of "somewhere within
-                // this radius", not another point-in-time marker). Replaces the old heading/
-                // distance sector wedge: a wedge's apex reveals where the observer stood, which
-                // this design specifically avoids storing at all -- a plain circle centered on
-                // the (already anonymous) estimated whale position has no such tell.
-                val circleGeoJsonString = remember(filteredRemoteSightings, region) {
-                    val features = filteredRemoteSightings.mapNotNull { s ->
-                        // No whale position -- either bad data or a legacy pre-redesign row
-                        // (position_source null) -- nowhere new-format to draw a circle around.
-                        val lat = s.whaleLat ?: return@mapNotNull null
-                        val lng = s.whaleLng ?: return@mapNotNull null
-                        val radiusMeters = s.uncertaintyRadiusMeters ?: return@mapNotNull null
-                        if (!region.containsLocation(lat, lng)) return@mapNotNull null
-                        buildCircleGeoJsonFeature(lat, lng, radiusMeters)
-                    }
-                    """{ "type": "FeatureCollection", "features": [ ${features.joinToString(",")} ] }"""
-                }
-                val circleSource = rememberGeoJsonSource(data = GeoJsonData.JsonString(circleGeoJsonString))
-
-                // Fill + outline, drawn before the point markers below so circles sit underneath them.
-                FillLayer(
-                    id = "sighting-uncertainty-fill",
-                    source = circleSource,
-                    color = const(Color(0xFF00E5FF)),
-                    opacity = const(0.18f)
-                )
-                LineLayer(
-                    id = "sighting-uncertainty-outline",
-                    source = circleSource,
-                    color = const(Color(0xFF00E5FF)),
-                    width = const(1.5.dp)
-                )
+                // Item 103: no uncertainty circle around the pin anymore -- removed entirely
+                // (rendering code, not just data), matching the PWA (webapp/js/map-view.js) --
+                // position is now placed exactly, not estimated. uncertaintyRadiusMeters/
+                // uncertaintyBucket stay on SightingRecord for old rows (still read by
+                // GeofenceUtils' verification-buffer check and ExportUtils' CSV columns) but are
+                // never drawn from here going forward. buildCircleGeoJsonFeature (HeadingDistance.kt)
+                // had no other caller and was removed alongside this.
 
                 // Travel-direction stubs — drawn only where a sighting has a recorded
                 // travelBearingDegrees (optional; most won't). Snapped to the nearest of 8
@@ -958,8 +931,8 @@ private data class SightingDisplayModel(
     val timestamp: Long,
     val total: Int,
     val isLocal: Boolean,
-    // Uncertainty circle radius -- replaces the old heading/distance sector wedge. Null when a
-    // sighting (local or remote) has no recorded value.
+    // Item 103: no longer drawn (the uncertainty-circle FillLayer/LineLayer was removed) --
+    // threaded through from SightingRecord anyway so this model doesn't quietly diverge from it.
     val uncertaintyRadiusMeters: Double?,
     // The animal's own absolute travel direction, optional -- null renders as a plain dot with
     // no arrow, same as no direction having been recorded at all.

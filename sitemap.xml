@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Item 102: hand-maintained, no build step generates this (same convention as PRIVACY.html/
+  LICENSE.html elsewhere in this repo -- see CLAUDE.md's "Legal pages" section). Lists only the
+  actual public, indexable pages: the main app and the standalone status page (both real
+  documents with their own <head> SEO tags, see index.html/status/index.html), plus the two
+  root-level legal pages. Deliberately excludes /admin/ (robots.txt disallows it entirely, not
+  just omitted here), /print/ (print-only sign templates, not meant to be search results), and
+  /webapp/status/... query variants (?zone=<slug> is the same document, not a distinct URL worth
+  listing separately).
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://gmessy30.github.io/BELUGAS/webapp/</loc>
+  </url>
+  <url>
+    <loc>https://gmessy30.github.io/BELUGAS/webapp/status/</loc>
+  </url>
+  <url>
+    <loc>https://gmessy30.github.io/BELUGAS/PRIVACY.html</loc>
+  </url>
+  <url>
+    <loc>https://gmessy30.github.io/BELUGAS/LICENSE.html</loc>
+  </url>
+</urlset>

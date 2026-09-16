@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /admin/
+
+Sitemap: https://gmessy30.github.io/BELUGAS/sitemap.xml

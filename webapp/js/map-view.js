@@ -5,13 +5,16 @@
 // layers, not invented for the web: a plain circular dot (native: CircleLayer radius 10dp,
 // Color.Yellow fill, black 2dp stroke) with a permanent text caption below it (native:
 // SymbolLayer, black text/white halo, "{N} Belugas · {date}"), gray instead of yellow for this
-// device's own not-yet-synced queue (native: "Local" source -> Color(0xFF9E9E9E)), and the same
-// cyan (0xFF00E5FF) uncertainty circle at the same 18% fill / stroke treatment. Clustering (below)
-// uses Leaflet.markercluster (native: GeoJsonOptions(cluster = true)) with a matching solid-orange
-// (0xFFFF6D00), black-stroke badge.
+// device's own not-yet-synced queue (native: "Local" source -> Color(0xFF9E9E9E)). Clustering
+// (below) uses Leaflet.markercluster (native: GeoJsonOptions(cluster = true)) with a matching
+// solid-orange (0xFFFF6D00), black-stroke badge.
+//
+// Item 103: no uncertainty circle around the pin anymore -- removed entirely (rendering code,
+// not just data) now that position is placed exactly by the observer rather than estimated.
+// uncertainty_radius_meters/uncertainty_bucket are still fetched (db.js's column list) and still
+// exist on old rows, just never read here going forward.
 let mapInstance = null;
 let mapShadingLayer = null;
-let mapUncertaintyLayer = null;
 let mapMarkersLayer = null;
 let lastCombinedSightings = [];
 let mapVerifiedOnly = false;
@@ -103,20 +106,8 @@ function initMap() {
   }).addTo(mapInstance);
 
   // Shading added before the markers layer so it always paints underneath sighting pins,
-  // matching SightingsMapScreen's own draw order (shading, then uncertainty circles, then pins).
+  // matching SightingsMapScreen's own draw order (shading, then pins).
   mapShadingLayer = L.layerGroup().addTo(mapInstance);
-
-  // BUG FIX (item 73): uncertainty circles used to be added directly to mapMarkersLayer (the
-  // markerClusterGroup below) -- L.markerClusterGroup accepts any layer via addLayer/addTo, not
-  // just markers, so each circle silently became an extra COUNTED child of whatever cluster its
-  // sighting fell into (5 sightings, some with a circle, reading as a cluster count of 8), and
-  // spiderfying tried to lay out a "leg" for it too even though a circle has no icon to show at
-  // the leg's end -- a leg with no dot. A separate, plain (non-clustered) layer group for these
-  // keeps the cluster group's own count exactly equal to the number of markers in it, matching
-  // native's own uncertainty circles (their own unclustered FillLayer, never part of the
-  // GeoJsonOptions(cluster=true) source). Added before the markers layer, same draw-order reason
-  // as mapShadingLayer above.
-  mapUncertaintyLayer = L.layerGroup().addTo(mapInstance);
 
   // zoomToBoundsOnClick: false -- clusterClick below decides between zooming in (the normal case)
   // and showing the same-point sightings sheet (when every pin in the cluster shares one exact
@@ -249,7 +240,6 @@ const SIGHTING_DOT_LOCAL_COLOR = "#9E9E9E";
 function drawMapMarkers(skipFitBounds = false) {
   if (!mapInstance) return;
   mapMarkersLayer.clearLayers();
-  mapUncertaintyLayer.clearLayers();
 
   // BUG FIX (item 86): date range and fade window used to be entangled behind one
   // `playbackIsOpen` gate -- closing the panel dropped ALL filtering (showing literally
@@ -285,22 +275,6 @@ function drawMapMarkers(skipFitBounds = false) {
       className: "sighting-label"
     });
     mapMarkersLayer.addLayer(marker);
-
-    // Plain uncertainty circle -- same replacement for the old heading/distance sector wedge
-    // the native map switched to post-redesign (SightingRecord.uncertaintyRadiusMeters' comment).
-    // Color/opacity match SightingsMapScreen's FillLayer(0.18 opacity)/LineLayer(1.5dp) exactly.
-    // Item 73: its own non-clustered layer, NOT mapMarkersLayer -- see mapUncertaintyLayer's own
-    // declaration comment for why (a circle counted as a cluster child, with no icon to spiderfy
-    // out to, is exactly what phantom-inflated the cluster badge count before).
-    if (s.uncertainty_radius_meters != null) {
-      L.circle([s.whale_lat, s.whale_lng], {
-        radius: s.uncertainty_radius_meters,
-        color: "#00E5FF",
-        weight: 1.5,
-        fillOpacity: 0.18,
-        opacity: 1
-      }).addTo(mapUncertaintyLayer);
-    }
   });
 
   if (!skipFitBounds && visible.length > 0) {

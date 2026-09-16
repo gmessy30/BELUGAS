@@ -72,38 +72,6 @@ fun destinationPoint(lat: Double, lng: Double, bearingDegrees: Double, distanceM
     return Pair(lat2 * 180.0 / PI, lng2 * 180.0 / PI)
 }
 
-/**
- * Builds a plain uncertainty-circle GeoJSON Polygon feature around [lat]/[lng] at
- * [radiusMeters] -- the whale-position redesign's replacement for the old heading/distance
- * sector wedge (buildSectorGeoJsonFeature, removed): a wedge's apex reveals where the observer
- * stood, which this design specifically avoids storing at all, so the map can only ever draw a
- * shape centered on the (already anonymous) estimated position.
- */
-fun buildCircleGeoJsonFeature(
-    lat: Double,
-    lng: Double,
-    radiusMeters: Double,
-    propertiesJson: String = "{}",
-    segments: Int = 32
-): String {
-    val ring = (0..segments).joinToString(", ") { i ->
-        val bearing = 360.0 * i / segments
-        val (pointLat, pointLng) = destinationPoint(lat, lng, bearing, radiusMeters)
-        "[$pointLng, $pointLat]"
-    }
-
-    return """
-    {
-      "type": "Feature",
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [[ $ring ]]
-      },
-      "properties": $propertiesJson
-    }
-    """.trimIndent()
-}
-
 // Item 34: "2 white, 0 grey, 2 calves, 0 unknown" -- shared by LoggingScreen.kt/
 // ManualLoggingScreen.kt's own pre-submit confirmation summary (and by webapp/js/submit-view.js's
 // formatWhaleCountsSummary, the same format ported to the web app for parity).

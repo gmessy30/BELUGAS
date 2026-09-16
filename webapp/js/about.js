@@ -6,6 +6,15 @@
 const LUNA_ARTWORK_INQUIRY_EMAIL = "keeneyeapps+luna@gmail.com";
 const DEVELOPER_CONTACT_EMAIL = "keeneyeapps@gmail.com";
 
+// Item 102: About has no URL of its own (it's an overlay inside this one document, like every
+// other full-screen page in this SPA), so it can't carry real per-page <title>/meta tags the way
+// index.html/status/index.html's own <head> tags do -- a link-preview scraper or search crawler
+// only ever sees whatever's in this document's initial <head>, regardless of which overlay is
+// open. Dynamic document.title IS still worth doing here, for the one audience that does see it
+// live: the browser tab/bookmark itself. Captured once at parse time (rather than hardcoded)
+// so this can never drift from whatever index.html's real <title> actually says.
+const DEFAULT_DOCUMENT_TITLE = document.title;
+
 // Matches AboutHiddenGesture.kt's own constants exactly -- the tap count resets (rather than
 // accumulating indefinitely) after any gap longer than this between taps, and there's no visible
 // hint anywhere that this exists.
@@ -153,4 +162,5 @@ function openAboutPage() {
   setAboutTextVisible(true);
   setAboutBackground(0);
   document.getElementById("about-page").hidden = false;
+  document.title = "About — BELUGAS";
 }

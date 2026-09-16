@@ -174,11 +174,14 @@ fun ResourcesScreen(onBack: () -> Unit) {
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
+                        // Item 103: "estimate that" reworded -- position is placed exactly (a
+                        // dropped/dragged pin), not estimated, matching the map no longer drawing
+                        // an uncertainty circle around it.
                         "When you log a sighting, this app asks for the whale's position, not " +
                             "yours -- that's deliberate. A report is far more useful to other " +
                             "observers and researchers when it marks where the animal actually " +
-                            "was, so take the extra moment to estimate that rather than just " +
-                            "dropping a pin on your own location.",
+                            "was, so take the extra moment to place that precisely rather than " +
+                            "just dropping a pin on your own location.",
                         color = Color.White.copy(alpha = 0.85f),
                         fontSize = 13.sp
                     )

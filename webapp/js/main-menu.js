@@ -124,6 +124,7 @@ function initMainMenu() {
     openAboutPage();
     pushNavLayer("about-page", () => {
       document.getElementById("about-page").hidden = true;
+      document.title = DEFAULT_DOCUMENT_TITLE; // about.js's own captured-at-load default
       menu.hidden = false;
     });
   });

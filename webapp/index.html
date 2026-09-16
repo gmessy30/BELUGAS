@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>BELUGAS</title>
+  <title>BELUGAS — Cook Inlet Beluga Whale Sightings</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 
   <!-- iOS home-screen behavior -->
@@ -13,6 +13,24 @@
 
   <meta name="theme-color" content="#66B2B2">
   <meta name="description" content="Report and view beluga whale sightings in Cook Inlet, Alaska.">
+
+  <!-- Item 102: basic SEO/link-preview metadata. og:image/twitter:image use Luna's own
+       breaching-belugas artwork (already shipped in img/, no new asset added) via its absolute
+       deployed URL -- social/text-message link-preview scrapers fetch that URL directly and
+       never run this page's JS, so a relative path wouldn't resolve for them the way it does for
+       a real page load. Canonical/og:url point at this app's actual GitHub Pages URL (no custom
+       domain exists to prefer instead). -->
+  <link rel="canonical" href="https://gmessy30.github.io/BELUGAS/webapp/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="BELUGAS">
+  <meta property="og:title" content="BELUGAS — Cook Inlet Beluga Whale Sightings">
+  <meta property="og:description" content="Report and view beluga whale sightings in Cook Inlet, Alaska.">
+  <meta property="og:url" content="https://gmessy30.github.io/BELUGAS/webapp/">
+  <meta property="og:image" content="https://gmessy30.github.io/BELUGAS/webapp/img/breaching_belugas_sketches.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="BELUGAS — Cook Inlet Beluga Whale Sightings">
+  <meta name="twitter:description" content="Report and view beluga whale sightings in Cook Inlet, Alaska.">
+  <meta name="twitter:image" content="https://gmessy30.github.io/BELUGAS/webapp/img/breaching_belugas_sketches.png">
 
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
@@ -195,7 +213,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v90</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v92</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -312,6 +330,7 @@
           <li>The reporting map's RECENTER button now centers on your real location with one tap.</li>
           <li>The News Feed has a search box now, so you can find a specific article without scrolling.</li>
           <li>Added an Export Data page -- download public sighting data as CSV or GeoJSON, no account needed.</li>
+          <li>The Sightings Map no longer draws a circle around each pin -- reported positions are exact now, not an estimated range.</li>
         </ul>
       </div>
     </div>
