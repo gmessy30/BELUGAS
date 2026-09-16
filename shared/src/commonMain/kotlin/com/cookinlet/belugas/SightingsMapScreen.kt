@@ -367,17 +367,24 @@ fun SightingsMapScreen(
                 // had no other caller and was removed alongside this.
 
                 // Travel-direction stubs — drawn only where a sighting has a recorded
-                // travelBearingDegrees (optional; most won't). Snapped to the nearest of 8
-                // compass points for display, per that function's own comment. Plain line, no
-                // arrowhead, by design (see buildTravelStubGeoJsonFeature's own comment) -- reads
-                // as a handle on the sighting's own dot marker, not a second glyph.
+                // travelBearingDegrees (optional; most won't), at the TRUE recorded bearing, not
+                // snapped to the nearest of 8 compass points -- the BearingDial captures 16
+                // points and the DB stores the exact value, so snapping the drawn line would
+                // throw away real precision the record actually has (a recorded 112.5° would
+                // draw as 135°). Plain line, no arrowhead, by design (see
+                // buildTravelStubGeoJsonFeature's own comment) -- reads as a handle on the
+                // sighting's own dot marker, not a second glyph. (This screen has no popup/label
+                // text that names a bearing at all, unlike webapp/js/map-view.js's
+                // formatTravelDirection -- if one's ever added here, THAT'S the place for a
+                // snapped compass-point name, not this drawn line; HeadingDistance.kt's old
+                // snapToNearestCompass8Degrees was removed since this was its only caller.)
                 val travelStubGeoJsonString = remember(filteredRemoteSightings, region) {
                     val features = filteredRemoteSightings.mapNotNull { s ->
                         val lat = s.whaleLat ?: return@mapNotNull null
                         val lng = s.whaleLng ?: return@mapNotNull null
                         val bearing = s.travelBearingDegrees ?: return@mapNotNull null
                         if (!region.containsLocation(lat, lng)) return@mapNotNull null
-                        buildTravelStubGeoJsonFeature(lat, lng, snapToNearestCompass8Degrees(bearing))
+                        buildTravelStubGeoJsonFeature(lat, lng, bearing)
                     }
                     """{ "type": "FeatureCollection", "features": [ ${features.joinToString(",")} ] }"""
                 }

@@ -289,12 +289,16 @@ function drawMapMarkers(skipFitBounds = false) {
     // before now (checked: even before item 103, travel_bearing_degrees only ever fed
     // formatTravelDirection's popup TEXT, never a drawn line), so this is a straight port of
     // SightingsMapScreen's existing "sighting-travel-stubs" LineLayer, not a regression fix.
-    // Same fixed 40m length/no-arrowhead/nearest-8-compass-point snap as
-    // buildTravelStubGeoJsonFeature there; destinationPoint below is the same spherical-earth
-    // forward-geodesic formula as HeadingDistance.kt's own destinationPoint.
+    // Item 104 follow-up: drawn at the TRUE recorded bearing, not snapped to the nearest of 8
+    // compass points -- the BearingDial captures 16 points and the DB stores the exact value, so
+    // snapping the drawn line to 8 points threw away real precision the record actually has (a
+    // recorded 112.5° drew as 135°). Snapping stays for formatTravelDirection's own popup TEXT
+    // label only, where a plain compass-point name reads better than a raw decimal degree.
+    // Fixed 40m length/no arrowhead unchanged from buildTravelStubGeoJsonFeature's own choices;
+    // destinationPoint below is the same spherical-earth forward-geodesic formula as
+    // HeadingDistance.kt's own destinationPoint.
     if (s.travel_bearing_degrees != null) {
-      const snappedBearing = snapToNearestCompass8Degrees(s.travel_bearing_degrees);
-      const stubEnd = destinationPoint(s.whale_lat, s.whale_lng, snappedBearing, TRAVEL_STUB_LENGTH_METERS);
+      const stubEnd = destinationPoint(s.whale_lat, s.whale_lng, s.travel_bearing_degrees, TRAVEL_STUB_LENGTH_METERS);
       L.polyline([[s.whale_lat, s.whale_lng], stubEnd], {
         color: "#FFFFFF",
         weight: 2

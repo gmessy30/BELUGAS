@@ -78,21 +78,15 @@ fun destinationPoint(lat: Double, lng: Double, bearingDegrees: Double, distanceM
 fun formatWhaleCountsSummary(whites: Int, greys: Int, calves: Int, unknown: Int): String =
     "$whites white, $greys grey, $calves calves, $unknown unknown"
 
-// Compass isn't accurate enough to justify rendering a precise degree value -- the map arrow
-// always snaps to the nearest of 8 compass points, even though the stored travelBearingDegrees
-// keeps its full precision (this only affects display).
-fun snapToNearestCompass8Degrees(bearingDegrees: Double): Double {
-    val snapped = kotlin.math.round(bearingDegrees / 45.0) * 45.0
-    return ((snapped % 360.0) + 360.0) % 360.0
-}
-
 /**
  * Builds a plain line stub (a single GeoJSON LineString feature, no arrowhead) pointing along
  * [bearingDegrees] from [lat]/[lng] -- drawn only where a travel bearing exists on a sighting; a
  * plain dot otherwise. Reads like a handle on the sighting's own point marker (pan/lollipop
  * silhouette: dot plus handle) rather than a second, separate arrow glyph -- cleaner at map scale
  * and less visually noisy once sightings cluster than the previous shaft-plus-barbs arrow this
- * replaced. [bearingDegrees] is expected to already be snapped via [snapToNearestCompass8Degrees].
+ * replaced. [bearingDegrees] is drawn at its TRUE recorded value, not snapped to a compass point
+ * (item 104 follow-up) -- the BearingDial captures 16 points and the DB stores the exact value,
+ * so snapping the drawn line would throw away real precision the record actually has.
  */
 fun buildTravelStubGeoJsonFeature(
     lat: Double,
