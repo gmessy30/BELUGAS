@@ -213,7 +213,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v96</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v97</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -322,6 +322,10 @@
            the oldest groups when this gets long -- it isn't meant to accumulate every past entry. -->
       <div class="subpage-section">
         <div class="section-title">WHAT'S NEW</div>
+        <div class="whats-new-date">SEPTEMBER 18, 2026</div>
+        <ul class="tip-list">
+          <li>Added NOAA's guidance for boating near belugas -- on Resources, and on the standalone status page too.</li>
+        </ul>
         <div class="whats-new-date">SEPTEMBER 16, 2026</div>
         <ul class="tip-list">
           <li>VERIFIED ONLY now means a sighting was reported or confirmed by a credentialed observer -- a photo alone no longer counts, and confirmed sightings now show up. Export Data has the same filter.</li>
@@ -462,6 +466,26 @@
         <div class="section-title">KEEP YOUR DISTANCE</div>
         <p class="section-body">NOAA's Alaska marine mammal viewing guidelines recommend staying at least 100 yards from marine mammals and limiting time observing any one animal or group to 30 minutes. Never encircle or trap a whale between boats, or between a boat and shore. If a whale approaches you, put your engine in neutral and let it pass on its own.</p>
         <a class="text-link" href="https://www.fisheries.noaa.gov/alaska/marine-life-viewing-guidelines/alaska-marine-mammal-viewing-guidelines-and-regulations" target="_blank" rel="noopener">Full NOAA viewing guidelines →</a>
+      </div>
+      <hr class="section-divider">
+
+      <!-- Item 107: river/stream-specific boater guidance, adapted from NOAA Fisheries'
+           "Endangered Beluga Whales in Cook Inlet Rivers and Streams". Kept SEPARATE from
+           "KEEP YOUR DISTANCE" above (the general Alaska marine mammal viewing guidelines, a
+           different NOAA document) rather than merged into it -- the two have different sources
+           and different distances, and blurring them would misattribute both. The standalone
+           status page (/webapp/status/) carries the same list in its own collapsed panel. -->
+      <div class="subpage-section">
+        <div class="section-title">BOATING NEAR BELUGAS</div>
+        <ul class="tip-list">
+          <li>Keep at least 300 feet (100 yards) away at all times.</li>
+          <li>Delay launching until they've left the area.</li>
+          <li>Steer clear of their path; shift to neutral if it's safe to do so.</li>
+          <li>Let them pass before continuing upriver.</li>
+          <li>Operate at slow, no-wake speed near belugas.</li>
+        </ul>
+        <p class="section-body" style="margin-top: 8px;">Cook Inlet belugas are endangered, and harassing them violates federal law (Marine Mammal Protection Act). Report violations to NOAA Enforcement at (800) 853-1964 -- the same number as SUSPICIOUS ACTIVITY / HARASSMENT above.</p>
+        <a class="text-link" href="https://www.fisheries.noaa.gov/resource/educational-materials/endangered-beluga-whales-cook-inlet-rivers-and-streams" target="_blank" rel="noopener">Source: NOAA Fisheries -- Endangered Beluga Whales in Cook Inlet Rivers and Streams →</a>
       </div>
       <hr class="section-divider">
 

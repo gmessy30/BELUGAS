@@ -85,7 +85,10 @@
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    padding: 24px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    /* Item 107: bottom padding reserves room for the FIXED "Open the full app" link below --
+       with the NOAA guidance panel expanded this page genuinely scrolls, and without this the
+       last line of the panel ends up underneath that link instead of above it. */
+    padding: 24px 20px calc(76px + env(safe-area-inset-bottom, 0px));
     text-align: center;
     /* Same color transition every presence-color surface in this app already uses (the banner,
        the map shading) -- a fresh reading never feels like a jump-cut. */
@@ -174,6 +177,76 @@
     margin-top: -22px;
     transform-origin: 7px 22px;
   }
+  /* Item 107: NOAA boater-guidance panel -- deliberately LOW priority relative to the live
+     status: collapsed by default (<details>), small type, no status color of its own, and
+     visually a separate card rather than part of the status block, so it can never compete with
+     the color/banner text for attention. Content adapted from NOAA Fisheries' "Endangered Beluga
+     Whales in Cook Inlet Rivers and Streams" guidance (cited/linked in the panel itself). A
+     translucent WHITE tint (not a black one) is the one background that works over every status
+     color this page takes on, including YELLOW, where the page flips to black text. */
+  .noaa-panel {
+    margin-top: 22px;
+    width: 100%;
+    max-width: 420px;
+    text-align: left;
+    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid var(--status-fg-dim);
+    border-radius: 12px;
+    color: var(--status-fg-dim);
+    font-size: 0.8rem;
+  }
+  .noaa-panel > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 12px 14px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .noaa-panel > summary::-webkit-details-marker { display: none; }
+  .noaa-panel > summary::after {
+    content: "▾";
+    font-size: 0.9rem;
+    transition: transform 0.2s ease;
+  }
+  .noaa-panel[open] > summary::after {
+    transform: rotate(180deg);
+  }
+  .noaa-panel-body {
+    padding: 0 14px 14px;
+  }
+  .noaa-panel-body ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .noaa-panel-body li {
+    position: relative;
+    padding: 4px 0 4px 16px;
+    line-height: 1.4;
+  }
+  .noaa-panel-body li::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+  }
+  .noaa-panel-law {
+    margin: 10px 0 0;
+    line-height: 1.4;
+  }
+  .noaa-panel-source {
+    display: block;
+    margin-top: 10px;
+    color: var(--status-fg);
+    font-weight: 700;
+    text-decoration: none;
+    opacity: 0.9;
+  }
   .status-open-app-link {
     position: fixed;
     left: 50%;
@@ -204,7 +277,28 @@
     <div class="status-last-seen-line" id="status-last-seen-line"></div>
   </div>
 
-  <a class="status-open-app-link" href="../">Open the full app →</a>
+  <!-- Item 107: NOAA boater guidance -- static content, no JS, collapsed by default. Adapted
+       from NOAA Fisheries' "Endangered Beluga Whales in Cook Inlet Rivers and Streams" guidance,
+       cited and linked below. Sits AFTER the (RED-only) map so on RED it fills the space under
+       it, and directly under the status text otherwise. The same guidance is on the main app's
+       Resources page ("BOATING NEAR BELUGAS"), which this deliberately duplicates rather than
+       links to -- this page is meant to stand alone for someone who never opens the app. -->
+  <details class="noaa-panel">
+    <summary>If you're on the water</summary>
+    <div class="noaa-panel-body">
+      <ul>
+        <li>Keep at least 300 feet (100 yards) away at all times.</li>
+        <li>Delay launching until they've left the area.</li>
+        <li>Steer clear of their path; shift to neutral if it's safe to do so.</li>
+        <li>Let them pass before continuing upriver.</li>
+        <li>Operate at slow, no-wake speed near belugas.</li>
+      </ul>
+      <p class="noaa-panel-law">Cook Inlet belugas are endangered, and harassing them violates federal law (Marine Mammal Protection Act). Report violations to NOAA Enforcement: <a href="tel:8008531964" style="color: inherit; font-weight: 700;">(800) 853-1964</a>.</p>
+      <a class="noaa-panel-source" href="https://www.fisheries.noaa.gov/resource/educational-materials/endangered-beluga-whales-cook-inlet-rivers-and-streams" target="_blank" rel="noopener">Source: NOAA Fisheries &rarr;</a>
+    </div>
+  </details>
+
+  <a class="status-open-app-link" href="../">Open the full app &rarr;</a>
 
   <script src="../js/config.js"></script>
   <script src="../js/presence.js"></script>
