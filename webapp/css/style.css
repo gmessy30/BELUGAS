@@ -2386,6 +2386,30 @@ button.secondary {
   font-size: 0.8rem;
 }
 
+/* Item 106: EDIT, on the one row this device may currently correct (map popup + list item).
+   Deliberately outlined rather than filled, unlike CONFIRM SIGHTING right above -- confirming is
+   an irreversible vouch on someone else's report, editing is an ordinary correction to your own,
+   and the two sit in the same place on the same card. */
+.edit-sighting-btn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--brand-teal-2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--brand-teal-2);
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+/* Item 106: quiet by design -- it qualifies the timestamp it sits next to, it isn't news. */
+.sighting-edited-mark {
+  font-weight: 400;
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+
 /* --- Playback / time-lapse + date-range (SightingsMapScreen.kt's own scrub slider + quick-range
    chips, one Surface/Column natively -- ported as one panel here too, see map-view.js). --- */
 /* Item 78: relocated from a bottom-right, bottom-anchored FAB (position:absolute + the

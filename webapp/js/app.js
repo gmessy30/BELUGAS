@@ -5,6 +5,12 @@ let latestRemoteSightings = [];
 
 async function refreshSightings() {
   latestRemoteSightings = await fetchRecentSightings();
+  // Item 106: which row (if any) this device may currently edit -- awaited BEFORE the render, for
+  // the same reason cachedIsTierOneObserver is resolved before the first one (see the splash gate
+  // below): renderAllSightings draws the EDIT button straight off this cache, with nothing to
+  // re-render later if the answer arrives after the fact. Re-checked on EVERY refresh, not once
+  // per load, since reporting a new sighting moves which row is editable.
+  await refreshEditableSightingStatus();
   await renderAllSightings();
 }
 

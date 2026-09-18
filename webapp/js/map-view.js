@@ -276,7 +276,10 @@ function drawMapMarkers(skipFitBounds = false) {
     // is injected as part of that same HTML string, so it needs wiring up fresh every time the
     // popup actually opens (Leaflet re-parses the string into DOM each time, there's no persistent
     // element to attach a listener to ahead of time).
-    marker.on("popupopen", (event) => wireConfirmSightingButton(event.popup.getElement(), s));
+    marker.on("popupopen", (event) => {
+      wireConfirmSightingButton(event.popup.getElement(), s);
+      wireEditSightingButton(event.popup.getElement(), s);
+    });
     marker.bindTooltip(sightingCaptionText(s), {
       permanent: true,
       direction: "bottom",
@@ -344,7 +347,38 @@ function sightingPopupHtml(s) {
   const photo = s.photo_url
     ? `<img src="${escapeHtml(s.photo_url)}" alt="Sighting photo" style="width:100%;border-radius:6px;margin-top:6px;">`
     : "";
-  return `<div class="popup"><strong>${time}</strong><br>${counts}<br>${direction}${activities}${photo}${confirmSightingButtonHtml(s)}</div>`;
+  return `<div class="popup"><strong>${time}</strong>${editedMarkHtml(s)}<br>${counts}<br>${direction}${activities}${photo}${confirmSightingButtonHtml(s)}${editSightingButtonHtml(s)}</div>`;
+}
+
+// Item 106: a small "· edited" mark on any row whose edited_at is set -- the record still says
+// what it says, but a reader can see it was corrected after the fact rather than reported that
+// way. Empty string (not a placeholder) on an unedited row, and on any database that predates
+// edited_at entirely (the column simply isn't in the fetched row there -- see
+// downgradeSightingColumnsOnce, db.js). Shared by the map popup and the list item.
+function editedMarkHtml(s) {
+  return s.edited_at ? ' <span class="sighting-edited-mark">· edited</span>' : "";
+}
+
+// Item 106: EDIT is offered on exactly one row -- whichever one get_my_editable_sighting named as
+// this device's own most recent, still inside the edit window (cachedEditableSightingId, db.js).
+// Never on a locally-queued row (no DB row to edit yet; it can still be edited the moment it
+// syncs and the next refresh names it). Once the window closes or a newer sighting exists, the
+// next refresh simply stops naming it and the button disappears -- no dead end, no error state to
+// render. edit_my_last_sighting re-checks all of this server-side regardless.
+function editSightingButtonHtml(s) {
+  if (s.is_local || !isEditableSighting(s)) return "";
+  return `<button type="button" class="edit-sighting-btn" data-sighting-id="${escapeHtml(s.id)}">Edit</button>`;
+}
+
+// Item 106: the server's answer (cachedEditableSightingId) AND the deadline it came with. The
+// server filters the window itself, so the deadline check is belt-and-braces for one specific
+// case it can't cover: an app left open past the boundary, whose cache is only refreshed on the
+// next sightings refresh. Without it the button would linger until then and fail on save -- the
+// dead end this feature is meant not to have. Shared by the map popup and the list item.
+function isEditableSighting(s) {
+  if (!cachedEditableSightingId || s.id !== cachedEditableSightingId) return false;
+  if (cachedEditableSightingUntilMs && Date.now() >= cachedEditableSightingUntilMs) return false;
+  return true;
 }
 
 // Item 63: null/empty for a locally-queued (not yet synced) sighting -- it has no real DB id yet,
@@ -382,6 +416,20 @@ function wireConfirmSightingButton(container, s) {
   const btn = container.querySelector(".confirm-sighting-btn");
   if (!btn) return;
   btn.addEventListener("click", () => handleConfirmSightingClick(s, btn));
+}
+
+// Item 106: same popupopen-time wiring as the confirm button right above, and for the identical
+// reason (Leaflet re-parses the popup's HTML string into fresh DOM every time it opens).
+function wireEditSightingButton(container, s) {
+  if (!container) return;
+  const btn = container.querySelector(".edit-sighting-btn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    // Closing the popup first: the edit flow takes over the whole screen (the submit tab's own
+    // manual-log-step), and a popup left open underneath would still be there on return.
+    mapInstance.closePopup();
+    openEditSightingFlow(s);
+  });
 }
 
 async function handleConfirmSightingClick(sighting, btn) {

@@ -77,6 +77,12 @@ let manualActivityOtherNote = "";
 // behavior).
 let manualLogStepReachedViaCameraPath = false;
 
+// Item 106: the sighting row currently being EDITED, or null for an ordinary new report. Set only
+// by openEditSightingFlow, cleared only by exitEditSightingFlow -- everything that behaves
+// differently in edit mode branches on this one variable being non-null, rather than on a
+// separate boolean that could disagree with it.
+let editingSighting = null;
+
 // Shared by both paths' geofence-warning "SAVE ANYWAY" button -- set right before showing the
 // warning, so one modal/handler pair can serve either flow without needing to know which one is
 // currently active.
@@ -244,6 +250,18 @@ function initWhaleCountWiring(scopeSelector, counts) {
 function resetWhaleCountUi(scopeSelector, counts) {
   Object.keys(counts).forEach((key) => (counts[key] = 0));
   document.querySelectorAll(`${scopeSelector} .whale-count-value`).forEach((el) => (el.textContent = "0"));
+}
+
+// Item 106: the same write, to the same two places (the counts object the rest of this file
+// reads, and the on-screen value under each piece of artwork) -- but to real values rather than
+// zeroes, for pre-filling the edit flow. resetWhaleCountUi above is exactly this with every value
+// 0; kept separate rather than merged so the reset path's call sites stay as obvious as they are.
+function setWhaleCountUi(scopeSelector, counts, values) {
+  Object.keys(counts).forEach((key) => (counts[key] = Math.max(0, values[key] || 0)));
+  document.querySelectorAll(`${scopeSelector} .whale-count-col`).forEach((col) => {
+    const key = col.dataset.count;
+    if (key in counts) col.querySelector(".whale-count-value").textContent = String(counts[key]);
+  });
 }
 
 // --- CaptureScreen.kt / LoggingScreen.kt (camera path) ---
@@ -548,6 +566,10 @@ function resetManualPositionControls() {
 // camera step for another attempt -- the only "retake" affordance left, now that there's no
 // separate review step to retake FROM.
 function retakePhoto() {
+  // Item 106: in edit mode the thumbnail is the ALREADY-SUBMITTED photo shown for context, not a
+  // pending capture -- there's no camera step behind this screen to return to, and replacing the
+  // photo isn't offered (see openEditSightingFlow's own comment), so the tap does nothing.
+  if (editingSighting) return;
   navigateBack(); // pops the manual-log-step-from-camera layer; its onPop IS goToCameraStep
 }
 
@@ -1037,6 +1059,24 @@ function resetActivityPicker() {
   updateActivityButtonUi();
 }
 
+// Item 106: resetActivityPicker's counterpart for pre-filling the edit flow. The chips carry
+// their own state in the DOM (each toggles its own .active class, see initActivityPicker), so
+// restoring a saved selection means writing BOTH the set and the chips -- setting only the set
+// would show an unselected picker that silently re-submits selections the user never saw.
+function setActivityPickerSelection(activities, note) {
+  manualSelectedActivities.clear();
+  (activities || []).forEach((key) => manualSelectedActivities.add(key));
+  manualActivityOtherNote = note || "";
+  document.querySelectorAll("#activity-chips .chip-toggle").forEach((chip) => {
+    chip.classList.toggle("active", manualSelectedActivities.has(chip.dataset.activity));
+  });
+  const noteInput = document.getElementById("activity-other-note-input");
+  const otherSelected = manualSelectedActivities.has("OTHER");
+  noteInput.hidden = !otherSelected;
+  noteInput.value = otherSelected ? manualActivityOtherNote : "";
+  updateActivityButtonUi();
+}
+
 function manualTotalCount() {
   return manualCounts.whites + manualCounts.greys + manualCounts.calves + manualCounts.unknown;
 }
@@ -1061,6 +1101,10 @@ async function submitManualSighting() {
   const directionText = manualTravelBearingDegrees != null
     ? `Travel direction: ${Math.round(manualTravelBearingDegrees)}°`
     : "Travel direction: Unknown";
+  // Item 106: same summary, same geofence flow, same modal -- only the wording changes, so an
+  // edit can never skip a confirmation step a new report gets (or vice versa).
+  document.getElementById("submit-confirm-title").textContent =
+    editingSighting ? "Save Changes" : "Confirm Sighting";
   showSubmitConfirmModal(
     formatWhaleCountsSummary(manualCounts),
     directionText,
@@ -1140,6 +1184,18 @@ function buildManualSightingRecord(lat, lng, isGeofenceVerified) {
 }
 
 async function finishManualSubmit(lat, lng, isGeofenceVerified) {
+  // Item 106: an edit takes the SAME route to get here (submitManualSighting's count check, the
+  // confirm modal, proceedManualSubmit's outer-geofence rejection and its coastline/SAVE ANYWAY
+  // warning) and only diverges at the actual write -- isGeofenceVerified included, which is why
+  // it's passed straight through: the flag stored against an edited position is recomputed by the
+  // SAME checks that produced it on insert, running right here, not carried over from wherever
+  // the whale was originally placed. edit_my_last_sighting refuses a position patch that doesn't
+  // carry one (see its own header comment).
+  if (editingSighting) {
+    await finishSightingEdit(lat, lng, isGeofenceVerified);
+    return;
+  }
+
   const button = document.getElementById("manual-submit-btn");
   button.disabled = true;
   setManualSubmitStatus("Submitting…");
@@ -1182,6 +1238,169 @@ function resetManualSubmitForm() {
     navigateBack();
   } else {
     goToCameraStep();
+  }
+}
+
+// --- Item 106: edit this device's own most recent sighting ---
+//
+// Reuses #manual-log-step wholesale (the same screen both reporting entry points already share
+// since item 60) rather than building a second editor: same map/crosshair for the position, same
+// BearingDial for the direction, same counts and ACTIVITY picker, pre-filled from the row as it
+// currently stands. Reached from the EDIT button on the map popup or the list item, which is
+// drawn on exactly one row (editSightingButtonHtml, map-view.js).
+//
+// WHAT AN EDIT CAN CHANGE HERE: counts, activities/note, position (and, with it, the recomputed
+// is_geofence_verified flag -- see finishManualSubmit), travel direction. The
+// date/time and SELF/OTHER controls are disabled rather than hidden -- they're part of the record
+// being edited and worth seeing, but observed_at is the one claim edit_my_last_sighting refuses
+// to revise (see its header comment) and observer_type isn't in its allowlist at all.
+//
+// THE PHOTO IS SHOWN BUT NOT REPLACEABLE, deliberately and for now: the RPC accepts a photo_url
+// patch, but offering a replacement here means routing back through the camera step and holding
+// this edit's state across it, which is a bigger change to the reporting flow than this item
+// needs. A sighting's photo therefore can't be swapped or removed from the PWA yet.
+const EDIT_MAP_ZOOM = 14;
+
+function openEditSightingFlow(sighting) {
+  // Same previous-tab capture the menu's own navigation items use (main-menu.js) -- an edit is
+  // started from Map or List, and the back gesture has to return to whichever one it was.
+  const previousTab = getActiveTabName();
+  editingSighting = sighting;
+  manualLogStepReachedViaCameraPath = false;
+  capturedPhotoBlob = null;
+
+  switchTab("submit");
+  stopCamera();
+  document.getElementById("camera-step").hidden = true;
+  document.getElementById("manual-log-step").hidden = false;
+
+  initManualMapIfNeeded();
+  if (sighting.whale_lat != null && sighting.whale_lng != null) {
+    // Straight to the recorded position -- the whole point of an edit is to adjust THAT, not to
+    // start again from the Cook Inlet overview. GPS is never fetched on this path (neither entry
+    // point's auto-fix applies: the position being edited is already known).
+    manualMapInstance.setView([sighting.whale_lat, sighting.whale_lng], EDIT_MAP_ZOOM);
+  }
+
+  setWhaleCountUi("#manual-log-step", manualCounts, {
+    whites: sighting.count_whites,
+    greys: sighting.count_greys,
+    calves: sighting.count_calves,
+    unknown: sighting.count_unknown
+  });
+  manualTravelBearingDegrees = sighting.travel_bearing_degrees ?? null;
+  updateBearingDialNeedle(manualTravelBearingDegrees);
+  setActivityPickerSelection(sighting.activities, sighting.activity_note);
+  setManualObserverType(sighting.observer_type === "OTHER" ? "OTHER" : "SELF");
+
+  document.getElementById("manual-datetime-input").value = sighting.observed_at_epoch_ms
+    ? formatDatetimeLocalValue(new Date(sighting.observed_at_epoch_ms))
+    : formatDatetimeLocalValue(new Date());
+  updateManualDatetimeButtonLabel();
+
+  showEditModePhotoThumb(sighting.photo_url);
+  applyEditModeUi();
+  setManualSubmitStatus("Editing your last report. The date/time it was seen can't be changed.");
+
+  pushNavLayer("edit-sighting", () => {
+    exitEditSightingFlow();
+    switchTab(previousTab);
+  });
+}
+
+// Item 106: the already-uploaded photo, straight from its public URL -- NOT updateManualPhotoThumb,
+// which renders capturedPhotoBlob (a pending capture that only ever exists on the camera path).
+function showEditModePhotoThumb(photoUrl) {
+  const thumbBtn = document.getElementById("manual-photo-thumb-btn");
+  const thumbImg = document.getElementById("manual-photo-thumb");
+  if (photoUrl) {
+    thumbImg.src = photoUrl;
+    thumbBtn.hidden = false;
+  } else {
+    thumbImg.src = "";
+    thumbBtn.hidden = true;
+  }
+}
+
+// Every control whose behavior differs between reporting and editing, in one place, driven off
+// editingSighting alone -- so exitEditSightingFlow restoring it is a single call, not a list of
+// individual undos that could fall out of step with this list.
+function applyEditModeUi() {
+  const isEdit = editingSighting != null;
+  document.getElementById("manual-submit-btn").textContent = isEdit ? "← SAVE CHANGES" : "← SUBMIT";
+  document.getElementById("manual-datetime-btn").disabled = isEdit;
+  document.getElementById("manual-observer-self-btn").disabled = isEdit;
+  document.getElementById("manual-observer-other-btn").disabled = isEdit;
+}
+
+// Runs on ANY exit from an edit -- the back gesture (this is the nav layer's own onPop), and a
+// saved edit (which pops that same layer). Leaves the screen in the state a plain "Report
+// Manually" entry would find it in, since #manual-log-step is shared with both reporting paths.
+function exitEditSightingFlow() {
+  editingSighting = null;
+  applyEditModeUi();
+  setManualSubmitStatus("");
+  resetWhaleCountUi("#manual-log-step", manualCounts);
+  resetManualPositionControls();
+  showEditModePhotoThumb(null);
+  setManualDatetimeInputToNow();
+  updateManualDatetimeButtonLabel();
+  document.getElementById("manual-log-step").hidden = true;
+  document.getElementById("camera-step").hidden = false;
+}
+
+// The patch sent to edit_my_last_sighting -- EVERY editable field, every time, including the ones
+// that didn't change. The RPC treats an absent key as "leave alone" and a present one as "set to
+// this", so sending the whole editable set means what's stored afterward is exactly what this
+// screen was showing, with no diffing logic here to get wrong. photo_url is deliberately absent
+// (never patched -- see openEditSightingFlow's own comment); observed_at/observer_type/
+// observer_tier/confirmed_at aren't in the RPC's allowlist at all.
+//
+// is_geofence_verified travels WITH the position, always -- the RPC refuses a position patch
+// without it, and refuses it without a position. The value is this submission's own freshly-run
+// check (finishManualSubmit's isGeofenceVerified), exactly the value an insert of the same
+// position would have carried.
+function buildSightingEditPatch(lat, lng, isGeofenceVerified) {
+  return {
+    whale_lat: lat,
+    whale_lng: lng,
+    is_geofence_verified: isGeofenceVerified,
+    travel_bearing_degrees: manualTravelBearingDegrees,
+    count_whites: manualCounts.whites,
+    count_greys: manualCounts.greys,
+    count_calves: manualCounts.calves,
+    count_unknown: manualCounts.unknown,
+    // Same null-not-[] and 140-char conventions buildManualSightingRecord uses on insert.
+    activities: manualSelectedActivities.size > 0 ? Array.from(manualSelectedActivities) : null,
+    activity_note: (manualSelectedActivities.has("OTHER") && manualActivityOtherNote.trim())
+      ? manualActivityOtherNote.trim().slice(0, 140)
+      : null
+  };
+}
+
+async function finishSightingEdit(lat, lng, isGeofenceVerified) {
+  const button = document.getElementById("manual-submit-btn");
+  button.disabled = true;
+  setManualSubmitStatus("Saving changes…");
+
+  try {
+    const patch = buildSightingEditPatch(lat, lng, isGeofenceVerified);
+    const ok = await editMyLastSighting(getOrCreateSubscriberId(), patch);
+    if (ok) {
+      // navigateBack pops the edit layer, whose onPop IS exitEditSightingFlow -- so the cleanup
+      // and the return to Map/List are the same single path a back gesture takes, never a second
+      // copy of it. refreshSightings afterward picks up the real edited_at (and re-asks which row
+      // is editable), same reasoning handleConfirmSightingClick's own post-action refetch uses.
+      navigateBack();
+      await refreshSightings();
+    } else {
+      // The ordinary reason to land here is the window having closed (or a newer sighting having
+      // been reported) between this screen opening and SAVE -- rare, but the only honest thing to
+      // do is say so rather than leave the edit looking pending. The row itself is untouched.
+      setManualSubmitStatus("Couldn't save the changes -- this sighting may no longer be editable.", true);
+    }
+  } finally {
+    button.disabled = false;
   }
 }
 

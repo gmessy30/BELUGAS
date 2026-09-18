@@ -326,6 +326,27 @@ higher-z-index element like the BearingDial). Prefer this over pure bounding-rec
 which can miss a real conflict (or flag a false one) whenever z-index/`pointer-events` decide the
 outcome, not just geometry.
 
+**A REAL INSERT FROM A TEST IS A REAL NOTIFICATION.** Reporting a sighting through the UI on a
+test device fires `on_sighting_insert_notify` for real: during item 106's verification one such
+test insert inside the Kenai banner area dispatched the live webhook, which returned
+`{"sent":2,"failed":6}` -- two actual subscriber devices got a push for a whale that was never
+there. The row was deleted afterward, but a delivered notification cannot be recalled. **Verify
+write paths against synthetic rows inside a `begin; ... rollback;` transaction instead** (pg_net's
+`net.http_post` only writes to `net.http_request_queue`, an ordinary table write invisible to its
+background worker until commit, so a rollback discards the dispatch -- confirmed: 2 requests
+queued, 0 sent). If a real insert is genuinely unavoidable, put it well outside every
+`is_banner_watched` zone so no subscriber matches, and delete it afterward regardless.
+
+**Stale JS is the default on localhost, not the exception.** Two separate verification rounds ran
+against code that was already fixed on disk: `python -m http.server` sends no `Cache-Control`, so
+Chrome heuristically caches, AND this app's own service worker serves `APP_SHELL` cache-first
+under whatever `CACHE_NAME` was current when the tab first loaded. A page that "doesn't have" a
+function you just wrote is almost always this, not a syntax error -- check
+`typeof yourNewFunction` before debugging anything else. Serve with `Cache-Control: no-store` and
+unregister the service worker (`getRegistrations()` + `caches.delete`) before trusting any
+on-device result. Note a new port is a new ORIGIN: `localStorage` (and so
+`belugas_subscriber_id`, which decides whose sightings are editable) starts empty there.
+
 **"Played" is not "audible"** — confirming that a `BufferSourceNode`/`<audio>` element was created
 and `start()`ed (or `.play()`ed) with the right `buffer.duration` only proves playback was
 *attempted*, not that the buffer contains actual signal: a silent (all-zero) buffer passes that
@@ -423,6 +444,48 @@ never just that playback started.
   the zone header and, for the owner, the ADMINS/AUDIT LOG sections all render correctly. The RPCs
   THEMSELVES have a live bug found right after, see the next entry below -- that mock pass
   couldn't have caught it (it never called the real function bodies).
+- **Migration applied** (item 106 — edit your own most recent sighting):
+  `supabase/migrations/20260930000000_add_edit_my_last_sighting.sql` — applied by the user via
+  `tools\apply-latest-migration.ps1` (it touches `sightings`, so Claude never applies it). Adds
+  `edited_at`, `sighting_edit_window()` (the 4 hours, written down exactly once), the visibility
+  RPC `get_my_editable_sighting`, and `edit_my_last_sighting(p_subscriber_id, p_updates jsonb)`.
+  **An UPDATE is silent by construction** — confirmed against the LIVE trigger set, not this
+  repo's migration text: `on_sighting_insert_notify` (AFTER INSERT) and
+  `on_sighting_insert_set_observer_tier` (BEFORE INSERT) are the only non-internal triggers on
+  `sightings`, so an edit re-fires neither the FCM webhook nor the observer-tier stamp. Anything
+  that later adds an `after update` trigger here has to revisit that claim.
+  - `p_updates` is a jsonb PATCH (key present = set, including an explicit null; key absent =
+    leave alone) rather than named params, precisely so "clear the travel bearing" and "don't
+    touch the travel bearing" are expressible separately. Allowlisted keys only; anything else
+    RAISES rather than being silently dropped.
+  - **`is_geofence_verified` moves with the position, always** — patching the position without it
+    raises, and patching it without a position raises. The value is client-computed and asserted,
+    which is exactly what INSERT already does (the real check is CoastlineGeometry/geofence.js,
+    which has no SQL equivalent — see 20260920000000's own scope note), so an edit is neither
+    more nor less client-trusted than the original report. An earlier draft left the stale flag
+    alone on a position edit; that was rejected in review for good reason.
+  - Never reachable by an edit: `observer_tier`, `confirmed_at`/`confirmed_by_subscriber_id`,
+    `observed_at_epoch_ms` (walking a row forward through tide cycles is what drives RED/YELLOW),
+    `subscriber_id`/`created_at`/`id`.
+  - Client (`db.js`/`map-view.js`/`list-view.js`/`submit-view.js`): EDIT appears on exactly one
+    row — whichever `get_my_editable_sighting` names — and opens `#manual-log-step` pre-filled
+    (counts, activities, position, direction, photo). **The photo is shown but NOT replaceable**:
+    the RPC accepts a `photo_url` patch, but offering a swap means routing back through the
+    camera step while holding edit state, deliberately left out of this item. `edited_at` renders
+    as a quiet "· edited" mark on the map popup and list item.
+  - **BUG FOUND AND FIXED DURING VERIFICATION, worth remembering**: the first cut of
+    `get_my_editable_sighting` computed `editable_until` but never FILTERED on the window, so an
+    aged-out row was still named and the client drew an EDIT button that `edit_my_last_sighting`
+    could only ever refuse — exactly the dead end the feature exists to avoid. Caught only
+    because the verification pass tested the aged-out case explicitly rather than assuming the
+    deadline arithmetic implied the filter. The client now ALSO checks the returned deadline
+    (`isEditableSighting`, map-view.js), which covers the one case the server can't: an app left
+    open across the boundary, whose cache only refreshes on the next sightings refresh.
+  - `edited_at` is its own optional-column group in `db.js` (`SIGHTING_LIST_COLUMNS_EDIT`, its own
+    flag), NOT folded into item 90/63's trio — they come from different migrations and can be
+    independently missing, and `fetchRecentSightings` now downgrades one group at a time
+    (newest first) in a loop rather than a single retry.
+
 - **Migration WRITTEN, NOT applied — needs the user's explicit go-ahead** (item 101 bug fix):
   `supabase/migrations/20260929010000_fix_email_type_mismatch_in_tier_admin_rpcs.sql`.
   `list_tier_codes`/`list_tier_admins`/`list_admin_actions` (all three, 20260929000000) select

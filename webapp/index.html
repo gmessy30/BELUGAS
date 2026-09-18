@@ -213,7 +213,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v97</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v98</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -324,6 +324,7 @@
         <div class="section-title">WHAT'S NEW</div>
         <div class="whats-new-date">SEPTEMBER 18, 2026</div>
         <ul class="tip-list">
+          <li>You can now fix your own most recent report for a few hours after sending it -- tap EDIT on it in the map or the list. Editing never re-sends the alert.</li>
           <li>Added NOAA's guidance for boating near belugas -- on Resources, and on the standalone status page too.</li>
         </ul>
         <div class="whats-new-date">SEPTEMBER 16, 2026</div>
@@ -506,6 +507,7 @@
       <div class="subpage-section">
         <div class="section-title">HOW TO USE THIS APP</div>
         <p class="section-body">To log a sighting: tap Camera and take a photo, or skip it if you don't have one. Then pan the map so the crosshair marks where the whale actually was -- tap MY LOCATION to center the map on where you're standing as a starting point -- and drag the ring around it if you know which way it was heading. If you noticed what the whales were doing, tag it under ACTIVITIES (travelling, milling, feeding, and a few others). Enter how many you saw and confirm. No photo at all? Report Manually skips straight to that same map.</p>
+        <p class="section-body">Made a mistake? For a few hours after you send a report, your most recent one shows an EDIT button on the map and in the Sightings List -- tap it to correct the count, the activities, where the whale was, or which way it was heading. The date and time it was seen can't be changed, and editing never re-sends the alert to other people. The button simply disappears once the window has passed or you've reported something newer.</p>
         <p class="section-body">This app asks for the whale's position, not yours -- that's deliberate. A report is far more useful to other observers and researchers when it marks where the animal actually was, so take the extra moment to centre the crosshair there rather than just leaving it on your own location.</p>
         <p class="section-body">Many good viewing spots along the Kenai and Kasilof are on or accessed through private property. Always get permission before crossing a fence line or cutting through someone's yard to reach the water -- public road pullouts and posted public access points exist for a reason.</p>
         <p class="section-body">The blue banner shows the earliest time the rising tide is deep enough for belugas to enter the river -- they're often visible milling in the inlet before that. Red means someone has actually seen them in the current tide cycle, and tapping it jumps straight to the map. Yellow is a caution: a verified sighting in the last few cycles, but none confirmed right now. Both yellow and blue show the same next-window estimate; yellow just means it's happened recently.</p>
@@ -808,7 +810,9 @@
        ManualLoggingScreen.kt's own DONE/SUBMIT handlers (shared/src/commonMain), not web-only. -->
   <div id="submit-confirm-modal" class="modal-backdrop" hidden>
     <div class="modal-card">
-      <h2>Confirm Sighting</h2>
+      <!-- Item 106: id'd because the edit flow reuses this same modal with "Save Changes" as
+           its heading (submit-view.js's submitManualSighting) -- one confirmation step for both. -->
+      <h2 id="submit-confirm-title">Confirm Sighting</h2>
       <div class="confirm-summary">
         <p id="confirm-summary-counts" class="confirm-summary-line"></p>
         <p id="confirm-summary-direction" class="confirm-summary-line"></p>

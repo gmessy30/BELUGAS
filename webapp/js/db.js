@@ -24,16 +24,40 @@ const SIGHTING_LIST_COLUMNS_BASE = [
 // present together.
 const SIGHTING_LIST_COLUMNS_NEW = ["activities", "activity_note", "confirmed_at"];
 
+// Item 106: its own group, its own flag -- edited_at lands in a LATER migration
+// (20260930000000) than the trio above, so the two can be independently missing. Folding it into
+// SIGHTING_LIST_COLUMNS_NEW would mean a database that has the 20260923000000 columns but not
+// this one silently loses activities/confirmed_at too, just because one newer column was absent.
+const SIGHTING_LIST_COLUMNS_EDIT = ["edited_at"];
+
 // null = not yet determined, true/false once a real query has actually told us. Tried optimistically
 // (assume the new columns exist) and only ever flipped to false by a real missing-column error --
 // never re-tried upward afterward within one page load, since the schema doesn't change mid-session.
 let sightingSchemaHasNewColumns = null;
+let sightingSchemaHasEditedAt = null;
 
 function sightingListColumns() {
-  const cols = sightingSchemaHasNewColumns === false
-    ? SIGHTING_LIST_COLUMNS_BASE
-    : [...SIGHTING_LIST_COLUMNS_BASE, ...SIGHTING_LIST_COLUMNS_NEW];
+  const cols = [...SIGHTING_LIST_COLUMNS_BASE];
+  if (sightingSchemaHasNewColumns !== false) cols.push(...SIGHTING_LIST_COLUMNS_NEW);
+  if (sightingSchemaHasEditedAt !== false) cols.push(...SIGHTING_LIST_COLUMNS_EDIT);
   return cols.join(",");
+}
+
+// Item 106: drops ONE optional column group, newest migration first, and reports whether there
+// was anything left to drop -- so a missing-column failure retries against progressively older
+// schemas rather than guessing which group was the problem. Returns false once only the base
+// columns remain, which ends the retry loop in fetchRecentSightings (a missing-column error on
+// the base list is a real failure, not a schema-age question).
+function downgradeSightingColumnsOnce() {
+  if (sightingSchemaHasEditedAt !== false) {
+    sightingSchemaHasEditedAt = false;
+    return true;
+  }
+  if (sightingSchemaHasNewColumns !== false) {
+    sightingSchemaHasNewColumns = false;
+    return true;
+  }
+  return false;
 }
 
 // Postgres/PostgREST's own "column does not exist" signature -- code 42703, or (PostgREST
@@ -81,21 +105,26 @@ function isVerifiedSighting(sighting) {
  * the migration lands.
  */
 async function fetchRecentSightings(limit = 200) {
-  let { data, error } = await supabaseClient
+  const runQuery = () => supabaseClient
     .from("sightings")
     .select(sightingListColumns())
     .order("observed_at_epoch_ms", { ascending: false })
     .limit(limit);
 
-  if (error && isMissingColumnError(error) && sightingSchemaHasNewColumns !== false) {
-    sightingSchemaHasNewColumns = false;
-    ({ data, error } = await supabaseClient
-      .from("sightings")
-      .select(sightingListColumns())
-      .order("observed_at_epoch_ms", { ascending: false })
-      .limit(limit));
-  } else if (!error && sightingSchemaHasNewColumns === null) {
-    sightingSchemaHasNewColumns = true;
+  let { data, error } = await runQuery();
+
+  // Item 106: a LOOP now, not a single retry -- there are two independently-missing optional
+  // column groups (see downgradeSightingColumnsOnce), so one retry is no longer enough to reach
+  // a schema that actually answers.
+  while (error && isMissingColumnError(error) && downgradeSightingColumnsOnce()) {
+    ({ data, error } = await runQuery());
+  }
+
+  if (!error) {
+    // Only ever promotes a group that's still UNDETERMINED -- never flips one back up that a
+    // missing-column error already ruled out on this same page load.
+    if (sightingSchemaHasNewColumns === null) sightingSchemaHasNewColumns = true;
+    if (sightingSchemaHasEditedAt === null) sightingSchemaHasEditedAt = true;
   }
 
   if (error) {
@@ -641,6 +670,81 @@ async function confirmSighting(sightingId, subscriberId) {
   });
   if (error) {
     console.error("CONFIRM_SIGHTING_ERROR", error);
+    return false;
+  }
+  return data === true;
+}
+
+// =============================== Item 106: edit my last sighting ===============================
+// Same "visibility is UX, enforcement is server-side" split as CONFIRM SIGHTING above: this
+// cached id is only ever what decides whether an EDIT button is DRAWN. edit_my_last_sighting
+// re-derives the target row, re-checks ownership, re-checks "is this still the newest" and
+// re-checks the 4-hour window itself, no matter what this says.
+//
+// Why the server has to tell us which row is editable at all: subscriber_id has no anon SELECT
+// grant (see getOrCreateSubscriberId's own comment), so a fetched sighting carries nothing that
+// identifies it as this device's own. There is no client-side way to work this out.
+let cachedEditableSightingId = null;
+let cachedEditableSightingUntilMs = null;
+
+// PostgREST's "that function doesn't exist" signature (PGRST202, or the plain message it
+// sometimes surfaces instead) -- the RPC-level counterpart to isMissingColumnError above, and
+// used for the same purpose: tell "the migration hasn't landed yet" apart from a real failure, so
+// a pre-migration database just never shows an EDIT button instead of logging an error on every
+// refresh.
+function isMissingFunctionError(error) {
+  if (!error) return false;
+  if (error.code === "PGRST202") return true;
+  return /could not find the function|does not exist/i.test(error.message || "");
+}
+let sightingEditRpcsAvailable = null; // null = untried, false once a real missing-function error says so
+
+async function getMyEditableSighting(subscriberId) {
+  if (sightingEditRpcsAvailable === false) return null;
+  const { data, error } = await supabaseClient.rpc("get_my_editable_sighting", {
+    p_subscriber_id: subscriberId
+  });
+  if (error) {
+    if (isMissingFunctionError(error)) {
+      sightingEditRpcsAvailable = false;
+    } else {
+      console.error("EDITABLE_SIGHTING_FETCH_ERROR", error);
+    }
+    return null;
+  }
+  sightingEditRpcsAvailable = true;
+  // RETURNS TABLE with `limit 1` -- zero rows (nothing editable right now) is the ordinary case,
+  // not an error.
+  const row = Array.isArray(data) ? data[0] : data;
+  return row ?? null;
+}
+
+// Refreshed alongside every sightings refresh (app.js's refreshSightings) rather than once per
+// app load like refreshTierOneObserverStatus -- unlike tier, which can't change while the app is
+// open, WHICH row is editable changes the moment this device reports a new sighting.
+async function refreshEditableSightingStatus() {
+  const row = await getMyEditableSighting(getOrCreateSubscriberId());
+  cachedEditableSightingId = row?.sighting_id ?? null;
+  cachedEditableSightingUntilMs = row?.editable_until ? new Date(row.editable_until).getTime() : null;
+}
+
+/**
+ * Item 106: the sole write path for an ordinary correction to an already-submitted sighting.
+ * `updates` is a PATCH -- only the keys present are changed (see the RPC's own header comment;
+ * an explicit null clears a field, an absent key leaves it alone).
+ *
+ * false covers every ordinary refusal uniformly (not the caller's row, no longer the newest,
+ * outside the window), matching confirmSighting/reportKenaiDeparture's single-boolean design. A
+ * MALFORMED patch raises server-side instead and surfaces here as an error -- that's a client bug,
+ * not a state the user can be in, so it's logged rather than quietly folded into the same false.
+ */
+async function editMyLastSighting(subscriberId, updates) {
+  const { data, error } = await supabaseClient.rpc("edit_my_last_sighting", {
+    p_subscriber_id: subscriberId,
+    p_updates: updates
+  });
+  if (error) {
+    console.error("EDIT_SIGHTING_ERROR", error);
     return false;
   }
   return data === true;

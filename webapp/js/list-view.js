@@ -90,6 +90,15 @@ function sightingListItem(s) {
       })
     : "Date Not Recorded";
 
+  // Item 106: same "· edited" mark as the map popup (editedMarkHtml, map-view.js) -- built as a
+  // real element here rather than an HTML string, same as this file's own confirm button below.
+  if (s.edited_at) {
+    const editedMark = document.createElement("span");
+    editedMark.className = "sighting-edited-mark";
+    editedMark.textContent = " · edited";
+    time.appendChild(editedMark);
+  }
+
   const totalRow = document.createElement("div");
   totalRow.className = "sighting-total-row";
   const totalText = document.createElement("span");
@@ -148,6 +157,17 @@ function sightingListItem(s) {
       btn.addEventListener("click", () => handleConfirmSightingClick(s, btn));
       details.appendChild(btn);
     }
+  }
+
+  // Item 106: same single-row EDIT affordance as the map popup (editSightingButtonHtml,
+  // map-view.js) -- whichever row get_my_editable_sighting named, and only that one.
+  if (!s.is_local && isEditableSighting(s)) {
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "edit-sighting-btn";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", () => openEditSightingFlow(s));
+    details.appendChild(editBtn);
   }
 
   item.appendChild(details);
