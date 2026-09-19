@@ -213,7 +213,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v99</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v100</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -275,6 +275,17 @@
       </div>
       <hr class="section-divider">
 
+      <!-- Item 108/109: independence + cost disclosure, deliberately plain visible text rather
+           than a button or a link out -- the whole point is that a reader sees it without having
+           to tap anything. Kept immediately above the PRIVACY/LICENSE buttons so the legal
+           material on this page reads as one block. Resources carries a one-line pointer here
+           rather than a second copy of this text. -->
+      <div class="subpage-section">
+        <div class="section-title">DISCLAIMER</div>
+        <p class="section-body">BELUGAS is an independent effort to raise awareness about the endangered Cook Inlet beluga whale. It is not affiliated with, endorsed by, or operated on behalf of NOAA Fisheries, the Alaska Wildlife Alliance, the Belugas Count event, or any other organization referenced in this app. BELUGAS itself is free to use, with no ads, no purchases, and no revenue of any kind. Resources and tools linked here are free for public use; information from those sources is cited for the public's benefit, and all views and errors are the developer's own.</p>
+      </div>
+      <hr class="section-divider">
+
       <!-- Item 69: standalone pages at the repo root (PRIVACY.html/LICENSE.html, rendered from
            PRIVACY.md/LICENSE with the app's own styling -- see item 69a) -- opened in a new tab
            rather than as in-app subpages, since these are plain static files entirely outside
@@ -322,6 +333,10 @@
            the oldest groups when this gets long -- it isn't meant to accumulate every past entry. -->
       <div class="subpage-section">
         <div class="section-title">WHAT'S NEW</div>
+        <div class="whats-new-date">SEPTEMBER 19, 2026</div>
+        <ul class="tip-list">
+          <li>About now states plainly that BELUGAS is an independent project, not affiliated with NOAA Fisheries or any other organization referenced here, and that the app is free with no ads, purchases, or revenue of any kind.</li>
+        </ul>
         <div class="whats-new-date">SEPTEMBER 18, 2026</div>
         <ul class="tip-list">
           <li>Fixed: saving a sighting just outside the mapped coastline did nothing -- the "save anyway" prompt opened and closed again instantly. It now stays up, and saving works.</li>
@@ -446,6 +461,9 @@
     </div>
 
     <div class="subpage-content">
+      <!-- Item 108/109: pointer only -- the full independence/cost disclosure lives on About
+           (its own DISCLAIMER section), not duplicated here. -->
+      <p class="copyright-line" style="margin: 0 0 12px;">See About for BELUGAS's affiliation and cost disclosure.</p>
       <div class="subpage-section">
         <div class="section-title">REPORT A STRANDING</div>
         <p class="section-body">See an injured, entangled, or dead marine mammal? Call NOAA's 24-hour Alaska Marine Mammal Stranding Network hotline.</p>
