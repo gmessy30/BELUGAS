@@ -18,3 +18,7 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
+
+# Supabase CLI local state -- machine-specific, and pooler-url contains a database
+# connection string WITH credentials. Never commit this directory.
+supabase/.temp/
