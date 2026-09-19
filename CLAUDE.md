@@ -55,6 +55,41 @@ stayed that way while Sept 15/16 entries were added under it. Resources' "HOW TO
 actually describes (a reporting-flow control, a banner-color meaning, a menu item's behavior) —
 it drifted out of date the same way WHAT'S NEW did, for the same reason.
 
+### Known pattern: a layer opened from a CLOSING layer's own handler (item 107)
+
+`history.back()` is asynchronous. `navigateBack()` (nav-stack.js) only REQUESTS a back-step; the
+`popstate` that actually tears the layer down lands in a later task. So a handler that called
+`navigateBack()` and then, in the same tick, opened another layer pushed that layer onto a stack
+with a navigation still in flight -- and the popstate handler then reconciled `navLayers` down to
+the depth the older history entry claimed, tearing the brand-new layer straight back down.
+
+The symptom is a modal that opens and vanishes within one gesture, leaving the flow silently
+abandoned with no error anywhere: the SUBMIT button appears to do nothing at all. It shipped this
+way and went unnoticed because it only fires on the SYNCHRONOUS branch -- in
+`proceedManualSubmit`, a position that fails `isWhalePositionVerified` outright reaches
+`showGeofenceWarning` in the same tick, whereas the coastline-fallback branch `await`s first,
+which lets the popstate land and the modal survives. Real user impact: an off-coastline position
+could not be saved at all.
+
+**Use `navigateBackThen(fn)` (nav-stack.js), not `navigateBack()`, whenever the follow-up work can
+open a layer of its own.** It defers `fn` until after the popstate reconciliation, so anything it
+pushes lands on a settled stack. Both submit-view.js call sites use it (the submit-confirm modal's
+Confirm, and the geofence warning's SAVE ANYWAY). Capture any `pending*Action` in a local BEFORE
+calling it -- the layer's own `onPop` is what clears those, and it now runs first.
+
+Diagnosing this needs the stack, not the screen: read `navLayers.map(l => l.name)` immediately
+after the click and again a few seconds later. A layer present in the first read and gone from the
+second is this bug, not a rendering problem.
+
+**Second bug, found in the same handler while verifying the first**: SAVE ANYWAY called
+`pendingFinishAction()` with NO argument, so `finish = (verified) => finishManualSubmit(lat, lng,
+verified)` ran with `verified === undefined`, `is_geofence_verified` was `undefined` on the
+record, and `JSON.stringify` dropped the key from the request body. On INSERT this was invisible
+-- the column is `NOT NULL DEFAULT false` and false is what SAVE ANYWAY means -- but item 106's
+edit path refuses a position patch that doesn't carry the flag, so SAVE ANYWAY on an edit failed
+outright. **A value that "works" only because a column default happens to match it is not being
+sent**; check the actual captured request body, not just the outcome.
+
 ### Known pattern: Leaflet's internal z-index escapes an unisolated container
 
 Leaflet's bundled CSS gives its own internal panes real z-index values (tile pane 200, overlay
@@ -334,8 +369,12 @@ there. The row was deleted afterward, but a delivered notification cannot be rec
 write paths against synthetic rows inside a `begin; ... rollback;` transaction instead** (pg_net's
 `net.http_post` only writes to `net.http_request_queue`, an ordinary table write invisible to its
 background worker until commit, so a rollback discards the dispatch -- confirmed: 2 requests
-queued, 0 sent). If a real insert is genuinely unavoidable, put it well outside every
-`is_banner_watched` zone so no subscriber matches, and delete it afterward regardless.
+queued, 0 sent). If a real insert is genuinely unavoidable, put it somewhere no subscription can
+match -- recipients come from `match_notification_recipients` (20260829010000: zone polygons,
+custom polygons and point+radius subscriptions, NOT the flat `device_tokens` broadcast the
+original 20260823000000 comment describes), so a position far from every subscribed zone/point
+returns `{"sent":0,"failed":0,"reason":"no matching recipients"}` -- and delete the row afterward
+regardless.
 
 **Stale JS is the default on localhost, not the exception.** Two separate verification rounds ran
 against code that was already fixed on disk: `python -m http.server` sends no `Cache-Control`, so

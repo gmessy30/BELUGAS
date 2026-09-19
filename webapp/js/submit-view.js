@@ -171,16 +171,39 @@ function initSubmitView() {
   document.getElementById("manual-submit-btn").addEventListener("click", submitManualSighting);
 
   document.getElementById("submit-confirm-back-btn").addEventListener("click", () => navigateBack());
+  // Item 107: the confirmed action runs AFTER this modal's own layer has actually been popped
+  // (navigateBackThen, nav-stack.js), not in the same tick as the request to pop it. It can open
+  // a further modal of its own -- proceedManualSubmit's geofence warning does exactly that, and
+  // synchronously, whenever the position fails the coastline check outright -- and a layer pushed
+  // while this pop was still in flight got torn straight back down by its popstate. pendingConfirm
+  // Action is captured BEFORE the pop because this layer's own onPop is what clears it.
   document.getElementById("submit-confirm-confirm-btn").addEventListener("click", () => {
-    navigateBack();
-    if (pendingConfirmAction) pendingConfirmAction();
+    const confirmedAction = pendingConfirmAction;
+    navigateBackThen(() => {
+      if (confirmedAction) confirmedAction();
+    });
   });
 
   document.getElementById("outer-geofence-reject-ok-btn").addEventListener("click", () => navigateBack());
   document.getElementById("geofence-warning-cancel-btn").addEventListener("click", () => navigateBack());
+  // Item 107: same deferral, same reason -- SAVE ANYWAY's own finish action can push layers of its
+  // own on the way out (resetManualSubmitForm's navigateBack on the camera path, finishSightingEdit's
+  // on the edit path), so it must not run while this modal's pop is still in flight.
+  //
+  // BUG FIX (item 107, found on-device): this used to call pendingFinishAction() with NO argument,
+  // so proceedManualSubmit's `finish = (verified) => finishManualSubmit(lat, lng, verified)` ran
+  // with verified === undefined -- meaning is_geofence_verified was undefined on the record, and
+  // JSON.stringify DROPPED the key from the request body entirely. On INSERT that was invisible:
+  // the column is NOT NULL DEFAULT false, so the omitted key landed as false, which is exactly
+  // what SAVE ANYWAY means anyway. On item 106's EDIT path it is fatal -- edit_my_last_sighting
+  // refuses a position patch that doesn't carry the flag, so SAVE ANYWAY on an edit failed
+  // outright. Passing the false explicitly says what was always meant, on both paths, instead of
+  // leaning on a column default that only one of them has.
   document.getElementById("geofence-warning-save-btn").addEventListener("click", () => {
-    navigateBack();
-    if (pendingFinishAction) pendingFinishAction(); // SAVE ANYWAY -- not geofence-verified
+    const finishAction = pendingFinishAction;
+    navigateBackThen(() => {
+      if (finishAction) finishAction(false); // SAVE ANYWAY -- explicitly NOT geofence-verified
+    });
   });
 
   initManualObserverToggle();

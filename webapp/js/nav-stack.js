@@ -34,6 +34,34 @@ function navigateBack() {
   if (navLayers.length > 0) history.back();
 }
 
+// Item 107: run `onAfterPop` once the back-step above has ACTUALLY been applied, not merely
+// requested.
+//
+// history.back() is asynchronous: it schedules a navigation whose popstate lands in a later task.
+// A handler that called navigateBack() and then, in the same tick, opened a new layer was pushing
+// that layer BEFORE the pending back had been delivered -- and the popstate handler below then
+// reconciled navLayers down to the depth the (older) history entry claimed, tearing the brand-new
+// layer straight back down. The symptom was a modal that appeared and vanished within the same
+// gesture, leaving the flow silently abandoned (item 107: the geofence SAVE ANYWAY modal, opened
+// from the submit-confirm modal's own Confirm button).
+//
+// Deferring the follow-up work until after the reconciliation means a layer pushed by that work
+// is pushed onto a settled stack, with no in-flight navigation left to undo it. Callbacks run in
+// the order they were queued, after every layer for this popstate has been torn down, so they
+// also see a consistent navLayers rather than a half-unwound one.
+let afterPopCallbacks = [];
+
+function navigateBackThen(onAfterPop) {
+  // Nothing to pop: there's no popstate coming, so waiting for one would drop the callback
+  // entirely. Run it directly -- the caller's intent ("do this once we're back") is already true.
+  if (navLayers.length === 0) {
+    onAfterPop();
+    return;
+  }
+  afterPopCallbacks.push(onAfterPop);
+  history.back();
+}
+
 function initNavStack() {
   history.replaceState({ navDepth: 0 }, "");
 
@@ -46,5 +74,12 @@ function initNavStack() {
     while (navLayers.length > targetDepth) {
       navLayers.pop().onPop();
     }
+
+    // Item 107: drained AFTER the unwind above, and swapped out first so that a callback which
+    // itself calls navigateBackThen queues onto a fresh list rather than mutating the one being
+    // iterated.
+    const callbacks = afterPopCallbacks;
+    afterPopCallbacks = [];
+    callbacks.forEach((cb) => cb());
   });
 }
