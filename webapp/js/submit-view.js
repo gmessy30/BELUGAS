@@ -64,6 +64,42 @@ let manualObserverType = "SELF";
 // screen (resetManualPositionControls), never persisted across visits or submitted with the
 // sighting.
 let observerLocationMarker = null;
+
+// Item 112: has the USER actually placed the pin this visit, as opposed to the map merely being
+// wherever it happens to have been put for them? Submitting is blocked until this is true (see
+// submitManualSighting), which is what stops a report going out at the untouched
+// DEFAULT_MAP_CENTER -- a position that is an UNSET FIELD, not a judgement call, so there is no
+// override for it the way the geofence warning has SAVE ANYWAY.
+//
+// Deliberately a flag rather than comparing manualLat/manualLng against DEFAULT_MAP_CENTER: the
+// map's own getCenter() returns that constant exactly only while Leaflet considers the view
+// unmoved, so an invalidateSize (initManualMapIfNeeded does one on every re-entry), a pan-away-
+// and-back, or a zoom all round-trip the center through pixel projection and can miss (or
+// falsely match) an equality test. "Did the user move it" is the question actually being asked,
+// so that is the thing recorded.
+//
+// VIEW IS DECOUPLED FROM VALUE: centering the map for the user (the on-entry GPS fix below) does
+// NOT set this. Only a real pan/zoom/drag gesture, or an explicit MY LOCATION tap, does.
+let manualPositionTouched = false;
+// Guards the above against Leaflet's own zoomstart, which fires for a PROGRAMMATIC setView just
+// as it does for a pinch -- every programmatic view change goes through setManualMapView so the
+// listener can tell the two apart. (dragstart is user-only and needs no guard; it is in the same
+// listener for symmetry.) setView emits zoomstart synchronously, before it returns, even on its
+// animated path -- so a plain synchronous flag is sufficient here, with no moveend-based release
+// to leak if a given setView turns out to be a no-op.
+let programmaticManualViewChange = false;
+
+// Every programmatic recentering of the manual map goes through here -- see
+// programmaticManualViewChange above. A caller that DOES mean "the user placed this" sets
+// manualPositionTouched itself, explicitly (handleMyLocationTap, openEditSightingFlow).
+function setManualMapView(center, zoom) {
+  programmaticManualViewChange = true;
+  try {
+    manualMapInstance.setView(center, zoom);
+  } finally {
+    programmaticManualViewChange = false;
+  }
+}
 // Item 90: multi-select, unlike every other .chip-toggle group on this screen -- a Set, not a
 // single active value, since any number of these can apply to one sighting at once. Reset between
 // sightings (resetManualPositionControls), never persisted.
@@ -481,6 +517,7 @@ function capturePhoto() {
 // photo-plus-heading-plus-distance review step (gone entirely, see this file's header comment).
 function enterManualLogStepFromCamera() {
   manualLogStepReachedViaCameraPath = true;
+  manualPositionTouched = false; // item 112 -- a fresh report always starts unplaced
   stopCamera();
   updateManualPhotoThumb();
 
@@ -541,17 +578,22 @@ const GPS_CENTER_ZOOM = 14;
 // DEFAULT_MAP_CENTER starting point, same as plain Report Manually always does.
 function centerManualMapFromGpsOnce() {
   if (!navigator.geolocation || !manualMapInstance) return;
-  let userHasInteracted = false;
-  manualMapInstance.once("dragstart zoomstart", () => {
-    userHasInteracted = true;
-  });
   navigator.geolocation.getCurrentPosition(
     (position) => {
       // Also bails if the user has already left this screen entirely (back to camera-step, or
       // out of the tab) by the time a slow fix resolves -- otherwise a stale fix from an earlier
       // visit could still recenter the map out from under whatever the user is doing much later.
-      if (userHasInteracted || document.getElementById("manual-log-step").hidden) return;
-      manualMapInstance.setView(
+      // Item 112: manualPositionTouched replaces this function's own former local
+      // userHasInteracted latch -- the same "do not yank the view out from under someone who has
+      // already started placing the pin" rule, now read from the one shared flag the submit
+      // check uses, so the two can never disagree about whether the user has taken over.
+      if (manualPositionTouched || document.getElementById("manual-log-step").hidden) return;
+      // Item 112: setManualMapView, NOT setView -- centering the map for the user is a view
+      // change only. It deliberately does not count as placing the pin, so a submit with no pan
+      // at all is still blocked below even though the crosshair now sits on a real coordinate.
+      // (That the crosshair then sits on the OBSERVER's own position is the separate proximity-
+      // warning problem, deferred out of this item on purpose.)
+      setManualMapView(
         [position.coords.latitude, position.coords.longitude],
         GPS_CENTER_ZOOM
       );
@@ -578,6 +620,7 @@ function goToCameraStep() {
 // this covers it unconditionally here) -- matches native's own remembered state resetting fresh
 // every time ManualLoggingScreen is re-entered.
 function resetManualPositionControls() {
+  manualPositionTouched = false; // item 112 -- every exit from this screen leaves it unplaced
   manualTravelBearingDegrees = null;
   updateBearingDialNeedle(null);
   setManualObserverType("SELF");
@@ -627,6 +670,15 @@ function openManualReportFlow() {
   initManualMapIfNeeded();
   setManualDatetimeInputToNow();
   updateManualDatetimeButtonLabel();
+
+  // Item 112: this path NOW takes the same best-effort on-entry GPS fix the camera path always
+  // has (matching native's own LaunchedEffect recenter, which the comment above this function
+  // describes). The objection that kept it out before -- "manual reporting must not mean where I
+  // am now" -- is answered by manualPositionTouched rather than by refusing to help the user find
+  // themselves on the map: the fix moves the VIEW, never counts as placing the pin, and a submit
+  // that never panned is blocked outright (submitManualSighting).
+  manualPositionTouched = false;
+  centerManualMapFromGpsOnce();
 }
 
 // DatePickerDialog.kt, ported as a plain datetime-local input (the platform supplies its own
@@ -662,6 +714,12 @@ function initManualMapIfNeeded() {
     maxZoom: 19
   }).addTo(manualMapInstance);
   manualMapInstance.on("move", updateManualPositionFromMapCenter);
+  // Item 112: the one place manualPositionTouched is set by a real gesture -- a drag, a pinch, a
+  // double-tap zoom, or a zoom-control tap (all of which reach Leaflet's own dragstart/zoomstart
+  // without going through setManualMapView). See manualPositionTouched's own comment.
+  manualMapInstance.on("dragstart zoomstart", () => {
+    if (!programmaticManualViewChange) manualPositionTouched = true;
+  });
   updateManualPositionFromMapCenter();
   setTimeout(() => manualMapInstance.invalidateSize(), 0);
 }
@@ -695,7 +753,11 @@ function initManualPositionControls() {
     longPressFired = false;
     longPressTimer = setTimeout(() => {
       longPressFired = true;
-      manualMapInstance.setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
+      // Item 112: a reset puts the map back on the UNSET default, so it also clears
+      // manualPositionTouched -- otherwise a user who panned, then long-pressed back to the
+      // overview, could submit at DEFAULT_MAP_CENTER on the strength of a pan they undid.
+      setManualMapView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
+      manualPositionTouched = false;
     }, LONG_PRESS_MS);
   });
   const cancelLongPressTimer = () => {
@@ -746,7 +808,12 @@ async function handleMyLocationTap(btn) {
     return;
   }
 
-  manualMapInstance.setView([result.coords.lat, result.coords.lng], GPS_CENTER_ZOOM);
+  // Item 112: an explicit MY LOCATION tap IS a deliberate user placement, so unlike the on-entry
+  // auto-center it does mark the position touched. Note this therefore permits submitting at
+  // exactly the observer's own position -- the separate proximity warning that would catch that
+  // is deferred, not built here.
+  setManualMapView([result.coords.lat, result.coords.lng], GPS_CENTER_ZOOM);
+  manualPositionTouched = true;
   showObserverLocationDot(result.coords.lat, result.coords.lng);
 
   btn.textContent = Number.isFinite(result.accuracy) ? `📍 ±${Math.round(result.accuracy)}m` : originalLabel;
@@ -1118,6 +1185,18 @@ async function submitManualSighting() {
     return;
   }
 
+  // Item 112: an unplaced pin is an UNSET FIELD, so it is refused here exactly like a missing
+  // whale count -- inline, before the confirm modal, with no override. Deliberately NOT the
+  // geofence warning's SAVE ANYWAY treatment: that dialog exists for a position the user really
+  // did choose and we merely doubt, which is a judgement call; this one has no position at all.
+  // Checked here rather than in proceedManualSubmit so the user is not walked through a
+  // confirmation dialog only to be turned away behind it (and so no modal is ever opened from a
+  // closing modal's own handler -- see nav-stack.js's navigateBackThen and item 107).
+  if (!manualPositionTouched) {
+    setManualSubmitStatus("Move the map to the sighting location before submitting.", true);
+    return;
+  }
+
   // Item 34: manualSelectedTimestampMs() reads the SET DATE/TIME input directly -- unlike the
   // camera path's Date.now(), there's no freeze-vs-reread mismatch to worry about here, since the
   // confirm modal is itself modal (the input can't change while it's showing).
@@ -1302,8 +1381,13 @@ function openEditSightingFlow(sighting) {
     // Straight to the recorded position -- the whole point of an edit is to adjust THAT, not to
     // start again from the Cook Inlet overview. GPS is never fetched on this path (neither entry
     // point's auto-fix applies: the position being edited is already known).
-    manualMapInstance.setView([sighting.whale_lat, sighting.whale_lng], EDIT_MAP_ZOOM);
+    setManualMapView([sighting.whale_lat, sighting.whale_lng], EDIT_MAP_ZOOM);
   }
+  // Item 112: an edit starts from an ALREADY-PLACED position, so it counts as touched from the
+  // outset -- otherwise an edit that only corrects a whale count (never moving the map) would be
+  // blocked at submit over a position that was set correctly days ago. The on-entry GPS
+  // auto-center is likewise skipped on this path (see the comment just above).
+  manualPositionTouched = true;
 
   setWhaleCountUi("#manual-log-step", manualCounts, {
     whites: sighting.count_whites,
