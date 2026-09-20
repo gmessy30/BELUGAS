@@ -2421,6 +2421,45 @@ button.secondary {
    teal circle, to read as one visual family with the button it now sits directly under -- still
    round (a 999px radius on an equal width/height box is a circle) to keep it visually distinct as
    an icon-only control, not a text pill. */
+/* Item 113: the FAB and its permanent date-range label as one horizontal pair, right-aligned
+   inside the same .map-top-right-stack column the FAB already lived in. The label sits to the
+   LEFT of the button (the stack is right-aligned, so growing label text extends inward over the
+   map rather than off-screen). */
+.playback-fab-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Same translucent pill family as .verified-toggle-btn/.playback-fab-btn. Amber (not the cyan
+   "this toggle is ON" convention) when the range is anything other than ALL TIME: this isn't a
+   feature being on, it's a caution that sightings outside the window are being hidden from the
+   map right now -- see .playback-range-label.filtered below. */
+.playback-range-label {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.playback-range-label.filtered {
+  color: var(--brand-amber);
+  border-color: var(--brand-amber);
+}
+
+/* Item 113: the inline clock SVG is decoration -- let taps fall through to the button itself so
+   a hit test at the button's own center names the button, not a <polyline> inside it. */
+.playback-fab-btn svg {
+  pointer-events: none;
+}
+
 .playback-fab-btn {
   width: 40px;
   height: 40px;

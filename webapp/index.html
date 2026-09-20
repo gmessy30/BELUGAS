@@ -213,7 +213,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v101</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v102</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -333,6 +333,13 @@
            the oldest groups when this gets long -- it isn't meant to accumulate every past entry. -->
       <div class="subpage-section">
         <div class="section-title">WHAT'S NEW</div>
+        <div class="whats-new-date">SEPTEMBER 20, 2026</div>
+        <ul class="tip-list">
+          <li>The Sightings Map now shows the active date range right next to the time-lapse button at all times -- "ALL TIME", "TODAY", or the dates you picked -- and turns amber whenever it's hiding older sightings, so a filter can never quietly leave whales off the map.</li>
+          <li>The date range also goes back to ALL TIME every time you reopen the app, instead of remembering the last one you chose.</li>
+          <li>The time-lapse button is now a clock face, which was previously easy to mistake for an off switch.</li>
+          <li>The whale-count buttons on the reporting screen now use Luna Montgomery's final breaching-beluga artwork in place of the earlier placeholder sketches.</li>
+        </ul>
         <div class="whats-new-date">SEPTEMBER 19, 2026</div>
         <ul class="tip-list">
           <li>Report Manually now centers the map on you when it opens, so you start near where you are instead of on the whole inlet -- you still have to move the map to where the whale actually was.</li>
@@ -957,7 +964,30 @@
       <div class="map-top-controls">
         <div class="map-top-right-stack">
           <button id="map-verified-toggle-btn" class="verified-toggle-btn">VERIFIED ONLY</button>
-          <button id="playback-fab-btn" class="playback-fab-btn" aria-label="Time-lapse playback" type="button">⏱</button>
+          <!-- Item 113: the active date range is now labelled permanently next to the FAB, open
+               panel or not -- a non-default range (TODAY/SEASON/CUSTOM) silently hides sightings
+               from the map's DEFAULT view (isWithinDateRange applies regardless of
+               playbackIsOpen, see map-view.js), and with the range only ever visible inside the
+               closed panel there was nothing on screen saying so. Label text/colour both come
+               from updatePlaybackRangeLabel (map-view.js), which is called from
+               recomputePlaybackRange -- the single place the range is ever computed -- so the
+               label can't drift from the filter it describes. It's tappable too, same handler as
+               the FAB, since it reads as one control with it.
+               The icon itself is an inline SVG clock face rather than the old ⏱ stopwatch
+               emoji: that glyph renders as a plain circle-with-a-stem on Android/Chrome, which
+               reads as a power button, not a time control. -->
+          <div class="playback-fab-row">
+            <span id="playback-range-label" class="playback-range-label" role="button" tabindex="0"
+                  aria-label="Active date range -- open time-lapse">ALL TIME</span>
+            <button id="playback-fab-btn" class="playback-fab-btn" aria-label="Time-lapse playback" type="button">
+              <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor"
+                   stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+                   focusable="false">
+                <circle cx="12" cy="12" r="9"></circle>
+                <polyline points="12 6.8 12 12 15.8 14.2"></polyline>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <!-- Ports the playback Surface/Column verbatim as one panel (native has no separate sheet

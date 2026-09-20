@@ -616,6 +616,24 @@ never just that playback started.
   outlives publisher URLs. None of this is implemented yet — needs its own migration
   (`link_broken` status/column, `last_checked_at`/`http_status`/`archive_url`/`doi` columns) and a
   scheduled job, a bigger, separate piece of work from item 93's client-side search.
+- **Native-side asset swap still pending (final artwork)**: Luna Montgomery's FINAL breaching-beluga
+  artwork for the whale-count buttons is in place in `webapp/img/` only --
+  `Whitebreaching.png`/`Greybreaching.png`/`Calfbreaching.png`/`Unknownbreaching.png`, all four
+  confirmed 280x120 8-bit RGBA with real alpha (fully transparent corners, 24-57% fully
+  transparent pixels plus antialiased semi-transparent edges), not merely an alpha channel that
+  happens to be opaque. The four same-named files under
+  `shared/src/commonMain/composeResources/drawable/` are STILL the old placeholders (confirmed by
+  hash -- all four differ from the webapp copies) and need the identical swap during the native
+  parity pass, alongside every other pending item below.
+- **Native-side parity item (item 113, web-only so far)**: the Sightings Map's playback FAB now
+  carries a permanent date-range pill beside it (`#playback-range-label`, map-view.js's
+  `updatePlaybackRangeLabel`) showing the active range at all times, amber whenever it isn't
+  ALL TIME, because the range filters the map's DEFAULT view too (`isWithinDateRange` ignores
+  `playbackIsOpen`) and there was otherwise nothing on screen saying data was being hidden. Same
+  item stopped RESTORING the quick range on a fresh load (item 83b's persistence now covers fade
+  window/speed only) and replaced the FAB's `⏱` glyph -- which renders on Android Chrome as a
+  circle-with-a-stem, reading as a power button -- with an inline SVG clock face.
+  `SightingsMapScreen.kt` has neither the label nor the icon change.
 - **Native-side parity item (item 105, web-only so far) -- "verified" definition**: the PWA's
   one shared rule is `isVerifiedSighting` (`webapp/js/db.js`) = `observer_tier` 1/2 OR
   `confirmed_at` set; a photo alone never counts. It drives the map/list VERIFIED ONLY toggles,

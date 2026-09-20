@@ -663,9 +663,14 @@ function loadPlaybackSettings() {
     const raw = localStorage.getItem(PLAYBACK_SETTINGS_STORAGE_KEY);
     if (!raw) return;
     const parsed = JSON.parse(raw);
-    if (QUICK_RANGES.some((r) => r.key === parsed.quickRange)) playbackSelectedQuickRange = parsed.quickRange;
-    if (typeof parsed.customFromMs === "number") playbackCustomFromMs = parsed.customFromMs;
-    if (typeof parsed.customToMs === "number") playbackCustomToMs = parsed.customToMs;
+    // Item 113 DELIBERATE EXCEPTION to item 83b's own persistence: the QUICK RANGE (and, with it,
+    // the custom from/to dates) is NOT restored on a fresh load -- it always starts at ALL_TIME.
+    // The range filters the map's DEFAULT view, not just the panel (isWithinDateRange ignores
+    // playbackIsOpen), so a persisted TODAY meant a returning visitor opened the app to a map
+    // that had silently dropped every earlier sighting. Fade window and speed ARE still restored:
+    // both are playback-session presentation only and hide nothing when the panel is closed.
+    // They're still WRITTEN by savePlaybackSettings (a mid-session close/reopen keeps the chosen
+    // range -- see closePlaybackPanel's own comment); only the reload path ignores them.
     if (FADE_WINDOW_OPTIONS.some((f) => f.key === parsed.fadeWindow)) playbackFadeWindowKey = parsed.fadeWindow;
     if (PLAYBACK_SPEED_OPTIONS.includes(parsed.speed)) playbackSpeedMultiplier = parsed.speed;
   } catch (e) {
@@ -707,6 +712,17 @@ function formatEpochMsForDateInput(epochMs) {
 
 function initPlaybackPanel() {
   document.getElementById("playback-fab-btn").addEventListener("click", openPlaybackPanel);
+  // Item 113: the range label reads as one control with the FAB beside it, so it opens the same
+  // panel. role=button/tabindex=0 in the markup make it reachable without a pointer; a <span>
+  // gets no implicit Enter/Space activation, hence the explicit keydown.
+  const rangeLabel = document.getElementById("playback-range-label");
+  rangeLabel.addEventListener("click", openPlaybackPanel);
+  rangeLabel.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openPlaybackPanel();
+    }
+  });
   document.getElementById("playback-close-btn").addEventListener("click", () => navigateBack());
   document.getElementById("playback-minimize-btn").addEventListener("click", () => {
     playbackIsMinimized = !playbackIsMinimized;
@@ -742,7 +758,10 @@ function initPlaybackPanel() {
     onPlaybackFilterChanged();
   });
 
-  loadPlaybackSettings(); // item 83b: restore the persisted date range/fade window/speed BEFORE the first render
+  loadPlaybackSettings(); // item 83b/113: restore the persisted fade window/speed BEFORE the first render
+  // Item 113: render the label immediately, not just once sightings arrive -- recomputePlaybackRange
+  // (its other caller) doesn't run until renderSightingsOnMap, and the pill must never be blank.
+  updatePlaybackRangeLabel();
   renderDateRangeChips();
   renderFadeWindowChips();
   renderPlaybackSpeedChips();
@@ -836,6 +855,47 @@ function recomputePlaybackRange() {
 
   playbackRangeStart = start;
   playbackRangeEnd = end;
+  // Item 113: the label is refreshed from HERE and nowhere else, so it can never describe a
+  // different window than the one actually being filtered on -- this is the single function that
+  // ever assigns playbackRangeStart/End (see this function's own header comment above).
+  updatePlaybackRangeLabel();
+}
+
+// Item 113: short, always-visible summary of the active date range, shown next to the playback FAB
+// whether the panel is open or closed. Non-CUSTOM ranges reuse the chip's OWN label text
+// (QUICK_RANGES), so the pill and the chip can't word the same range differently; CUSTOM is
+// formatted from the resolved start/end instead, since there's no fixed wording for it.
+const MONTH_ABBREVIATIONS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+                             "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+function playbackRangeLabelText() {
+  if (playbackSelectedQuickRange !== "CUSTOM") {
+    const match = QUICK_RANGES.find((r) => r.key === playbackSelectedQuickRange);
+    return match ? match.label : "ALL TIME";
+  }
+  // Deliberately formats the RESOLVED range (playbackRangeStart/End), not the raw typed
+  // from/to: CUSTOM is still clamped to the loaded data's own min/max (see recomputePlaybackRange),
+  // so a "to" of OCT 3 against data ending SEP 19 genuinely filters to SEP 19. The pill reports
+  // the window actually in effect rather than the one requested -- confirmed in a real browser.
+  const [y1, m1, d1] = anchorageDateParts(playbackRangeStart);
+  const [y2, m2, d2] = anchorageDateParts(playbackRangeEnd);
+  const from = `${MONTH_ABBREVIATIONS[m1 - 1]} ${d1}`;
+  if (y1 === y2 && m1 === m2 && d1 === d2) return from;
+  // Same month: the month name is only worth printing once ("SEP 12-19"); across a month or year
+  // boundary it isn't, so both sides get spelled out in full.
+  if (y1 === y2 && m1 === m2) return `${from}–${d2}`;
+  const to = `${MONTH_ABBREVIATIONS[m2 - 1]} ${d2}`;
+  if (y1 === y2) return `${from} – ${to}`;
+  return `${from} ${y1} – ${to} ${y2}`;
+}
+
+function updatePlaybackRangeLabel() {
+  const el = document.getElementById("playback-range-label");
+  if (!el) return;
+  el.textContent = playbackRangeLabelText();
+  // "filtered" = anything other than the unfiltered default, which is what the amber treatment is
+  // actually warning about (style.css) -- not merely "a range is selected", since ALL TIME is one.
+  el.classList.toggle("filtered", playbackSelectedQuickRange !== "ALL_TIME");
 }
 
 // Item 86: the persisted date-range filter -- applies whether or not the playback panel is even
