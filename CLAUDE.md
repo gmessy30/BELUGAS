@@ -625,6 +625,19 @@ never just that playback started.
   `shared/src/commonMain/composeResources/drawable/` are STILL the old placeholders (confirmed by
   hash -- all four differ from the webapp copies) and need the identical swap during the native
   parity pass, alongside every other pending item below.
+- **Native-side parity item (item 114, web-only so far)**: the BearingDial's white ring now
+  carries curved "BELUGAS" (top) / "GO HERE" (bottom) text plus inward-pointing arrowheads at the
+  left and right, the same "this is what you are aiming" language as CaptureScreen's
+  SketchedReticle, adapted to a full circle. See index.html's own `bearing-dial-ring-label`
+  comment for the geometry and why the two baselines sit at different radii (SVG turns glyphs
+  outward on a top arc and inward on a bottom arc). **Known, accepted cosmetic issue, decided by
+  the user rather than worked around**: the needle is ~12px wide (4px yellow + 8px black outline)
+  and ends at r=58, the middle of the 14px band, so at bearings within roughly 25 degrees of N or
+  S it crosses one letter -- "GO |ERE" at due south. The label is drawn AFTER the needle so the
+  word survives rather than being punched out, but the crossing itself is unavoidable at this
+  size. Shortening the needle to r=50 removes it completely and was explicitly declined: the
+  ring/dial/needle stay exactly as `BearingDial.kt` has them, and the curved text is the only
+  addition. `BearingDial.kt` has no ring text at all yet.
 - **Native-side parity item (item 113, web-only so far)**: the Sightings Map's playback FAB now
   carries a permanent date-range pill beside it (`#playback-range-label`, map-view.js's
   `updatePlaybackRangeLabel`) showing the active range at all times, amber whenever it isn't

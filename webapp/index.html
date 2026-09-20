@@ -213,7 +213,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v102</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v103</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -335,6 +335,7 @@
         <div class="section-title">WHAT'S NEW</div>
         <div class="whats-new-date">SEPTEMBER 20, 2026</div>
         <ul class="tip-list">
+          <li>The direction dial on the reporting screen now says what it is: "BELUGAS" and "GO HERE" curve around the ring, with arrows pointing in at the crosshair, matching the camera's own viewfinder markings.</li>
           <li>The Sightings Map now shows the active date range right next to the time-lapse button at all times -- "ALL TIME", "TODAY", or the dates you picked -- and turns amber whenever it's hiding older sightings, so a filter can never quietly leave whales off the map.</li>
           <li>The date range also goes back to ALL TIME every time you reopen the app, instead of remembering the last one you chose.</li>
           <li>The time-lapse button is now a clock face, which was previously easy to mistake for an off switch.</li>
@@ -1187,6 +1188,49 @@
               <g id="bearing-dial-needle" hidden>
                 <line id="bearing-dial-needle-outline" x1="75" y1="75" x2="75" y2="17" stroke="#000000" stroke-width="8" stroke-linecap="round"/>
                 <line id="bearing-dial-needle-line" x1="75" y1="75" x2="75" y2="17" stroke="#FFFF00" stroke-width="4" stroke-linecap="round"/>
+              </g>
+              <!-- Item 114: "BELUGAS" / "GO HERE" curved along the ring itself, with small
+                   inward-pointing arrows at the left and right where the two arcs meet -- the
+                   same "this is the thing you are aiming" language as CaptureScreen's
+                   SketchedReticle ("↘ BELUGAS ↙" / "↗ GO HERE ↖", index.html above), adapted
+                   from that corner-bracket shape to a full circle.
+
+                   GEOMETRY, so a future edit doesn't have to re-derive it: the white band spans
+                   r 51-65 (r=58 ± half of stroke-width 14). SVG places glyphs with their "up"
+                   90° from the path's direction of travel, which points OUTWARD on a top arc and
+                   INWARD on a bottom arc -- so the two baselines can't share one radius. A 9px
+                   cap height is ~6.4 tall, so top baseline r=55 grows outward to ~61.4 and
+                   bottom baseline r=61 grows inward to ~54.6: both words occupy the same
+                   54.6-61.4 sliver, centred in the band with ~3.6 clear on each side. The
+                   arrowheads span r 52-63 alongside them. Sweep flags: 1 on
+                   the top arc (clockwise from the 9 o'clock point = over the top), 0 on the
+                   bottom (counter-clockwise = under the bottom, travelling +x so the letters
+                   stay upright rather than reading upside down).
+
+                   Drawn AFTER the needle on purpose, so the needle passes UNDER the letters.
+                   A radial line crosses a concentric band in exactly its own stroke width, so
+                   the overlap is only ~8px either way -- but that 8px lands on the needle's
+                   outermost tip versus a whole letter of a 7-letter word. Needle-on-top was
+                   tried first and renders "BEL GAS" at due north; this way the word survives
+                   and the needle loses nothing that reads as direction (it is still a ~40px
+                   line from the crosshair). It never reaches the crosshair at all, which stops
+                   at r=9. Black on the white band needs no halo, unlike the yellow reticle text
+                   over a live camera feed. pointer-events/aria-hidden keep it out
+                   of both the drag hit-area (see .bearing-dial's own item-35a comment on <text>
+                   stealing touch gestures) and the role="slider" accessible name. -->
+              <defs>
+                <path id="bearing-dial-top-arc" d="M 20 75 A 55 55 0 0 1 130 75" fill="none"/>
+                <path id="bearing-dial-bottom-arc" d="M 14 75 A 61 61 0 0 0 136 75" fill="none"/>
+              </defs>
+              <g class="bearing-dial-ring-label" pointer-events="none" aria-hidden="true">
+                <text font-size="9" font-weight="900" letter-spacing="1.1" fill="#000000">
+                  <textPath href="#bearing-dial-top-arc" startOffset="50%" text-anchor="middle">BELUGAS</textPath>
+                </text>
+                <text font-size="9" font-weight="900" letter-spacing="1.1" fill="#000000">
+                  <textPath href="#bearing-dial-bottom-arc" startOffset="50%" text-anchor="middle">GO HERE</textPath>
+                </text>
+                <path d="M 23 75 L 12 71.5 L 12 78.5 Z" fill="#000000"/>
+                <path d="M 127 75 L 138 71.5 L 138 78.5 Z" fill="#000000"/>
               </g>
               <!-- Shown exactly when the needle above is hidden (no bearing set, whether never
                    touched or explicitly cleared via "Unknown Direction") -- an empty dial read as
