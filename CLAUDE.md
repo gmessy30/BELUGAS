@@ -375,6 +375,25 @@ exactly what was left in a non-clean state and on which serial, and ask the user
 can be finished. An unreported dirty phone is the failure this rule exists to prevent; a reported
 one is just an open item.
 
+**A locked or screen-off phone throttles Chrome to near-nothing, so a CDP TIMEOUT means UNKNOWN,
+never FAILED — and never SUCCEEDED either.** Re-enumerate and read the actual state; do not infer
+the outcome from whether the call came back. This bit twice in the single session that wrote this
+rule, in both directions:
+- A `GET /json` tab listing exceeded a 120s tool timeout and a follow-up `/json/version` probe
+  timed out at 8s, which was reported as "the DevTools socket isn't serving while locked" and the
+  cleanup declared blocked on a human unlock. Wrong: the listing had actually succeeded in the
+  background and returned all 21 tabs. Nothing was blocked at all.
+- Eight `GET /json/close/<id>` calls returned nothing inside a 60s timeout while two returned
+  `Target is closing`. A re-enumeration showed **all ten** had closed. A slow success and a
+  no-op are indistinguishable from the caller's side.
+
+So: give these calls generous timeouts (run them with `run_in_background: true` rather than
+fighting a 120s tool limit), and settle every question with a fresh enumeration of real state --
+`/json` for tabs, `forward --list`/`reverse --list` for forwards, `settings get` for settings --
+rather than with the return value of the call that was supposed to change it. Tens of seconds per
+request is normal against a sleeping phone; it is not a malfunction and it is not a reason to
+give up and hand the work back to the user.
+
 **Rotating the device from adb (no human needed to physically turn the phone)**:
 `adb -s <serial> shell settings put system accelerometer_rotation 0` (disables auto-rotate, so the
 next line sticks instead of the phone rotating back), then `adb -s <serial> shell settings put
