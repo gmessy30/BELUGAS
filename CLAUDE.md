@@ -336,6 +336,45 @@ Tear down forwards when done with `adb forward --remove tcp:<local-port>` (or `-
 they otherwise persist across adb server restarts until explicitly removed or the device
 disconnects.
 
+**HARD RULE: leave the phone user-ready. This is part of finishing the task, not optional
+cleanup.** These are real phones someone picks up and uses in the field — a session that verified
+on one is not done until that phone is back to a normal state. Before reporting the work finished,
+every one of these:
+
+- **Mobile data / wifi back ON** if either was turned off for testing (e.g. to exercise the
+  offline queue or a weak-connection path). A phone left in airplane mode misses the very push
+  alerts this app exists to deliver.
+- **No `?debug=1` tabs left open** — that query param turns on the on-page debug overlays
+  (tier-code.js's item-47 overlay, submit-view.js's bearing-dial overlay), which a real user
+  should never be looking at.
+- **Test/local-server tabs closed** — anything on `localhost:<port>` or a `reverse`-forwarded
+  address is a dead page the moment the dev machine's server stops, and it is NOT the deployed
+  app: it has its own origin, its own empty `localStorage` (so a different `belugas_subscriber_id`,
+  meaning a different idea of whose sightings are editable) and possibly its own stale service
+  worker. Leaving one open is how a user ends up reporting a whale into a dead tab. Close them and
+  leave the phone on the real deployed URL, or on whatever it was showing before.
+- **Every settings change reverted** — `accelerometer_rotation` / `user_rotation` (see the
+  rotation section below) back to what they were, and anything else touched. Record the prior
+  value BEFORE changing it so there is something to restore to.
+- **adb port forwards and reverses removed** — `adb -s <serial> forward --remove-all` and
+  `adb -s <serial> reverse --remove-all`.
+- **Re-register the service worker if it was unregistered** for a no-store test, or at minimum
+  load the real deployed URL once so it re-installs — otherwise the phone has no offline shell.
+
+**If a session ends without doing this** — crash, token limit, an interrupted turn, a phone that
+locked mid-session and could not be reached — **the NEXT session checks the phone's state FIRST,
+before starting any new work, and restores it.** Do not assume the previous session left things
+clean; assume it did not, and verify. A quick pass: `adb devices`, then list open tabs via
+`tools/device-inspect/find_tab.py <port>` (looking for `localhost:` and `debug=1` in the URLs),
+then `adb -s <serial> shell settings get system accelerometer_rotation` / `user_rotation`, then
+`adb -s <serial> forward --list` and `reverse --list`.
+
+**A locked phone does not excuse this** — it defers it. If the device is locked (biometric, and
+CLAUDE.md's own rule above says never bypass a lock), say so explicitly in the final report, name
+exactly what was left in a non-clean state and on which serial, and ask the user to unlock so it
+can be finished. An unreported dirty phone is the failure this rule exists to prevent; a reported
+one is just an open item.
+
 **Rotating the device from adb (no human needed to physically turn the phone)**:
 `adb -s <serial> shell settings put system accelerometer_rotation 0` (disables auto-rotate, so the
 next line sticks instead of the phone rotating back), then `adb -s <serial> shell settings put
