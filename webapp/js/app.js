@@ -96,6 +96,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initNavStack();
   initMap();
   initListView();
+  initPhotoLightbox();
   initSubmitView();
   initTierCodeModal();
   initAboutPage();

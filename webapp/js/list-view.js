@@ -75,6 +75,9 @@ function sightingListItem(s) {
     thumb.src = s.photo_url;
     thumb.alt = "Sighting photo";
     thumb.loading = "lazy";
+    // Item 115a: 64px is nowhere near enough to tell a beluga from a whitecap -- tapping opens
+    // the same full-screen inspector the map popup's photo does (photo-lightbox.js).
+    thumb.addEventListener("click", () => openPhotoLightbox(s.photo_url));
     item.appendChild(thumb);
   }
 
@@ -168,6 +171,19 @@ function sightingListItem(s) {
     editBtn.textContent = "Edit";
     editBtn.addEventListener("click", () => openEditSightingFlow(s));
     details.appendChild(editBtn);
+  }
+
+  // Item 115b: the list gives a row's coordinates as text, which is the one thing a reader can't
+  // do anything with -- this jumps to that exact sighting on the Sightings Map with its popup
+  // open. Hidden for a row with no position at all (the footer above reads "Location not
+  // recorded" for those), since there'd be nothing to center on.
+  if (s.whale_lat != null && s.whale_lng != null) {
+    const mapBtn = document.createElement("button");
+    mapBtn.type = "button";
+    mapBtn.className = "show-on-map-btn";
+    mapBtn.textContent = "Show on Map";
+    mapBtn.addEventListener("click", () => focusSightingOnMap(s));
+    details.appendChild(mapBtn);
   }
 
   item.appendChild(details);

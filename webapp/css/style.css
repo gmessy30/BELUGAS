@@ -2936,3 +2936,91 @@ button.secondary {
     --border: #2b3a3c;
   }
 }
+
+/* --- Item 115a: full-screen photo inspector (photo-lightbox.js) --- */
+/* z-index 995: above .modal-backdrop (991) so a modal can never paint over a photo the user
+   opened on top of it, and below #splash-screen (1000) so it can't cover the splash on a cold
+   start. Same family of body-level fixed overlays as the tier-code modal's own item-94 comment
+   above -- see that for why these values are compared explicitly rather than guessed. */
+#photo-lightbox {
+  --lightbox-drag-progress: 0;
+  position: fixed;
+  inset: 0;
+  z-index: 995;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Fades out as the swipe-down progresses (photo-lightbox.js sets the custom property), so the
+     gesture reads as throwing the photo away rather than sliding it around on a static backdrop. */
+  background: rgba(0, 0, 0, calc(0.92 - 0.5 * var(--lightbox-drag-progress)));
+  /* The whole overlay is one drag surface -- without this, the browser claims the vertical
+     gesture for its own scroll/pull-to-refresh before pointermove ever sees it. */
+  touch-action: none;
+  user-select: none;
+}
+
+.photo-lightbox-img {
+  max-width: 100%;
+  /* Leaves room for the hint line below and the close button above rather than letting a tall
+     photo run edge to edge and collide with both. */
+  max-height: 82vh;
+  object-fit: contain;
+  pointer-events: none; /* every gesture belongs to the overlay, never to the image itself */
+}
+
+/* Applied only on release-short-of-threshold, so the follow-the-finger drag itself stays
+   untransitioned (a transition during the drag would lag the finger). */
+.photo-lightbox-img.snapping-back {
+  transition: transform 0.18s ease-out;
+}
+
+.photo-lightbox-close-btn {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  right: 12px;
+  width: 44px; /* a real touch target, not a glyph-sized one */
+  height: 44px;
+  border: none;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #FFFFFF;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.photo-lightbox-hint {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+/* The thumbnail and the map popup's image are now controls, so they say so on hover/press --
+   the popup image is styled inline in map-view.js's sightingPopupHtml, hence the id-less
+   class here being applied from that string too. */
+.sighting-thumb,
+.popup-photo {
+  cursor: pointer;
+}
+
+/* --- Item 115b: "Show on Map" on a list item (list-view.js / map-view.js focusSightingOnMap) --- */
+/* Deliberately identical to .edit-sighting-btn (item 106) rather than a new treatment: both are
+   row-level actions on the same card, and a row that carries both should read as a stack of
+   matching actions, not two buttons competing to look more important than each other. */
+.show-on-map-btn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--brand-teal-2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--brand-teal-2);
+  font-weight: 700;
+  font-size: 0.8rem;
+}

@@ -279,6 +279,7 @@ function drawMapMarkers(skipFitBounds = false) {
     marker.on("popupopen", (event) => {
       wireConfirmSightingButton(event.popup.getElement(), s);
       wireEditSightingButton(event.popup.getElement(), s);
+      wirePopupPhoto(event.popup.getElement(), s);
     });
     marker.bindTooltip(sightingCaptionText(s), {
       permanent: true,
@@ -315,6 +316,87 @@ function drawMapMarkers(skipFitBounds = false) {
   }
 }
 
+// Item 115b: matches the manual/edit flows' own close-in zoom (GPS_CENTER_ZOOM/EDIT_MAP_ZOOM,
+// submit-view.js -- both 14, ~1-2km visible) rather than inventing a third "close enough" value.
+const SIGHTING_FOCUS_ZOOM = 14;
+
+/**
+ * Item 115b: jump to one specific sighting on the Sightings Map -- called from a list row's
+ * "Show on Map" button (list-view.js). Switches to the Map tab if we aren't already there,
+ * centers on the sighting, and opens its popup.
+ *
+ * The awkward part is that the map has TWO filters of its own that the list doesn't share
+ * (VERIFIED ONLY, which is a separate flag from the list's own; and the item-86/113 date range),
+ * so a row perfectly visible in the list can have no marker on the map at all. Landing the user
+ * on a map with no pin and no explanation is exactly the dead end CLAUDE.md's item-106 note
+ * warns about (an affordance that can only ever refuse), so whichever filter is actually hiding
+ * THIS row is cleared first. That's a visible change, not a silent one: the VERIFIED ONLY toggle
+ * and the item-113 date-range pill both sit on the map's own top controls and both re-render
+ * here, so the user can see what was relaxed and put it back.
+ */
+function focusSightingOnMap(s) {
+  if (s.whale_lat == null || s.whale_lng == null) return;
+
+  let needsRedraw = false;
+
+  // is_local rows are never subject to VERIFIED ONLY on the map (see drawMapMarkers), so only a
+  // remote unverified row can be hidden by it.
+  if (mapVerifiedOnly && !s.is_local && !isVerifiedSighting(s)) {
+    mapVerifiedOnly = false;
+    updateMapVerifiedToggleUi();
+    needsRedraw = true;
+  }
+
+  if (!isWithinDateRange(s)) {
+    // Same four steps the date-range chips' own click handler runs (renderDateRangeChips), so the
+    // chip row, the persisted setting, the pill and the markers can't disagree about the range.
+    playbackSelectedQuickRange = "ALL_TIME";
+    renderDateRangeChips();
+    savePlaybackSettings();
+    onPlaybackFilterChanged(); // recomputes the range, updates the pill, and redraws
+    needsRedraw = false; // onPlaybackFilterChanged already redrew
+  }
+
+  if (needsRedraw) drawMapMarkers(true);
+
+  const previousTab = getActiveTabName();
+  if (previousTab !== "map") {
+    switchTab("map");
+    // Same nav-stack shape as the presence banner's own tap-to-map jump (presence-banner.js), so
+    // a back gesture returns to the list rather than leaving the user on the map.
+    pushNavLayer("tab:map", () => switchTab(previousTab));
+  }
+
+  // Deferred a frame: the map was display:none until switchTab above, and Leaflet can only
+  // resolve a setView against a container that has real dimensions. Nothing here pushes a nav
+  // layer, so deferring is safe (contrast item 107, which is specifically about a layer opened
+  // from a closing layer's handler).
+  requestAnimationFrame(() => {
+    invalidateMapSize();
+    // animate:false on purpose -- zoomToShowLayer below runs immediately after and would race a
+    // still-running pan/zoom animation.
+    mapInstance.setView([s.whale_lat, s.whale_lng], SIGHTING_FOCUS_ZOOM, { animate: false });
+
+    const marker = findMapMarkerForSighting(s);
+    if (!marker) return; // centered anyway; nothing to open
+
+    // markercluster's own helper: if this marker is still inside a cluster at this zoom (the
+    // same-exact-coordinates case, which no amount of zooming separates), it spiderfies to
+    // expose it and only then runs the callback.
+    mapMarkersLayer.zoomToShowLayer(marker, () => marker.openPopup());
+  });
+}
+
+// Both remote rows and queued local ones carry a real `id` (offline-queue.js's own
+// getQueuedSightingsAsRecords sets it), so this one key identifies either kind.
+function findMapMarkerForSighting(s) {
+  let found = null;
+  mapMarkersLayer.eachLayer((layer) => {
+    if (layer.sightingData && layer.sightingData.id === s.id) found = layer;
+  });
+  return found;
+}
+
 function sightingDivIcon(isLocal) {
   const color = isLocal ? SIGHTING_DOT_LOCAL_COLOR : SIGHTING_DOT_COLOR;
   return L.divIcon({
@@ -344,8 +426,10 @@ function sightingPopupHtml(s) {
   // so all three can never describe the same sighting's activities differently.
   const activitiesText = formatActivitiesSummary(s.activities, s.activity_note);
   const activities = activitiesText ? `<br>${escapeHtml(activitiesText)}` : "";
+  // Item 115a: the popup-photo class is what wirePopupPhoto finds on popupopen to make this
+  // tappable -- the inline style stays as-is (it predates that and still sizes the image).
   const photo = s.photo_url
-    ? `<img src="${escapeHtml(s.photo_url)}" alt="Sighting photo" style="width:100%;border-radius:6px;margin-top:6px;">`
+    ? `<img class="popup-photo" src="${escapeHtml(s.photo_url)}" alt="Sighting photo" style="width:100%;border-radius:6px;margin-top:6px;">`
     : "";
   return `<div class="popup"><strong>${time}</strong>${editedMarkHtml(s)}<br>${counts}<br>${direction}${activities}${photo}${confirmSightingButtonHtml(s)}${editSightingButtonHtml(s)}</div>`;
 }
@@ -430,6 +514,16 @@ function wireEditSightingButton(container, s) {
     mapInstance.closePopup();
     openEditSightingFlow(s);
   });
+}
+
+// Item 115a: same popupopen-time wiring as the two buttons above, and for the identical reason
+// (Leaflet re-parses the popup's HTML string into fresh DOM every time it opens, so there is no
+// persistent element to bind to ahead of time).
+function wirePopupPhoto(container, s) {
+  if (!container || !s.photo_url) return;
+  const img = container.querySelector(".popup-photo");
+  if (!img) return;
+  img.addEventListener("click", () => openPhotoLightbox(s.photo_url));
 }
 
 async function handleConfirmSightingClick(sighting, btn) {
