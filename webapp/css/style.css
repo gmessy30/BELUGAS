@@ -2966,11 +2966,17 @@ button.secondary {
   max-height: 82vh;
   object-fit: contain;
   pointer-events: none; /* every gesture belongs to the overlay, never to the image itself */
+  /* Item 118: stated explicitly because photo-lightbox.js's pinch math assumes it -- the
+     scale-about-the-midpoint derivation is written around an unmoving centre origin, and would
+     be quietly wrong against any other value. */
+  transform-origin: center center;
 }
 
-/* Applied only on release-short-of-threshold, so the follow-the-finger drag itself stays
-   untransitioned (a transition during the drag would lag the finger). */
-.photo-lightbox-img.snapping-back {
+/* Item 118: was ".snapping-back" -- now covers the double-tap zoom reset too, so it's named for
+   what it does rather than for the one case that first needed it. Applied ONLY to animated state
+   changes: a follow-the-finger pan, pinch or swipe stays untransitioned, since a transition
+   during a live drag lags the finger. */
+.photo-lightbox-img.animating {
   transition: transform 0.18s ease-out;
 }
 
