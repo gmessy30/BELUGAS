@@ -83,16 +83,52 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    /* Item 116: "safe" centering, not plain centering. Once the icon's reserved top padding made
+       a tall phase (RED + the compact map) exceed a SHORT viewport -- a phone held in landscape
+       -- plain justify-content:center overflowed in BOTH directions, pushing the zone name to a
+       negative top offset where it sat under the icon and could not be scrolled back into view
+       (measured: zoneTop -10 at 862x432). "safe center" falls back to start alignment exactly
+       when that would otherwise happen, and behaves identically whenever it wouldn't. The plain
+       `center` line above it is the fallback for any engine that doesn't understand the keyword
+       -- it simply ignores the second declaration and keeps the first. */
     justify-content: center;
+    justify-content: safe center;
     min-height: 100vh;
     /* Item 107: bottom padding reserves room for the FIXED "Open the full app" link below --
        with the NOAA guidance panel expanded this page genuinely scrolls, and without this the
        last line of the panel ends up underneath that link instead of above it. */
-    padding: 24px 20px calc(76px + env(safe-area-inset-bottom, 0px));
+    /* Item 116: the top value reserves room for the absolutely-positioned app icon above
+       (24px inset + its own 64px + 14px gap), so the centered content below never runs up
+       underneath it -- see .status-app-icon for why the icon is out of this flex flow. */
+    padding: calc(102px + env(safe-area-inset-top, 0px)) 20px calc(76px + env(safe-area-inset-bottom, 0px));
     text-align: center;
     /* Same color transition every presence-color surface in this app already uses (the banner,
        the map shading) -- a fresh reading never feels like a jump-cut. */
     transition: background-color 0.6s ease;
+  }
+  /* Item 116: sized down hard from the asset's own 192px -- big enough to be unmistakable at a
+     glance, small enough that it never competes with the status word itself for the top of the
+     screen. The asset is fully opaque with a white background (checked, no alpha), so it reads
+     as a white tile against whichever presence color the body is currently painted; the radius
+     is what keeps that tile from looking like a stray rectangle. flex-shrink:0 because the body
+     is a flex column and a tall RED layout would otherwise squash the icon rather than scroll. */
+  .status-app-icon {
+    /* Deliberately OUT of the body's flex flow. As an ordinary first flex child it inherited the
+       body's justify-content:center, so its position depended on how tall the phase happened to
+       be: measured at 87px down on RED (which carries the compact map) but 213-277px on
+       BLUE/YELLOW, straddling the bottom of the top third instead of sitting in it. Absolute
+       against the initial containing block pins it to a constant inset in EVERY phase while
+       leaving the rest of the page's established centered layout exactly as it was -- and it
+       still scrolls away with the document (unlike the fixed "Open the full app" link), so it
+       never covers the map or the NOAA panel on a scrolled RED page. */
+    position: absolute;
+    top: calc(24px + env(safe-area-inset-top, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    width: 64px;
+    height: 64px;
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   }
   /* Item 97c: which zone this page is showing -- necessary now that more than one exists.
      Uppercase/letter-spaced like a small eyebrow label sitting above the main status text. */
@@ -266,6 +302,14 @@
 </style>
 </head>
 <body>
+  <!-- Item 116: the app's own manifest icon (icons/icon-192.png, the same asset manifest.json
+       and this page's own <link rel="icon"> already point at -- not a new or separately-exported
+       image, so it can never drift from the installed app's icon). First element in the body's
+       flex column, so it sits above everything on every phase, including the RED-only map below
+       -- someone glancing at this from a boat should see what app they're looking at before they
+       read anything. Deliberately small: this is a status page, not a branding splash. -->
+  <img class="status-app-icon" src="../icons/icon-192.png" width="192" height="192"
+       alt="BELUGAS" decoding="async">
   <div class="status-zone-name" id="status-zone-name"></div>
   <div class="status-label" id="status-text" role="status" aria-live="polite">LOADING…</div>
   <div class="status-updated" id="status-updated"></div>
