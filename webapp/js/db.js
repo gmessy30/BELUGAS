@@ -726,6 +726,54 @@ async function refreshEditableSightingStatus() {
   const row = await getMyEditableSighting(getOrCreateSubscriberId());
   cachedEditableSightingId = row?.sighting_id ?? null;
   cachedEditableSightingUntilMs = row?.editable_until ? new Date(row.editable_until).getTime() : null;
+  // Item 119: DELETE rides on the same visibility answer as EDIT, but comes from its own, LATER
+  // migration -- so an EDIT-capable database can still lack delete_my_last_sighting. Probed once,
+  // and only when there's actually a row to offer it on.
+  if (cachedEditableSightingId && sightingDeleteRpcAvailable === null) {
+    await probeSightingDeleteRpc();
+  }
+}
+
+// =============================== Item 119: delete my last sighting ===============================
+// Same row, same rules, same enforcement split as EDIT above: DELETE is drawn exactly where EDIT
+// is (isEditableSighting, map-view.js), and delete_my_last_sighting re-checks ownership, "still the
+// newest" and the window itself. It also takes the row id the user is looking at -- unlike
+// edit_my_last_sighting -- so a report the offline queue syncs mid-confirm can't become the row
+// that gets deleted instead (see the migration's own header).
+let sightingDeleteRpcAvailable = null; // null = untried, then true/false
+
+// Both args null is a guaranteed `false` from the real function (it returns before touching any
+// row), so this tells "exists" from "not deployed yet" at no risk -- the same pre-migration
+// tolerance isMissingFunctionError gives EDIT, applied before a button is drawn rather than after
+// a user has confirmed an irreversible action and been told it failed.
+async function probeSightingDeleteRpc() {
+  const { error } = await supabaseClient.rpc("delete_my_last_sighting", {
+    p_subscriber_id: null,
+    p_sighting_id: null
+  });
+  if (error && isMissingFunctionError(error)) {
+    sightingDeleteRpcAvailable = false;
+  } else {
+    // Any other error is transient; leave it untried so the next refresh asks again.
+    sightingDeleteRpcAvailable = error ? null : true;
+  }
+}
+
+/**
+ * Item 119: hard-deletes this device's own most recent sighting, if `sightingId` still is that row
+ * and it's still inside the edit window. false covers every ordinary refusal uniformly, exactly as
+ * editMyLastSighting's does.
+ */
+async function deleteMyLastSighting(subscriberId, sightingId) {
+  const { data, error } = await supabaseClient.rpc("delete_my_last_sighting", {
+    p_subscriber_id: subscriberId,
+    p_sighting_id: sightingId
+  });
+  if (error) {
+    console.error("DELETE_SIGHTING_ERROR", error);
+    return false;
+  }
+  return data === true;
 }
 
 /**

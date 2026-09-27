@@ -284,7 +284,19 @@ from bash). Run `adb devices` to see current serials — they were `ZY22JSTXPW` 
 fingerprint auth at the time of setup — unusable for this until unlocked by hand, adb cannot
 authenticate a fingerprint) and `ZY22KH9WHP` (no lock, usable directly) — **check both are still
 attached and note which is actually unlocked before relying on either serial**, since which
-physical phone is unlocked can change between sessions.
+physical phone is unlocked can change between sessions. A third device, `R5GL14LNFCH` (Samsung
+SM-X238U tablet), was also attached as of item 119; it had no Chrome DevTools socket open then
+(Chrome not running), and it isn't assigned to BELUGAS testing.
+
+**Phone assignment: `ZY22JSTXPW` (the Stylus) is BELUGAS's designated test device; the Edge is
+kept free for the separate WARN project's parallel sessions.** Use the Stylus for BELUGAS
+on-device work unless the user says otherwise. **This convention is being violated in practice,
+not just at risk of it.** During item 119 (Sept 26, 2026), the Stylus's `accelerometer_rotation`
+flipped 1 → 0 → 1 with no command from the BELUGAS session. The suspected cause is a WARN session
+driving the wrong phone, and the user reports this has happened at least once already that same
+night. Treat anything on the Stylus that this session didn't do (rotation, settings, tabs, a
+Chrome restart) as possibly another project's live session, not as noise. Report it; don't
+quietly work around it.
 
 **Item 85 established this so future sessions verify real behavior on-device instead of asking the
 user to read a debug overlay and report back.** Two independent capabilities, both driven from
@@ -356,6 +368,17 @@ every one of these:
 - **Every settings change reverted** — `accelerometer_rotation` / `user_rotation` (see the
   rotation section below) back to what they were, and anything else touched. Record the prior
   value BEFORE changing it so there is something to restore to.
+- **Display/rotation settings get an explicit before/after check EVERY session, whether or not
+  you meant to touch them** — read `accelerometer_rotation` and `user_rotation` on each phone
+  you'll use BEFORE starting any work, write the values down in your own notes, and read them
+  again as the last cleanup step. A mismatch is restored to the start value and reported, even
+  if nothing you ran should have changed it. Item 119 is why: ZY22JSTXPW read
+  `accelerometer_rotation=1` at session start and `0` at the end, with no `settings put` issued
+  by that session at all. It was caught only because the end-of-session check happened to
+  include it, and it had flipped back to `1` by itself minutes later. Something else on the
+  device changes it (a parallel session on the same phone, e.g. WARN's, is the likely
+  candidate), so "I didn't change it" is not evidence that it's unchanged. Compare against the
+  start snapshot, never against memory of what you did.
 - **adb port forwards and reverses removed** — `adb -s <serial> forward --remove-all` and
   `adb -s <serial> reverse --remove-all`.
 - **Re-register the service worker if it was unregistered** for a no-store test, or at minimum
@@ -427,12 +450,25 @@ there. The row was deleted afterward, but a delivered notification cannot be rec
 write paths against synthetic rows inside a `begin; ... rollback;` transaction instead** (pg_net's
 `net.http_post` only writes to `net.http_request_queue`, an ordinary table write invisible to its
 background worker until commit, so a rollback discards the dispatch -- confirmed: 2 requests
-queued, 0 sent). If a real insert is genuinely unavoidable, put it somewhere no subscription can
-match -- recipients come from `match_notification_recipients` (20260829010000: zone polygons,
-custom polygons and point+radius subscriptions, NOT the flat `device_tokens` broadcast the
-original 20260823000000 comment describes), so a position far from every subscribed zone/point
-returns `{"sent":0,"failed":0,"reason":"no matching recipients"}` -- and delete the row afterward
-regardless.
+queued, 0 sent).
+
+**CORRECTION (item 119): position does NOT make a real insert silent.** This section used to say
+a position far from every subscribed zone/point returns "no matching recipients". That is false.
+`match_notification_recipients` has a second branch that returns EVERY `device_tokens` row whose
+subscriber has no active subscription (or has a null subscriber_id), regardless of where the
+sighting is. Checked live on Sept 26, 2026: a remote point and a position-less row each returned
+7 recipients out of 16 tokens. Any committed insert that fires the trigger alerts those devices.
+
+**When a real, committed row is genuinely needed** (e.g. to tap a real button on a phone), insert
+it from the CLI with the trigger skipped for that session only:
+`begin; set local session_replication_role = replica; insert ...; commit;`. This disables
+triggers for that one transaction only; every other client's inserts keep notifying normally. It
+also skips `on_sighting_insert_set_observer_tier`, so set `observer_tier` explicitly. Confirm
+`count(*) from net.http_request_queue` and `net._http_response` are unchanged afterward. Place it
+outside the Kenai banner area too: a row inside it can change `get_kenai_presence_state` for
+everyone even with no push. Compare the phase before and after. Item 119 did exactly this: 0
+queued, 0 sent, banner unchanged. Delete the rows afterward by exact id, and only rows you
+created.
 
 **Stale JS is the default on localhost, not the exception.** Two separate verification rounds ran
 against code that was already fixed on disk: `python -m http.server` sends no `Cache-Control`, so
@@ -583,6 +619,28 @@ never just that playback started.
     independently missing, and `fetchRecentSightings` now downgrades one group at a time
     (newest first) in a loop rather than a single retry.
 
+- **Migration applied and verified** (item 119 — delete my last sighting):
+  `supabase/migrations/20261002000000_add_delete_my_last_sighting.sql` — applied by Claude on the
+  user's explicit go-ahead (it touches `sightings`). Adds `delete_my_last_sighting(p_subscriber_id,
+  p_sighting_id)`, a SECURITY DEFINER hard delete. It uses the same ownership, "single most recent"
+  and `sighting_edit_window()` rules as `edit_my_last_sighting`, and those functions are
+  unchanged. The one deliberate difference from edit is the extra `p_sighting_id`. Without it, a
+  report the offline queue syncs mid-confirm would be the row deleted instead, irreversibly. It is
+  also what makes "not the newest" a refusal at all. It is the ONLY client delete path: anon and
+  authenticated hold a table DELETE grant, but there is no delete RLS policy, so a direct delete
+  matches 0 rows. No FKs reference `sightings` and no DELETE trigger exists (both checked live).
+  A delete can't recall alerts already sent. It also doesn't remove the photo from the public
+  `sighting-photos` bucket, since there is no storage DELETE policy. Client: DELETE sits directly
+  under EDIT on the same one row (map popup and list), behind a `confirm()`, and stays hidden
+  until the RPC is detected (`probeSightingDeleteRpc`, db.js).
+  Verified with a real button tap and dialog on the Stylus against test rows inserted with triggers
+  skipped (see "A REAL INSERT FROM A TEST IS A REAL NOTIFICATION"). Deleted: own newest row, then
+  the next row once it became newest. Refused: own older row, another device's row, own row
+  requested by another device, own row outside the window (edit refuses it too).
+  **Known bug in edit, not fixed**: `edit_my_last_sighting` takes no row id. If a newer report
+  syncs while someone is editing, the save overwrites that newer report with the older one's
+  pre-filled values. Its own comment claims it "matches zero rows" instead, which is wrong. The
+  fix is the same `p_sighting_id` guard, as its own reviewed migration (it touches `sightings`).
 - **Migration WRITTEN, NOT applied — needs the user's explicit go-ahead** (item 101 bug fix):
   `supabase/migrations/20260929010000_fix_email_type_mismatch_in_tier_admin_rpcs.sql`.
   `list_tier_codes`/`list_tier_admins`/`list_admin_actions` (all three, 20260929000000) select

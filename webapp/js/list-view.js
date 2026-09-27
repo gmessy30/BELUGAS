@@ -171,6 +171,16 @@ function sightingListItem(s) {
     editBtn.textContent = "Edit";
     editBtn.addEventListener("click", () => openEditSightingFlow(s));
     details.appendChild(editBtn);
+
+    // Item 119: DELETE directly under EDIT, same row, same handler as the map popup's.
+    if (sightingDeleteRpcAvailable === true) {
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "delete-sighting-btn";
+      deleteBtn.textContent = "Delete";
+      deleteBtn.addEventListener("click", () => handleDeleteSightingClick(s, deleteBtn));
+      details.appendChild(deleteBtn);
+    }
   }
 
   // Item 115b: the list gives a row's coordinates as text, which is the one thing a reader can't

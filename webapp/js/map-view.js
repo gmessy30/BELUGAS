@@ -451,7 +451,15 @@ function editedMarkHtml(s) {
 // render. edit_my_last_sighting re-checks all of this server-side regardless.
 function editSightingButtonHtml(s) {
   if (s.is_local || !isEditableSighting(s)) return "";
-  return `<button type="button" class="edit-sighting-btn" data-sighting-id="${escapeHtml(s.id)}">Edit</button>`;
+  return `<button type="button" class="edit-sighting-btn" data-sighting-id="${escapeHtml(s.id)}">Edit</button>${deleteSightingButtonHtml(s)}`;
+}
+
+// Item 119: DELETE sits directly under EDIT on the same one row -- same visibility rule, plus the
+// RPC actually being deployed (probeSightingDeleteRpc, db.js). Called only from
+// editSightingButtonHtml above, so it can never appear on a row EDIT doesn't.
+function deleteSightingButtonHtml(s) {
+  if (sightingDeleteRpcAvailable !== true) return "";
+  return `<button type="button" class="delete-sighting-btn" data-sighting-id="${escapeHtml(s.id)}">Delete</button>`;
 }
 
 // Item 106: the server's answer (cachedEditableSightingId) AND the deadline it came with. The
@@ -514,6 +522,30 @@ function wireEditSightingButton(container, s) {
     mapInstance.closePopup();
     openEditSightingFlow(s);
   });
+  const deleteBtn = container.querySelector(".delete-sighting-btn");
+  if (deleteBtn) deleteBtn.addEventListener("click", () => handleDeleteSightingClick(s, deleteBtn));
+}
+
+// Item 119: same plain confirm() gate as CONFIRM SIGHTING and REPORT DEPARTURE, for the same
+// reason -- a stray tap must not be able to fire something that can't be undone -- with the
+// consequences spelled out, since "delete" alone doesn't say that alerts already went out.
+async function handleDeleteSightingClick(sighting, btn) {
+  if (!confirm("Delete this sighting? It will be removed for everyone and can't be undone. Any alert it already sent can't be taken back.")) return;
+
+  btn.disabled = true;
+  btn.textContent = "Deleting…";
+  const ok = await deleteMyLastSighting(getOrCreateSubscriberId(), sighting.id);
+  if (ok) {
+    mapInstance.closePopup();
+    // Refetch rather than splicing the row out locally: the server now names a different editable
+    // row (or none), and both the map and the list need that answer, not just the row gone.
+    await refreshSightings();
+  } else {
+    btn.disabled = false;
+    btn.textContent = "Delete";
+    alert("Couldn't delete this sighting -- it may no longer be your most recent report, or the time to change it has passed.");
+    await refreshSightings();
+  }
 }
 
 // Item 115a: same popupopen-time wiring as the two buttons above, and for the identical reason
