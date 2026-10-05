@@ -71,6 +71,21 @@
     margin-top: auto;
     padding-top: 0.3in;
   }
+  /* Same as status-sign.html: pins the independence line and the credits to the bottom together.
+     Inside this block .sign-footer's own auto margin no longer applies (not a flex item any more). */
+  .sign-bottom {
+    margin-top: auto;
+  }
+  .sign-bottom .sign-footer {
+    padding-top: 0.06in;
+    margin: 0;
+  }
+  .sign-independence {
+    font-size: 9pt;
+    max-width: 6.5in;
+    margin: 0;
+    padding-top: 0.2in;
+  }
 </style>
 </head>
 <body>
@@ -83,6 +98,9 @@
 
   <p class="sign-url">https://gmessy30.github.io/BELUGAS/webapp/</p>
 
-  <p class="sign-footer">© 2026 Keen Eye Apps &middot; Artwork © 2026 Luna Montgomery</p>
+  <div class="sign-bottom">
+    <p class="sign-independence">An independent community project. Not affiliated with the City of Kenai, NOAA or any other agency. Free to use.</p>
+    <p class="sign-footer">© 2026 Keen Eye Apps &middot; Artwork © 2026 Luna Montgomery</p>
+  </div>
 </body>
 </html>
