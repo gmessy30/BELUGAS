@@ -641,6 +641,33 @@ never just that playback started.
   syncs while someone is editing, the save overwrites that newer report with the older one's
   pre-filled values. Its own comment claims it "matches zero rows" instead, which is wrong. The
   fix is the same `p_sighting_id` guard, as its own reviewed migration (it touches `sightings`).
+- **Migration applied and verified** (Oct 4, 2026 — idempotent tier-code redemption):
+  `supabase/migrations/20261004000000_make_tier_code_redeem_idempotent.sql` — applied by the user
+  via `tools\apply-latest-migration.ps1` (it touches `tier_roster`). Why: a tier-2 code committed
+  on its FIRST call (attempt timestamp == `claimed_at`), the phone never showed success, and all 8
+  retries hit `is_used = true` and were told "That code isn't valid." Adds
+  `redeem_tier_code_detailed(p_code, p_subscriber_id) → jsonb` with a `status` of `success`
+  (including a retry by the subscriber that already holds the code, `already_held: true`),
+  `invalid`, `already_claimed` (held by another device) or `device_has_other_code`
+  (`tier_roster_claimed_subscriber_id_uidx` allows one code per subscriber — previously swallowed
+  as null by a `unique_violation` handler). Every outcome is a RETURN, never a RAISE, so the
+  attempt row is never rolled back out of the 12/hour rate limit. A revoked code
+  (`claimed_subscriber_id` null, `is_used` still true) stays `invalid`. `already_claimed` reveals
+  that a used code exists; accepted by the user as a deliberate step back from 20260905010000's
+  anti-enumeration design. `redeem_tier_code` keeps its signature and smallint return as a thin
+  wrapper (success → tier, everything else → null). Verified with synthetic `ZZVF-` rows only, in
+  a rolled-back transaction with `session_replication_role = replica`, calling as `anon`; the real
+  claimed row was hash-identical before and after (ignoring `code`). Six cases passed:
+  1. Same-device retry via the new RPC → `success`, tier 2, `already_held: true`.
+  2. Same-device retry via the wrapper → `2`.
+  3. Another device → `already_claimed` (wrapper `NULL`).
+  4. A device already holding another code → `device_has_other_code` (wrapper `NULL`; the target
+     code stayed unclaimed).
+  5. A revoked code → `invalid`.
+  6. A code that doesn't exist → `invalid`.
+  Client (`db.js`'s `redeemTierCode`, `tier-code.js`'s `submitTierCode`) shows a distinct message
+  per status; a request with no server answer (no PostgREST error code) is NETWORK, never
+  "invalid"; the Enter key can no longer start a second call while one is in flight.
 - **Migration WRITTEN, NOT applied — needs the user's explicit go-ahead** (item 101 bug fix):
   `supabase/migrations/20260929010000_fix_email_type_mismatch_in_tier_admin_rpcs.sql`.
   `list_tier_codes`/`list_tier_admins`/`list_admin_actions` (all three, 20260929000000) select
@@ -741,6 +768,14 @@ never just that playback started.
   `shared/src/commonMain/composeResources/drawable/` are STILL the old placeholders (confirmed by
   hash -- all four differ from the webapp copies) and need the identical swap during the native
   parity pass, alongside every other pending item below.
+- **Native-side parity item (Oct 4, 2026 tier-code redemption, web-only so far)**: installed
+  native builds already get same-device retry success, through the `redeem_tier_code` wrapper
+  (see 20261004000000 above). They still show "invalid" for already-claimed, a device that already
+  has a code, and network failures: `SupabaseApi.redeemTierCode` collapses everything but
+  `rate_limited` to `TierRedeemResult.Invalid`. The wrapper can't carry those cases as a sentinel
+  like `-1`, because `SupabaseClient.kt:909` treats any integer as `Success`. Port by calling
+  `redeem_tier_code_detailed` and adding `AlreadyClaimed`/`DeviceHasOtherCode`/`Network` cases
+  (with `TierClaimScreen.kt` messages matching `tier-code.js`), alongside the other pending items.
 - **Native-side parity item (item 114, web-only so far)**: the BearingDial's white ring now
   carries curved "BELUGAS" (top) / "GO HERE" (bottom) text plus inward-pointing arrowheads at the
   left and right, the same "this is what you are aiming" language as CaptureScreen's
