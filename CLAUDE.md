@@ -768,6 +768,16 @@ never just that playback started.
   `shared/src/commonMain/composeResources/drawable/` are STILL the old placeholders (confirmed by
   hash -- all four differ from the webapp copies) and need the identical swap during the native
   parity pass, alongside every other pending item below.
+- **Camera preview hides part of the saved frame (Oct 4, 2026, open, not built)**: the camera
+  now requests 1920x1080 with ideal values only (`getRearCameraStream`, submit-view.js) and saves
+  the FULL frame, capped at 1920 px on the long edge; no reticle crop, deliberately. But
+  `#camera-preview` is `object-fit: cover`, so the preview trims what the photo keeps. Measured
+  on the Stylus (`ZY22JSTXPW`): portrait hides 10.9% (side edges), landscape hides 32.6% (top and
+  bottom), because Chrome's address bar leaves a wide, short 918x348 viewport. A possible later
+  change, not built: a full-frame preview in landscape (`object-fit: contain`, with black bars)
+  or an on-screen note. **The iPhone stream size is still unmeasured**: the `?debug=1` overlay on
+  the logging screen shows `camera stream: WxH · photo: WxH, N KB` after a capture, so an iPhone
+  tester can read it and back out without submitting.
 - **Native-side parity item (Oct 4, 2026 tier-code redemption, web-only so far)**: installed
   native builds already get same-device retry success, through the `redeem_tier_code` wrapper
   (see 20261004000000 above). They still show "invalid" for already-claimed, a device that already

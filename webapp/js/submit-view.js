@@ -34,7 +34,14 @@ let reviewPhotoObjectUrl = null;
 // mechanism is what switches: real track.applyConstraints({advanced:[{zoom}]}) when the device
 // reports capability (the captured frame already reflects it, same as native's real hardware
 // zoom), otherwise a CSS scale() of the <video> preview (cosmetic only -- capturePhoto() below
-// crops the source rectangle to match, so the saved photo agrees with what was framed on screen).
+// crops the source to the same centered 1/zoom fraction of the frame). Either way the saved
+// photo is the WHOLE frame at that zoom, not just what the preview shows: #camera-preview is
+// object-fit: cover, which trims the frame's edges on screen, and nothing is cropped to the
+// reticle. Measured on a moto g stylus 5G (2024) with the 1920x1080 request (getRearCameraStream):
+// portrait (1080x1920 stream) hides 10.9% of the frame, at the side edges; landscape (1920x1080)
+// hides 32.6%, top and bottom, because Chrome's address bar leaves a wide, short 918x348
+// viewport. The saved photo is the full frame in both orientations. (The old default 480x640
+// stream hid a third of the width in portrait.)
 let cameraZoomTrack = null;
 let cameraZoomUsesHardware = false;
 let cameraCssZoomLevel = 1;
@@ -334,10 +341,7 @@ async function startCamera() {
   resetCameraZoomUi();
 
   try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } },
-      audio: false
-    });
+    cameraStream = await getRearCameraStream();
     video.srcObject = cameraStream;
     initCameraZoomControl();
     // Item 80: whatever path actually got a live stream running (the tap-to-start overlay's own
@@ -352,6 +356,32 @@ async function startCamera() {
     cameraStatus.hidden = false;
     cameraStatus.textContent = `Camera unavailable (${e.name}). You can continue without a photo, or check camera permissions.`;
     skipBtn.hidden = false;
+  }
+}
+
+// Asks for 1920x1080 with IDEAL values only: an ideal never fails, the browser just picks the
+// nearest size the camera offers, whereas exact/min can throw OverconstrainedError. With no size
+// at all, Chrome on Android delivers a 480x640 stream. Chrome reads these numbers as landscape and
+// swaps them for an upright phone (moto g stylus: 1080x1920 portrait, 1920x1080 landscape, both
+// uncropped); written the other way round (1080x1920) the same phone returned a cropped-and-
+// scaled 1920x1080 instead. Nothing
+// downstream assumes the stream's shape -- capturePhoto reads videoWidth/videoHeight at capture.
+// If the sized request is rejected, retries once with the old rear-camera-only request. Not after
+// a permission denial: that retry can't succeed, and Safari may prompt a second time.
+// Web-only: native's CameraX picks its own capture resolution.
+async function getRearCameraStream() {
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    });
+  } catch (e) {
+    if (e.name === "NotAllowedError" || e.name === "SecurityError") throw e;
+    console.warn("CAMERA_SIZED_REQUEST_FAILED", e);
+    return navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false
+    });
   }
 }
 
@@ -474,26 +504,31 @@ function setCaptureLabel(text) {
 function capturePhoto() {
   const video = document.getElementById("camera-preview");
   const canvas = document.getElementById("capture-canvas");
-  if (!video.videoWidth) return;
+  // Read at capture time, never assumed: the stream's shape depends on the device, its
+  // orientation, and which getRearCameraStream request succeeded.
+  const streamWidth = video.videoWidth;
+  const streamHeight = video.videoHeight;
+  if (!streamWidth) return;
 
   setCaptureLabel("SAVING...");
 
-  const MAX_EDGE = 1600;
-  const scale = Math.min(1, MAX_EDGE / Math.max(video.videoWidth, video.videoHeight));
-  canvas.width = video.videoWidth * scale;
-  canvas.height = video.videoHeight * scale;
+  const MAX_EDGE = 1920;
+  const scale = Math.min(1, MAX_EDGE / Math.max(streamWidth, streamHeight));
+  canvas.width = Math.round(streamWidth * scale);
+  canvas.height = Math.round(streamHeight * scale);
 
   // Item 55: CSS scale() on the preview is a display-only illusion -- it never changes what the
   // camera actually delivers, so drawImage would otherwise still capture the un-zoomed full
   // frame. Crop the SOURCE rectangle down to the same centered fraction of the frame the on-
   // screen scale implies, then draw that into the full canvas size, so the saved photo matches
-  // what was framed on screen. Real hardware zoom (cameraZoomUsesHardware) already changes the
+  // the zoom level chosen on screen. It still includes the edges that object-fit: cover trims
+  // from the preview. Real hardware zoom (cameraZoomUsesHardware) already changes the
   // frame at the source -- cameraCssZoomLevel only ever moves off 1 via the CSS-fallback path
   // (handleCameraZoomInput), so this stays a no-op crop (the untouched full frame) in that case.
-  const cropWidth = video.videoWidth / cameraCssZoomLevel;
-  const cropHeight = video.videoHeight / cameraCssZoomLevel;
-  const cropX = (video.videoWidth - cropWidth) / 2;
-  const cropY = (video.videoHeight - cropHeight) / 2;
+  const cropWidth = streamWidth / cameraCssZoomLevel;
+  const cropHeight = streamHeight / cameraCssZoomLevel;
+  const cropX = (streamWidth - cropWidth) / 2;
+  const cropY = (streamHeight - cropHeight) / 2;
   canvas.getContext("2d").drawImage(
     video,
     cropX, cropY, cropWidth, cropHeight,
@@ -503,6 +538,11 @@ function capturePhoto() {
   canvas.toBlob(
     (blob) => {
       capturedPhotoBlob = blob;
+      bearingDialDebugState.camera = {
+        stream: `${streamWidth}x${streamHeight}`,
+        photo: `${canvas.width}x${canvas.height}, ${blob ? Math.round(blob.size / 1024) : "?"} KB`
+      };
+      renderBearingDialDebugOverlay();
       setCaptureLabel("CAPTURE");
       enterManualLogStepFromCamera();
     },
@@ -910,7 +950,10 @@ const bearingDialDebugState = {
   liveDegrees: null,
   committedDegrees: null,
   commitSkippedCount: 0,
-  needle: null // filled in by logBearingDialNeedleDiagnostics
+  needle: null, // filled in by logBearingDialNeedleDiagnostics
+  // Camera stream and saved-photo size at the last capture (capturePhoto), so an iPhone tester
+  // can read what their device really delivers without submitting anything.
+  camera: null // { stream: "WxH", photo: "WxH, N KB" }
 };
 
 function renderBearingDialDebugOverlay() {
@@ -921,6 +964,7 @@ function renderBearingDialDebugOverlay() {
   const n = s.needle;
   const fmt = (v) => (v == null ? "—" : typeof v === "number" ? v.toFixed(1) : String(v));
   el.textContent = [
+    s.camera ? `camera stream: ${s.camera.stream} · photo: ${s.camera.photo}` : "camera: no capture yet",
     `pointerdown: ${s.pointerdownCount}x` + (s.lastPointerdown
       ? ` (last: ${s.lastPointerdown.pointerType} @ ${fmt(s.lastPointerdown.x)},${fmt(s.lastPointerdown.y)})`
       : " (none yet)"),
