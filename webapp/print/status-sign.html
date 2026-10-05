@@ -63,6 +63,14 @@
     max-width: 6.5in;
     margin: 0 0 0.4in;
   }
+  /* What the page is, for someone who has never heard of the app. Sits in the heading's own
+     bottom margin, so the QR keeps its size and position on the page. */
+  .sign-subline {
+    font-size: 14pt;
+    line-height: 1.35;
+    max-width: 6in;
+    margin: -0.25in 0 0.3in;
+  }
   .sign-qr-wrap {
     background: #ffffff;
     border: 3pt solid #000000;
@@ -82,7 +90,10 @@
     font-weight: 700;
     word-break: break-all;
     max-width: 6in;
-    margin: 0 0 0.6in;
+    /* Was 0.6in; trimmed when the subline and independence line were added, so the credits
+       stay on one Letter page (they spilled onto a second by ~2px). .sign-bottom's auto margin
+       takes up whatever space is left, so this only matters when the page is full. */
+    margin: 0 0 0.35in;
   }
   .sign-footer {
     font-size: 9pt;
@@ -90,11 +101,27 @@
     margin-top: auto;
     padding-top: 0.3in;
   }
+  /* Pins the independence line and the credits to the bottom together. Inside this block
+     .sign-footer's own auto margin no longer applies (not a flex item any more). */
+  .sign-bottom {
+    margin-top: auto;
+  }
+  .sign-bottom .sign-footer {
+    padding-top: 0.06in;
+    margin: 0;
+  }
+  .sign-independence {
+    font-size: 9pt;
+    max-width: 6.5in;
+    margin: 0;
+    padding-top: 0.2in;
+  }
 </style>
 </head>
 <body>
   <img class="sign-icon" src="../icons/icon-512.png" alt="">
   <h1 class="sign-heading" id="sign-heading"></h1>
+  <p class="sign-subline" id="sign-subline"></p>
 
   <div class="sign-qr-wrap">
     <div id="sign-qr-code"></div>
@@ -102,7 +129,10 @@
 
   <p class="sign-url" id="sign-url"></p>
 
-  <p class="sign-footer">© 2026 Keen Eye Apps &middot; Artwork © 2026 Luna Montgomery</p>
+  <div class="sign-bottom">
+    <p class="sign-independence">An independent community project. Not affiliated with the City of Kenai, NOAA or any other agency. Free to use.</p>
+    <p class="sign-footer">© 2026 Keen Eye Apps &middot; Artwork © 2026 Luna Montgomery</p>
+  </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script>
@@ -136,6 +166,10 @@
     document.getElementById("sign-heading").textContent = zoneSlug === "kenai"
       ? "Belugas in the river? Scan before you launch."
       : "Belugas in " + zoneName + "? Scan for the latest.";
+    // "In the river" only fits Kenai, same split as the heading above.
+    document.getElementById("sign-subline").textContent = zoneSlug === "kenai"
+      ? "A free page showing whether belugas have been reported in the river. No app needed."
+      : "A free page showing whether belugas have been reported in " + zoneName + ". No app needed.";
     document.getElementById("sign-url").textContent = statusUrl;
     document.title = "BELUGAS Status Page Sign — " + zoneName;
 
