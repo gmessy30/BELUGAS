@@ -260,22 +260,36 @@ async function submitTierCode() {
     return;
   }
 
+  // The Enter key calls this directly, bypassing the disabled button -- without this, two calls
+  // could be in flight and the losing one's "invalid" could overwrite the winner's success.
+  if (submitBtn.disabled) return;
   submitBtn.disabled = true;
   setTierCodeStatus("Checking…");
 
-  const subscriberId = getOrCreateSubscriberId();
-  const result = await redeemTierCode(code, subscriberId);
+  try {
+    const subscriberId = getOrCreateSubscriberId();
+    const result = await redeemTierCode(code, subscriberId);
 
-  if (result.status === "SUCCESS") {
-    setTierCodeStatus(`Code accepted -- this device is now a Tier ${result.tier} observer.`);
-    input.value = "";
-  } else if (result.status === "RATE_LIMITED") {
-    setTierCodeStatus("Too many attempts on this device recently -- try again later.", true);
-  } else {
-    setTierCodeStatus("That code isn't valid.", true);
+    if (result.status === "SUCCESS") {
+      setTierCodeStatus(`Code accepted -- this device is now a Tier ${result.tier} observer.`);
+      input.value = "";
+    } else if (result.status === "RATE_LIMITED") {
+      setTierCodeStatus("Too many attempts on this device recently -- try again later.", true);
+    } else if (result.status === "NETWORK") {
+      setTierCodeStatus("Couldn't reach the server, so your code may have gone through. Check your connection and tap Submit again. Retrying is safe.", true);
+    } else if (result.status === "ALREADY_CLAIMED") {
+      setTierCodeStatus("That code has already been used on another device.", true);
+    } else if (result.status === "DEVICE_HAS_OTHER_CODE") {
+      setTierCodeStatus("This device already has an observer code. Ask an admin to revoke it first.", true);
+    } else {
+      setTierCodeStatus("That code isn't valid.", true);
+    }
+  } catch (e) {
+    console.error("TIER_CODE_SUBMIT_EXCEPTION", e);
+    setTierCodeStatus("Something went wrong. Tap Submit to try again. Retrying is safe.", true);
+  } finally {
+    submitBtn.disabled = false;
   }
-
-  submitBtn.disabled = false;
 }
 
 function setTierCodeStatus(message, isError = false) {

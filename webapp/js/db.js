@@ -227,11 +227,38 @@ async function insertSighting(record) {
  * native side exactly. The RPC normalizes both the typed code and the stored value server-side
  * (dashes/case-insensitive), so this never touches the input string itself.
  *
- * Every ordinary failure (bad code, already-used code, network/decode error) collapses to the
- * same "invalid" outcome -- deliberately, so this can't be used to probe which codes exist.
- * RATE_LIMITED is kept separate only because the RPC itself raises a distinct exception for it.
+ * Calls redeem_tier_code_detailed (20261004000000), which returns a status instead of a bare
+ * tier-or-null: SUCCESS (including a retry by the device that already holds this code),
+ * INVALID, ALREADY_CLAIMED (used by another device), DEVICE_HAS_OTHER_CODE. A request that never
+ * got a server answer is NETWORK, never INVALID: the claim may have committed with the response
+ * lost (Oct 4, 2026: a tier-2 code claimed on the first call, then 8 retries told "invalid").
+ * Falls back to the old smallint RPC until the migration is applied.
+ *
+ * Deliberate deviation from native: SupabaseApi.redeemTierCode still calls redeem_tier_code and
+ * collapses everything but RATE_LIMITED to Invalid.
  */
 async function redeemTierCode(code, subscriberId) {
+  if (!navigator.onLine) return { status: "NETWORK" };
+
+  const { data, error } = await supabaseClient.rpc("redeem_tier_code_detailed", {
+    p_code: code,
+    p_subscriber_id: subscriberId
+  });
+
+  if (error) {
+    if (error.message === "rate_limited") return { status: "RATE_LIMITED" };
+    if (error.code === "PGRST202") return redeemTierCodeLegacy(code, subscriberId);
+    console.error("TIER_CODE_REDEEM_ERROR", error);
+    // PostgREST errors carry a SQLSTATE/PGRST code; a failed fetch doesn't.
+    return { status: error.code ? "INVALID" : "NETWORK" };
+  }
+  if (data?.status === "success") return { status: "SUCCESS", tier: data.tier };
+  if (data?.status === "already_claimed") return { status: "ALREADY_CLAIMED" };
+  if (data?.status === "device_has_other_code") return { status: "DEVICE_HAS_OTHER_CODE" };
+  return { status: "INVALID" };
+}
+
+async function redeemTierCodeLegacy(code, subscriberId) {
   const { data, error } = await supabaseClient.rpc("redeem_tier_code", {
     p_code: code,
     p_subscriber_id: subscriberId
@@ -240,7 +267,7 @@ async function redeemTierCode(code, subscriberId) {
   if (error) {
     if (error.message === "rate_limited") return { status: "RATE_LIMITED" };
     console.error("TIER_CODE_REDEEM_ERROR", error);
-    return { status: "INVALID" };
+    return { status: error.code ? "INVALID" : "NETWORK" };
   }
   if (data == null) return { status: "INVALID" };
   return { status: "SUCCESS", tier: data };
