@@ -213,7 +213,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v114</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v115</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -335,6 +335,7 @@
         <div class="section-title">WHAT'S NEW</div>
         <div class="whats-new-date">OCTOBER 6, 2026</div>
         <ul class="tip-list">
+          <li>The Sightings Map remembers the date range you last chose, such as TODAY, YESTERDAY or SEASON, when you reopen the app. TODAY always means the current day. A custom range goes back to ALL TIME. If the range hides every sighting, a short note under it says so, and tapping the note lets you pick other dates.</li>
           <li>Map pin labels and the details that open when you tap a pin now always use Alaska time, even on a phone set to another time zone.</li>
           <li>When the Sightings Map is showing a single day, such as TODAY or YESTERDAY, each pin's label now shows the time of the sighting instead of the date. Longer ranges still show the date.</li>
         </ul>
@@ -1027,6 +1028,10 @@
               </svg>
             </button>
           </div>
+          <!-- Shown by updateEmptyRangeHint (map-view.js) only when the date range alone hides
+               every sighting; taps open the playback panel. Top stack, so it never sits under the
+               bottom-anchored presence banner. -->
+          <button id="map-empty-range-hint" class="map-empty-range-hint" type="button" hidden></button>
         </div>
 
         <!-- Ports the playback Surface/Column verbatim as one panel (native has no separate sheet

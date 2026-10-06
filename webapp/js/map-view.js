@@ -314,6 +314,39 @@ function drawMapMarkers(skipFitBounds = false) {
     const bounds = L.latLngBounds(visible.map((s) => [s.whale_lat, s.whale_lng]));
     mapInstance.fitBounds(bounds.pad(0.2), { maxZoom: 12 });
   }
+  updateEmptyRangeHint(visible.length);
+}
+
+// One small line under the range pill when the date range alone is why the map is empty: no
+// marker survives, yet sightings exist that pass every OTHER filter (position, VERIFIED ONLY).
+// Matters most now that a reload restores the last range -- a map that opens empty on TODAY
+// otherwise looks like there is no data at all. Hidden while the playback panel is open (the
+// range chips are right there) and on ALL TIME (nothing is being hidden by date). Tapping it
+// opens the panel. Web-only so far (see CLAUDE.md).
+const EMPTY_RANGE_PHRASES = { TODAY: "today", YESTERDAY: "yesterday", THIS_SEASON: "this season", CUSTOM: "in this range" };
+
+function updateEmptyRangeHint(visibleCount) {
+  const hint = document.getElementById("map-empty-range-hint");
+  if (!hint) return;
+  const phrase = EMPTY_RANGE_PHRASES[playbackSelectedQuickRange];
+  const hiddenByDateOnly = visibleCount === 0 && lastCombinedSightings.some((s) =>
+    s.whale_lat != null && s.whale_lng != null && (s.is_local || !mapVerifiedOnly || isVerifiedSighting(s)));
+  const show = !playbackIsOpen && phrase != null && hiddenByDateOnly;
+  hint.hidden = !show;
+  if (show) hint.textContent = `No sightings ${phrase}. Tap to see other dates.`;
+}
+
+// A TODAY/YESTERDAY range held in memory must not keep filtering to an old day after the app sat
+// in the background past midnight -- nothing else re-resolves the range on resume (sightings only
+// refresh on load, pull-to-refresh and submit). Re-resolves only when the Anchorage date has
+// actually changed, and never mid-playback, where the slider is measured against the old range.
+let playbackRangeResolvedDay = null;
+
+function rerunRangeIfDayChanged() {
+  if (document.visibilityState !== "visible" || !mapInstance || playbackIsPlaying || playbackScrubbing) return;
+  const today = anchorageDateParts(Date.now()).join("-");
+  if (playbackRangeResolvedDay === null || playbackRangeResolvedDay === today) return;
+  onPlaybackFilterChanged(); // same path as a chip tap: range, pill, slider and markers together
 }
 
 // Item 115b: matches the manual/edit flows' own close-in zoom (GPS_CENTER_ZOOM/EDIT_MAP_ZOOM,
@@ -808,19 +841,25 @@ function clamp(value, min, max) {
 // a modal" rather than inventing a native equivalent that doesn't exist.
 const PLAYBACK_SETTINGS_STORAGE_KEY = "belugas_playback_settings";
 
+// Quick ranges a reload may restore. Each is stored as its KEY only, never as timestamps, and
+// resolved fresh against the current Anchorage date by recomputePlaybackRange -- so a TODAY saved
+// last week means today. CUSTOM is deliberately absent: its typed dates go stale, so a saved
+// CUSTOM (or anything unrecognised) falls back to ALL_TIME.
+const RESTORABLE_QUICK_RANGES = ["TODAY", "YESTERDAY", "THIS_SEASON", "ALL_TIME"];
+
 function loadPlaybackSettings() {
   try {
     const raw = localStorage.getItem(PLAYBACK_SETTINGS_STORAGE_KEY);
-    if (!raw) return;
+    if (!raw) return; // first-ever launch: stays ALL_TIME
     const parsed = JSON.parse(raw);
-    // Item 113 DELIBERATE EXCEPTION to item 83b's own persistence: the QUICK RANGE (and, with it,
-    // the custom from/to dates) is NOT restored on a fresh load -- it always starts at ALL_TIME.
-    // The range filters the map's DEFAULT view, not just the panel (isWithinDateRange ignores
-    // playbackIsOpen), so a persisted TODAY meant a returning visitor opened the app to a map
-    // that had silently dropped every earlier sighting. Fade window and speed ARE still restored:
-    // both are playback-session presentation only and hide nothing when the panel is closed.
-    // They're still WRITTEN by savePlaybackSettings (a mid-session close/reopen keeps the chosen
-    // range -- see closePlaybackPanel's own comment); only the reload path ignores them.
+    if (!parsed || typeof parsed !== "object") return;
+    // The quick range IS restored again (reversing item 113's "always start at ALL_TIME"). Item
+    // 113 stopped restoring it because a persisted TODAY opened the app to a map that had silently
+    // dropped every earlier sighting. The same item also added the always-visible range pill
+    // beside the playback button (amber for anything but ALL TIME), which is what makes a restored
+    // range visible rather than silent -- and the empty-range hint (updateEmptyRangeHint) covers
+    // the case where it hides everything. Custom from/to are never restored.
+    playbackSelectedQuickRange = RESTORABLE_QUICK_RANGES.includes(parsed.quickRange) ? parsed.quickRange : "ALL_TIME";
     if (FADE_WINDOW_OPTIONS.some((f) => f.key === parsed.fadeWindow)) playbackFadeWindowKey = parsed.fadeWindow;
     if (PLAYBACK_SPEED_OPTIONS.includes(parsed.speed)) playbackSpeedMultiplier = parsed.speed;
   } catch (e) {
@@ -862,6 +901,8 @@ function formatEpochMsForDateInput(epochMs) {
 
 function initPlaybackPanel() {
   document.getElementById("playback-fab-btn").addEventListener("click", openPlaybackPanel);
+  document.getElementById("map-empty-range-hint").addEventListener("click", openPlaybackPanel);
+  document.addEventListener("visibilitychange", rerunRangeIfDayChanged);
   // Item 113: the range label reads as one control with the FAB beside it, so it opens the same
   // panel. role=button/tabindex=0 in the markup make it reachable without a pointer; a <span>
   // gets no implicit Enter/Space activation, hence the explicit keydown.
@@ -908,7 +949,7 @@ function initPlaybackPanel() {
     onPlaybackFilterChanged();
   });
 
-  loadPlaybackSettings(); // item 83b/113: restore the persisted fade window/speed BEFORE the first render
+  loadPlaybackSettings(); // restore the persisted quick range, fade window and speed BEFORE the first render
   // Item 113: render the label immediately, not just once sightings arrive -- recomputePlaybackRange
   // (its other caller) doesn't run until renderSightingsOnMap, and the pill must never be blank.
   updatePlaybackRangeLabel();
@@ -1016,6 +1057,7 @@ function recomputePlaybackRange() {
 
   playbackRangeStart = start;
   playbackRangeEnd = end;
+  playbackRangeResolvedDay = anchorageDateParts(nowMs).join("-");
   // Item 113: the label is refreshed from HERE and nowhere else, so it can never describe a
   // different window than the one actually being filtered on -- this is the single function that
   // ever assigns playbackRangeStart/End (see this function's own header comment above).

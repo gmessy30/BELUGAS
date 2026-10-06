@@ -799,6 +799,22 @@ never just that playback started.
   to fix in the same pass**: the non-playback caption at `SightingsMapScreen.kt:413` hard-codes
   `"${s.total} Belugas"`, so one whale reads "1 Belugas"; the playback branch at :422 already
   pluralizes correctly, and the PWA always has.
+- **Native-side parity item (Oct 6, 2026, web-only so far) -- the Sightings Map remembers its
+  date range**: `loadPlaybackSettings` (map-view.js) restores the saved quick range on page load.
+  Only `RESTORABLE_QUICK_RANGES` (TODAY, YESTERDAY, THIS_SEASON, ALL_TIME) are restored, stored as
+  the KEY only and resolved fresh against the current Anchorage date, so a TODAY saved last week
+  means today. A saved CUSTOM (its dates go stale), a first launch, and a missing, corrupt or
+  unknown value all start at ALL_TIME. There is no 7-day or 30-day quick range in this app. Two
+  additions:
+  - `rerunRangeIfDayChanged` re-resolves the range on `visibilitychange` when the Anchorage date
+    has changed, because nothing else does on resume (sightings refresh only on load,
+    pull-to-refresh and submit). Without it a TODAY held in memory overnight keeps filtering to
+    yesterday while the pill says TODAY.
+  - `updateEmptyRangeHint` shows one line under the pill ("No sightings today. Tap to see other
+    dates.") when the date range alone hides every sighting; it opens the playback panel and is
+    hidden while the panel is open and on ALL TIME.
+  Native's `SightingsMapScreen.kt` keeps the range in `remember` only (lost with the screen) and
+  has neither the pill, the restore, nor the hint.
 - **Native-side parity item (item 114, web-only so far)**: the BearingDial's white ring now
   carries curved "BELUGAS" (top) / "GO HERE" (bottom) text plus inward-pointing arrowheads at the
   left and right, the same "this is what you are aiming" language as CaptureScreen's
@@ -817,10 +833,13 @@ never just that playback started.
   `updatePlaybackRangeLabel`) showing the active range at all times, amber whenever it isn't
   ALL TIME, because the range filters the map's DEFAULT view too (`isWithinDateRange` ignores
   `playbackIsOpen`) and there was otherwise nothing on screen saying data was being hidden. Same
-  item stopped RESTORING the quick range on a fresh load (item 83b's persistence now covers fade
-  window/speed only) and replaced the FAB's `⏱` glyph -- which renders on Android Chrome as a
-  circle-with-a-stem, reading as a power button -- with an inline SVG clock face.
-  `SightingsMapScreen.kt` has neither the label nor the icon change.
+  item replaced the FAB's `⏱` glyph -- which renders on Android Chrome as a circle-with-a-stem,
+  reading as a power button -- with an inline SVG clock face. `SightingsMapScreen.kt` has neither
+  the label nor the icon change. **Reversed Oct 6, 2026:** item 113 also stopped RESTORING the
+  quick range on a fresh load, because a persisted TODAY opened the app to a map that had silently
+  dropped every earlier sighting. That reason no longer holds: the same item's always-visible
+  amber pill makes a restored range visible, not silent. So `loadPlaybackSettings` restores the
+  saved quick range again (see the Oct 6 parity item below for the rules).
 - **Native-side parity item (item 105, web-only so far) -- "verified" definition**: the PWA's
   one shared rule is `isVerifiedSighting` (`webapp/js/db.js`) = `observer_tier` 1/2 OR
   `confirmed_at` set; a photo alone never counts. It drives the map/list VERIFIED ONLY toggles,
