@@ -786,6 +786,19 @@ never just that playback started.
   like `-1`, because `SupabaseClient.kt:909` treats any integer as `Success`. Port by calling
   `redeem_tier_code_detailed` and adding `AlreadyClaimed`/`DeviceHasOtherCode`/`Network` cases
   (with `TierClaimScreen.kt` messages matching `tier-code.js`), alongside the other pending items.
+- **Native-side parity item (Oct 6, 2026, web-only so far) -- pin captions on a one-day range**:
+  when the Sightings Map's active date range is exactly one Anchorage calendar day, every pin's
+  caption shows the observed TIME instead of the date ("4 Belugas · 2:24 PM", America/Anchorage
+  whatever the phone's timezone). The rule is "the REQUESTED window starts and ends on the same
+  calendar day", not a list of buttons: TODAY, YESTERDAY, or a CUSTOM from/to on one date. It's
+  judged before the data clamp, so ALL TIME (no bounds of its own) and an open-ended or multi-day
+  CUSTOM range keep the date even when their data happens to fall on one day.
+  `playbackRangeIsSingleDay`, set only in `recomputePlaybackRange`, read by `sightingCaptionText`
+  (map-view.js). The popup keeps its full date and time; cluster badges are unchanged. Native's
+  `SightingsMapScreen.kt` caption (`captionText`, ~line 413/422) has neither. **Known native slip
+  to fix in the same pass**: the non-playback caption at `SightingsMapScreen.kt:413` hard-codes
+  `"${s.total} Belugas"`, so one whale reads "1 Belugas"; the playback branch at :422 already
+  pluralizes correctly, and the PWA always has.
 - **Native-side parity item (item 114, web-only so far)**: the BearingDial's white ring now
   carries curved "BELUGAS" (top) / "GO HERE" (bottom) text plus inward-pointing arrowheads at the
   left and right, the same "this is what you are aiming" language as CaptureScreen's

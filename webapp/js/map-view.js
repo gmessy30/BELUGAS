@@ -409,13 +409,25 @@ function sightingDivIcon(isLocal) {
 
 // "{N} Belugas · {EEE, MMM d}" -- matches SightingsMapScreen's own captionText exactly (the
 // "⏳ QUEUED ·" prefix included, native's literal treatment for a locally-queued item).
+// DELIBERATE DEVIATION FROM NATIVE (web-only so far, see CLAUDE.md): when the active date range is
+// exactly one calendar day (playbackRangeIsSingleDay), every pin shares the same date, so the
+// caption shows the observed TIME instead ("4 Belugas · 2:24 PM"), always in America/Anchorage
+// whatever the phone's own timezone is. observed_at, never created_at -- the observer can set it.
+// Recomputed on every drawMapMarkers, so it follows range changes (playback panel included).
 function sightingCaptionText(s) {
   const total = (s.count_whites || 0) + (s.count_greys || 0) + (s.count_calves || 0) + (s.count_unknown || 0);
   const prefix = s.is_local ? "⏳ QUEUED · " : "";
-  const dateLabel = s.observed_at_epoch_ms
-    ? new Date(s.observed_at_epoch_ms).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
-    : "Unknown date";
-  return `${prefix}${total} Beluga${total !== 1 ? "s" : ""} · ${dateLabel}`;
+  let whenLabel;
+  if (!s.observed_at_epoch_ms) {
+    whenLabel = playbackRangeIsSingleDay ? "Unknown time" : "Unknown date";
+  } else if (playbackRangeIsSingleDay) {
+    whenLabel = new Date(s.observed_at_epoch_ms).toLocaleTimeString("en-US", {
+      timeZone: "America/Anchorage", hour: "numeric", minute: "2-digit", hour12: true
+    });
+  } else {
+    whenLabel = new Date(s.observed_at_epoch_ms).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  }
+  return `${prefix}${total} Beluga${total !== 1 ? "s" : ""} · ${whenLabel}`;
 }
 
 function sightingPopupHtml(s) {
@@ -689,6 +701,9 @@ let playbackCustomFromMs = null;
 let playbackCustomToMs = null;
 let playbackRangeStart = 0;
 let playbackRangeEnd = 0;
+// True when the REQUESTED date range is exactly one Anchorage calendar day -- set only by
+// recomputePlaybackRange, read by sightingCaptionText (pin captions show the time, not the date).
+let playbackRangeIsSingleDay = false;
 let playbackTimeMs = 0;
 let playbackTickerId = null;
 
@@ -957,6 +972,17 @@ function recomputePlaybackRange() {
   } else {
     [start, end] = resolveQuickRange(playbackSelectedQuickRange, dataMinMs, dataMaxMs, nowMs);
   }
+
+  // Judged on the window as REQUESTED, before the data clamp below: TODAY, YESTERDAY, or a
+  // CUSTOM from/to on the same date. ALL_TIME has no bounds of its own (it is just wherever the
+  // data is), and an open-ended CUSTOM side is unbounded too, so neither ever counts -- otherwise
+  // a multi-day range would flip to times whenever the data inside it happened to fall on one day.
+  const requestedStart = playbackSelectedQuickRange === "CUSTOM" ? playbackCustomFromMs
+    : playbackSelectedQuickRange === "ALL_TIME" ? null : start;
+  const requestedEnd = playbackSelectedQuickRange === "CUSTOM" ? playbackCustomToMs
+    : playbackSelectedQuickRange === "ALL_TIME" ? null : end;
+  playbackRangeIsSingleDay = requestedStart != null && requestedEnd != null &&
+    anchorageDateParts(requestedStart).join("-") === anchorageDateParts(requestedEnd).join("-");
 
   // BUG FIX (item 83a): the actual reported cause of "TODAY behaves like last 24h" -- clamping
   // start/end to the loaded data's own min/max is only meaningful for ALL_TIME/CUSTOM (where the
