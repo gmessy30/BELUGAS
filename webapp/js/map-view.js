@@ -425,13 +425,22 @@ function sightingCaptionText(s) {
       timeZone: "America/Anchorage", hour: "numeric", minute: "2-digit", hour12: true
     });
   } else {
-    whenLabel = new Date(s.observed_at_epoch_ms).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    // Pinned to Anchorage like the time label above: in the phone's own timezone, a 3:18 PM Oct 4
+    // sighting read "Mon, Oct 5" on a phone set to London -- a different day than the range
+    // filter (which is Anchorage days) put it in.
+    whenLabel = new Date(s.observed_at_epoch_ms).toLocaleDateString("en-US", {
+      timeZone: "America/Anchorage", weekday: "short", month: "short", day: "numeric"
+    });
   }
   return `${prefix}${total} Beluga${total !== 1 ? "s" : ""} · ${whenLabel}`;
 }
 
 function sightingPopupHtml(s) {
-  const time = s.observed_at_epoch_ms ? new Date(s.observed_at_epoch_ms).toLocaleString() : "Unknown time";
+  // America/Anchorage whatever the phone's timezone, same as the pin caption. Locale left as the
+  // browser's own, so the date/time style is unchanged; only the clock it reads is pinned.
+  const time = s.observed_at_epoch_ms
+    ? new Date(s.observed_at_epoch_ms).toLocaleString(undefined, { timeZone: "America/Anchorage" })
+    : "Unknown time";
   const counts = formatCounts(s);
   const direction = formatTravelDirection(s.travel_bearing_degrees);
   // Item 90: formatActivitiesSummary (submit-view.js) is shared with the confirm modal/list item
