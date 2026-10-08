@@ -684,18 +684,20 @@ never just that playback started.
   OR REPLACE, identical signatures, no schema change. Still touches tier_roster/tier_admins-reading
   function bodies, so it's flagged for the user's go-ahead per the Hard rule despite the urgency,
   same as everything else in this category.
-- **Migration WRITTEN, NOT applied — needs the user's explicit go-ahead** (item 97b):
+- **Migration LIVE** (item 97b) -- **correction, Oct 7, 2026**: this entry used to say "written,
+  not applied". The linked project has `get_kenai_red_qualifying_sightings(p_now_epoch_ms bigint
+  default null)` live, and `/webapp/status/` already calls it for the Kenai RED map. It returns
+  `id, observed_at_epoch_ms, whale_lat, whale_lng, count_*, travel_bearing_degrees` ordered newest
+  observed first, but NO `created_at`. Original description, still accurate:
   `supabase/migrations/20260927000000_add_kenai_red_qualifying_sightings_rpc.sql` adds
   `get_kenai_red_qualifying_sightings`, a new read-only RPC returning the actual RED-qualifying
   sighting row(s) (position, counts, `travel_bearing_degrees`) for `/webapp/status/`'s RED-state
   compact map — `get_kenai_presence_state` itself only ever returns the newest qualifying
   timestamp, never the rows. Its body is the RED-branch logic from `get_kenai_presence_state`
   copied verbatim (same cycle-low/departure-report ratchet/tier/confirmed/banner-area check) so
-  the map can never show a sighting that isn't actually why the banner is RED. This is exactly the
-  kind of migration CLAUDE.md's own "Hard rule" above exists for (touches
-  `get_kenai_presence_state`'s own logic and sightings data directly) — **do not apply it without
-  showing the user this diff and getting an explicit go-ahead first**, regardless of how
-  mechanical the copy looks. Apply via `supabase db query --linked --file <path>` once approved.
+  the map can never show a sighting that isn't actually why the banner is RED. Any CHANGE to it
+  is still Hard-rule territory (it copies `get_kenai_presence_state`'s logic and reads sightings):
+  show the user the diff and get an explicit go-ahead first.
 - **Standalone status page** (items 97/97b/97c) at `/webapp/status/`: full design/rationale lives
   in that directory's own file header comments (`index.html`, `status.js`,
   `kenai-landmarks.js`) — summarized here for discoverability. Reads
@@ -707,7 +709,16 @@ never just that playback started.
   `travel_bearing_degrees`-rotated direction arrow and a "Last seen … " plain-text line — Kenai
   gets river-relative "heading upriver/downriver" phrasing (geofence.js's real
   `KENAI_RIVER_CENTERLINE`) plus the small `kenai-landmarks.js` "near X" lookup; every other zone
-  gets a plain compass point and no landmark (no lookup exists for them). Currently only `kenai` is
+  gets a plain compass point and no landmark (no lookup exists for them). **The RED map draws at
+  most 3 sightings (Oct 7, 2026, display only)**: `RED_MAP_MAX_SHOWN` in status.js, chosen
+  client-side from the full qualifying list by `sortByRecency` (newest observed, ties broken by
+  `created_at`). The Kenai RPC returns no `created_at`, so `fillCreatedAtForTies` reads it from
+  `sightings` for just the tied rows, only when a tie could change the top three; on failure the
+  server's order stands. Newest drawn last with the highest `zIndexOffset`, so it sits on top even
+  at a shared spot. The older two dots and arrows are drawn at 55% opacity, labels unfaded. The
+  map fits only the shown three plus the river mouth (or zone outline). "Last seen…" describes
+  the newest. When more qualify, a line under the map reads "Showing the 3 most recent of N
+  reports"; nothing is shown at 3 or fewer. Currently only `kenai` is
   `is_banner_watched` live, so `?zone=` for anything else renders an honest "UNKNOWN ZONE" state
   rather than silently substituting Kenai's data — this is expected until/unless another zone gets
   flagged, not a bug. The Share page's STATUS PAGE chip mode has its own zone picker (only shown

@@ -212,6 +212,9 @@ function tick() {
 
 let leafletAndDepsLoadPromise = null;
 let redQualifyingSightings = null; // last successful fetch, normalized to one shape regardless of source; or null
+// The RED map shows only this many of them -- the most recent, newest drawn on top. Display only:
+// what makes the page RED is decided server-side and is untouched.
+const RED_MAP_MAX_SHOWN = 3;
 let redMapInstance = null;
 let redMarkersLayerGroup = null;
 
@@ -306,6 +309,7 @@ async function fetchGenericZoneRedQualifyingSightings(zoneSlug, nowMs) {
     .filter((s) => s.is_geofence_verified && ((s.observer_tier === 2 && s.observer_type === "SELF") || s.observer_tier === 1))
     .map((s) => ({
       id: s.id,
+      created_at: s.created_at, // tie-break for the "most recent three" selection (sortByRecency)
       observed_at_epoch_ms: s.observed_at_epoch_ms,
       whale_lat: s.whale_lat,
       whale_lng: s.whale_lng,
@@ -316,6 +320,40 @@ async function fetchGenericZoneRedQualifyingSightings(zoneSlug, nowMs) {
       travel_bearing_degrees: s.travel_bearing_degrees
     }))
     .sort((a, b) => b.observed_at_epoch_ms - a.observed_at_epoch_ms);
+}
+
+// Newest observed first; equal observed times (common, since observers can type a time to the
+// minute) broken by created_at, newest first. Array.sort is stable, so rows still tied after that
+// keep the order the server returned them in.
+function sortByRecency(rows) {
+  const createdMs = (s) => (s.created_at ? Date.parse(s.created_at) : -Infinity);
+  return rows.slice().sort((a, b) =>
+    (b.observed_at_epoch_ms - a.observed_at_epoch_ms) || (createdMs(b) - createdMs(a)));
+}
+
+// get_kenai_red_qualifying_sightings doesn't return created_at (and adding it would mean a
+// migration), so when a tie on observed time could change WHICH rows make the top three or their
+// order, read created_at for just those rows straight from the sightings table (already readable
+// by anon -- the main app's own map reads it the same way). Best effort: on any failure the rows
+// keep the server's own order, which is still newest-observed first.
+async function fillCreatedAtForTies(rows) {
+  const candidates = rows.slice().sort((a, b) => b.observed_at_epoch_ms - a.observed_at_epoch_ms)
+    .slice(0, RED_MAP_MAX_SHOWN + 1);
+  const tied = candidates.filter((s) => s.created_at == null &&
+    candidates.some((o) => o !== s && o.observed_at_epoch_ms === s.observed_at_epoch_ms));
+  if (tied.length === 0) return rows;
+  try {
+    const ids = tied.map((s) => s.id).join(",");
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/sightings?select=id,created_at&id=in.(${ids})`, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const createdById = new Map((await res.json()).map((r) => [r.id, r.created_at]));
+    return rows.map((s) => (createdById.has(s.id) ? { ...s, created_at: createdById.get(s.id) } : s));
+  } catch (e) {
+    console.warn("STATUS_PAGE_TIE_BREAK_FETCH_FAILED", e);
+    return rows;
+  }
 }
 
 function formatRelativeTime(epochMs, nowMs) {
@@ -411,9 +449,18 @@ function renderRedMap(sightings, nowMs) {
   }
   redMarkersLayerGroup.clearLayers();
 
+  // Fits only the sightings actually drawn (at most RED_MAP_MAX_SHOWN) plus the river mouth (or
+  // the zone's own outline) -- older qualifying reports no longer stretch the view.
   const boundsPoints = extraFitBoundsPoints();
 
-  sightings.forEach((s) => {
+  // `sightings` is newest first. Drawn OLDEST first so the newest marker and its label are the
+  // last added: Leaflet stacks tooltips by insertion order, and zIndexOffset (newest highest)
+  // overrides Leaflet's default of stacking markers by screen position -- so the newest dot,
+  // arrow and label sit on top even when two reports share a spot. Older ones are drawn fainter so
+  // recency reads at a glance; their labels are NOT faded (same as the newest's), since the map
+  // tiles under them are light and faded text is what would suffer in sunlight.
+  sightings.slice().reverse().forEach((s) => {
+    const recencyRank = sightings.indexOf(s); // 0 = newest
     boundsPoints.push([s.whale_lat, s.whale_lng]);
     const total = (s.count_whites || 0) + (s.count_greys || 0) + (s.count_calves || 0) + (s.count_unknown || 0);
     const relTime = formatRelativeTime(s.observed_at_epoch_ms, nowMs);
@@ -426,7 +473,11 @@ function renderRedMap(sightings, nowMs) {
       iconSize: [16, 16],
       iconAnchor: [8, 8]
     });
-    const marker = L.marker([s.whale_lat, s.whale_lng], { icon }).addTo(redMarkersLayerGroup);
+    const marker = L.marker([s.whale_lat, s.whale_lng], {
+      icon,
+      zIndexOffset: (sightings.length - recencyRank) * 1000,
+      opacity: recencyRank === 0 ? 1 : 0.55
+    }).addTo(redMarkersLayerGroup);
     marker.bindTooltip(`${total} beluga${total === 1 ? "" : "s"} · ${relTime}`, {
       permanent: true,
       direction: "top",
@@ -457,9 +508,10 @@ async function updateRedSection(status, fetchNewData) {
   if (fetchNewData) {
     try {
       await ensureLeafletAndDepsLoaded();
-      redQualifyingSightings = isKenaiZone
+      const fetched = isKenaiZone
         ? await fetchKenaiRedQualifyingSightingsRaw()
         : await fetchGenericZoneRedQualifyingSightings(currentZoneSlug, Date.now());
+      redQualifyingSightings = sortByRecency(await fillCreatedAtForTies(fetched));
     } catch (e) {
       console.error("STATUS_PAGE_RED_MAP_ERROR", e);
       // Deliberately don't clear a previously-successful redQualifyingSightings on a transient
@@ -477,9 +529,16 @@ async function updateRedSection(status, fetchNewData) {
   }
 
   wrapEl.hidden = false;
-  renderRedMap(redQualifyingSightings, Date.now());
+  // redQualifyingSightings is already newest first (sortByRecency), so [0] -- what the
+  // "Last seen..." line describes -- is always the newest, and the newest drawn marker.
+  const shown = redQualifyingSightings.slice(0, RED_MAP_MAX_SHOWN);
+  renderRedMap(shown, Date.now());
   document.getElementById("status-last-seen-line").textContent =
-    buildLastSeenLine(redQualifyingSightings[0], Date.now());
+    buildLastSeenLine(shown[0], Date.now());
+  const countEl = document.getElementById("status-map-count-line");
+  const total = redQualifyingSightings.length;
+  countEl.hidden = total <= RED_MAP_MAX_SHOWN;
+  countEl.textContent = total > RED_MAP_MAX_SHOWN ? `Showing the ${RED_MAP_MAX_SHOWN} most recent of ${total} reports` : "";
 }
 
 refreshStatus();

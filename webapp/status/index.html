@@ -180,6 +180,12 @@
     line-height: 1.4;
     color: var(--status-fg);
   }
+  .status-map-count-line {
+    margin-top: 4px;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--status-fg);
+  }
   /* qrcodejs-style permanent tooltip labels (Leaflet's own .leaflet-tooltip), styled to read
      clearly against the map's own tiles regardless of status color -- always white-on-dark since
      the map itself is never yellow, unlike the rest of this page. */
@@ -319,6 +325,8 @@
   <div class="status-map-wrap" id="status-map-wrap" hidden>
     <div id="status-map"></div>
     <div class="status-last-seen-line" id="status-last-seen-line"></div>
+    <!-- Shown by status.js only when more reports qualify than the map draws. -->
+    <div class="status-map-count-line" id="status-map-count-line" hidden></div>
   </div>
 
   <!-- Item 107: NOAA boater guidance -- static content, no JS, collapsed by default. Adapted
