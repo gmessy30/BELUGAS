@@ -737,6 +737,13 @@ never just that playback started.
   rather than silently substituting Kenai's data — this is expected until/unless another zone gets
   flagged, not a bug. The Share page's STATUS PAGE chip mode has its own zone picker (only shown
   when more than one zone is watched), driven by the same `get_watched_zone_statuses` list.
+  **Item 121 (revised, Oct 7, 2026):** STATUS PAGE mode also shows an OPEN STATUS PAGE button and
+  a PRINTABLE SIGN section linking `print/status-sign.html?zone=` and, for Kenai only,
+  `print/status-sign.pdf` (the only PDF; it's the Kenai sign). These, and the mode's URL text,
+  QR, Copy and Share, use the canonical `https://gmessy30.github.io/BELUGAS/webapp/` base
+  (`CANONICAL_WEBAPP_BASE_URL`, share.js), never `window.location`, so a localhost session still
+  hands out working links. APP mode still derives its URL from `window.location`. One QR per
+  screen still holds: the sign page draws its own, on its own page.
 - **Printable signs** (item 98) at `/webapp/print/`: `status-sign.html` is zone-parameterized (same
   `?zone=` convention as `/status/`, generates its QR client-side via qrcodejs since it now needs a
   different code per zone) and keeps Kenai's own established "…before you launch" phrase, with a

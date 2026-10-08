@@ -1145,6 +1145,20 @@ button.text-link {
   width: 100%;
 }
 
+/* Item 121 (revised): sits under Copy Link in STATUS PAGE mode. */
+.share-open-status-btn {
+  margin-top: 10px;
+}
+
+.share-open-status-btn[hidden] {
+  display: none;
+}
+
+.share-sign-links a {
+  color: #ffffff;
+  font-weight: 700;
+}
+
 .share-qr-section {
   display: flex;
   flex-direction: column;

@@ -213,7 +213,7 @@
            or the presence banner's own state -- bump the number by hand alongside sw.js's
            CACHE_NAME (see that file's own header comment and CLAUDE.md's "Service worker"
            section). -->
-      <h1 class="subpage-title">ABOUT <span class="about-version">· v116</span></h1>
+      <h1 class="subpage-title">ABOUT <span class="about-version">· v117</span></h1>
       <div class="subpage-top-actions">
         <button id="about-toggle-text-btn" class="about-toggle-btn about-interactive">HIDE TEXT</button>
         <button id="about-back-btn" class="subpage-back-btn about-interactive">← BACK</button>
@@ -335,6 +335,7 @@
         <div class="section-title">WHAT'S NEW</div>
         <div class="whats-new-date">OCTOBER 7, 2026</div>
         <ul class="tip-list">
+          <li>On the Share page, STATUS PAGE now has an OPEN STATUS PAGE button and links to the printable sign and its PDF, ready to post at a boat launch.</li>
           <li>All sighting dates and times now use Alaska time, even on a phone set to another time zone: the Sightings List, the time-lapse player, the date and time you pick when reporting or editing, and the tide times on the banner. Export Data's dates now mean Alaska days, so a late-evening sighting is no longer counted under the next day.</li>
           <li>The status page map now shows only the 3 most recent sightings, with the newest on top and older ones drawn fainter. When more have been reported, a line under the map says how many.</li>
           <li>The status page's "Last seen" line now names the right place. The river mouth, the Kenai city boat launch, the Warren Ames Bridge, Cunningham Park and the Eagle Rock boat launch were all mapped kilometers off before. Sightings out in Cook Inlet say so, and whales crossing the river are described that way.</li>
@@ -446,6 +447,20 @@
       <div class="subpage-section">
         <p id="share-url-text" class="share-url-text"></p>
         <button id="share-copy-btn" class="secondary share-action-btn" type="button">📋 Copy Link</button>
+        <!-- Item 121 (revised): STATUS PAGE mode only (share.js's setShareSelectedKind). Opens the
+             same canonical status-page URL the text, QR, Copy and Share all use, in a new tab. -->
+        <button id="share-open-status-btn" class="primary share-action-btn share-open-status-btn" type="button" hidden>Open status page</button>
+      </div>
+      <!-- Item 121 (revised): STATUS PAGE mode only. The sign page draws its own QR, but it's a
+           separate page, so this one still shows a single code. The PDF link is shown only for
+           Kenai: status-sign.pdf is the Kenai sign; other zones print from the page itself. -->
+      <div id="share-sign-section" class="subpage-section" hidden>
+        <div class="section-title">PRINTABLE SIGN</div>
+        <p class="section-body">A sign with this page's QR code, to post at a boat launch or viewing spot.</p>
+        <p class="section-body share-sign-links">
+          <a id="share-sign-link" target="_blank" rel="noopener">Printable sign</a>
+          <span id="share-sign-pdf-wrap"> · <a id="share-sign-pdf-link" target="_blank" rel="noopener">PDF</a></span>
+        </p>
       </div>
       <hr class="section-divider">
 

@@ -26,17 +26,43 @@ function getShareableAppUrl() {
   return window.location.origin + window.location.pathname;
 }
 
-// Item 97: the standalone status page (webapp/status/) is always a sibling "status/" directory
-// of wherever this page's own index.html actually is -- handles both the pathname ending in
-// "/" (navigated to the directory) and ending in "index.html" (an explicit link/bookmark), same
-// two shapes getShareableAppUrl() itself has to tolerate. Item 97c: zoneSlug becomes the page's
-// own ?zone= param -- omitted for "kenai" (the status page's own default when the param is
-// missing), included for anything else, so a Kenai link stays the same clean URL it always was.
+// Item 97c: zoneSlug becomes the status page's own ?zone= param -- omitted for "kenai" (the status
+// page's own default when the param is missing), included for anything else, so a Kenai link
+// stays the same clean URL it always was. (Item 97 derived this URL from window.location as a
+// sibling "status/" directory; item 121 replaced that, see below.)
+//
+// Item 121 (revised): the status page and sign links are the canonical DEPLOYED addresses, never
+// derived from window.location -- a session opened from localhost (or any other origin) must still
+// hand out a link and QR that work on someone else's phone. APP mode is unchanged.
+const CANONICAL_WEBAPP_BASE_URL = "https://gmessy30.github.io/BELUGAS/webapp/";
+
+function zoneQuery(zoneSlug) {
+  return zoneSlug && zoneSlug !== "kenai" ? `?zone=${encodeURIComponent(zoneSlug)}` : "";
+}
+
 function getShareableStatusPageUrl(zoneSlug) {
-  const appUrl = getShareableAppUrl();
-  const dir = appUrl.endsWith("index.html") ? appUrl.slice(0, -"index.html".length) : appUrl;
-  const base = (dir.endsWith("/") ? dir : `${dir}/`) + "status/";
-  return zoneSlug && zoneSlug !== "kenai" ? `${base}?zone=${encodeURIComponent(zoneSlug)}` : base;
+  return `${CANONICAL_WEBAPP_BASE_URL}status/${zoneQuery(zoneSlug)}`;
+}
+
+// The printable sign takes the same ?zone= convention as the status page. The PDF is the Kenai
+// sign only (webapp/print/status-sign.pdf), so it's offered for Kenai and null otherwise.
+function getStatusSignPageUrl(zoneSlug) {
+  return `${CANONICAL_WEBAPP_BASE_URL}print/status-sign.html${zoneQuery(zoneSlug)}`;
+}
+
+function getStatusSignPdfUrl(zoneSlug) {
+  return (zoneSlug || "kenai") === "kenai" ? `${CANONICAL_WEBAPP_BASE_URL}print/status-sign.pdf` : null;
+}
+
+function updateStatusPageLinks() {
+  const isStatus = shareSelectedKind === "status";
+  document.getElementById("share-open-status-btn").hidden = !isStatus;
+  document.getElementById("share-sign-section").hidden = !isStatus;
+  if (!isStatus) return;
+  document.getElementById("share-sign-link").href = getStatusSignPageUrl(shareSelectedZoneSlug);
+  const pdfUrl = getStatusSignPdfUrl(shareSelectedZoneSlug);
+  document.getElementById("share-sign-pdf-wrap").hidden = !pdfUrl;
+  if (pdfUrl) document.getElementById("share-sign-pdf-link").href = pdfUrl;
 }
 
 function getShareableUrlForKind(kind) {
@@ -52,6 +78,9 @@ function initSharePage() {
   document.getElementById("share-chip-status").addEventListener("click", () => setShareSelectedKind("status"));
 
   document.getElementById("share-copy-btn").addEventListener("click", handleCopyShareUrl);
+  document.getElementById("share-open-status-btn").addEventListener("click", () => {
+    window.open(getShareableStatusPageUrl(shareSelectedZoneSlug), "_blank", "noopener");
+  });
 
   // Hidden entirely (not just disabled) where navigator.share doesn't exist -- most desktop
   // browsers -- rather than a disabled button with no visible explanation of why. The copy
@@ -77,6 +106,7 @@ async function setShareSelectedKind(kind) {
   }
 
   document.getElementById("share-url-text").textContent = getShareableUrlForKind(kind);
+  updateStatusPageLinks();
   renderShareQrCode();
 }
 
@@ -119,6 +149,7 @@ function setShareSelectedZone(zoneSlug) {
     btn.classList.toggle("active", shareZones[i].slug === zoneSlug);
   });
   document.getElementById("share-url-text").textContent = getShareableUrlForKind("status");
+  updateStatusPageLinks();
   renderShareQrCode();
 }
 
