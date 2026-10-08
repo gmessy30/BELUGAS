@@ -371,14 +371,45 @@ function formatRelativeTime(epochMs, nowMs) {
 // the mouth (index 0) upriver (see geofence.js's own truncateAtRiverMiles comment: "walks
 // cumulative distance from the mouth"), so nearestSegment's own bearingDegrees (start->end of the
 // matched segment) IS the local upriver direction at that point; downriver is its reverse.
+//
+// Oct 7, 2026: a bearing within 22.5 degrees of straight across the river reads "heading across
+// the river" instead of being forced into up or down. And past the mouth (see isKenaiInletPosition)
+// there is no river to be up or down OF, so directions there are relative to the mouth itself.
+const KENAI_ACROSS_RIVER_HALF_BAND_DEGREES = 22.5;
+
+function angleBetweenDegrees(a, b) {
+  let diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+
+// Out in Cook Inlet rather than in the river: the nearest point on the whole centerline is the
+// mouth itself (the first point), and the sighting is more than ~300 m beyond it. Inside the river
+// the nearest point is somewhere along a segment, so this never fires there.
+const KENAI_INLET_BEYOND_MOUTH_METERS = 300;
+
+function isKenaiInletPosition(lat, lng) {
+  const seg = nearestSegment(lat, lng, KENAI_RIVER_CENTERLINE);
+  if (!seg) return false;
+  const mouth = KENAI_RIVER_CENTERLINE[0];
+  const nearestIsMouth = haversineDistanceMeters(seg.nearestLat, seg.nearestLng, mouth[0], mouth[1]) < 2;
+  return nearestIsMouth && seg.distanceMeters > KENAI_INLET_BEYOND_MOUTH_METERS;
+}
+
 function describeKenaiTravelDirection(travelBearingDegrees, lat, lng) {
   if (travelBearingDegrees == null) return "direction not reported";
+  if (isKenaiInletPosition(lat, lng)) {
+    const mouth = KENAI_RIVER_CENTERLINE[0];
+    const towardMouth = initialBearingDegrees(lat, lng, mouth[0], mouth[1]);
+    return angleBetweenDegrees(travelBearingDegrees, towardMouth) <= 90
+      ? "heading toward the river mouth"
+      : "heading out into the inlet";
+  }
   const seg = nearestSegment(lat, lng, KENAI_RIVER_CENTERLINE);
   if (!seg) return "direction not reported"; // shouldn't happen for a real RED-qualifying position, but never crash the page over it
   const downriverBearing = (seg.bearingDegrees + 180) % 360;
-  let diff = Math.abs(travelBearingDegrees - downriverBearing);
-  if (diff > 180) diff = 360 - diff;
-  return diff <= 90 ? "heading downriver toward the mouth" : "heading upriver";
+  const diff = angleBetweenDegrees(travelBearingDegrees, downriverBearing);
+  if (Math.abs(diff - 90) <= KENAI_ACROSS_RIVER_HALF_BAND_DEGREES) return "heading across the river";
+  return diff < 90 ? "heading downriver toward the mouth" : "heading upriver";
 }
 
 // Item 97c: no river to be relative to on a generic zone (Turnagain Arm, Knik Arm, ...) -- a
@@ -394,10 +425,14 @@ function describeGenericTravelDirection(travelBearingDegrees) {
 function buildLastSeenLine(sighting, nowMs) {
   const relTime = formatRelativeTime(sighting.observed_at_epoch_ms, nowMs);
   if (isKenaiZone) {
-    const landmarkName = nearestKenaiLandmarkName(sighting.whale_lat, sighting.whale_lng);
     const direction = describeKenaiTravelDirection(
       sighting.travel_bearing_degrees, sighting.whale_lat, sighting.whale_lng
     );
+    // Past the mouth the place is the inlet itself, never "near" a riverside landmark.
+    if (isKenaiInletPosition(sighting.whale_lat, sighting.whale_lng)) {
+      return `Last seen ${relTime} in Cook Inlet off the river mouth, ${direction}`;
+    }
+    const landmarkName = nearestKenaiLandmarkName(sighting.whale_lat, sighting.whale_lng);
     const nearClause = landmarkName ? ` near ${landmarkName}` : "";
     return `Last seen ${relTime}${nearClause}, ${direction}`;
   }

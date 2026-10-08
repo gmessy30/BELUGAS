@@ -709,7 +709,17 @@ never just that playback started.
   `travel_bearing_degrees`-rotated direction arrow and a "Last seen … " plain-text line — Kenai
   gets river-relative "heading upriver/downriver" phrasing (geofence.js's real
   `KENAI_RIVER_CENTERLINE`) plus the small `kenai-landmarks.js` "near X" lookup; every other zone
-  gets a plain compass point and no landmark (no lookup exists for them). **The RED map draws at
+  gets a plain compass point and no landmark (no lookup exists for them). **Kenai place and
+  direction wording (Oct 7, 2026):** `kenai-landmarks.js` coordinates come from named
+  OpenStreetMap elements, checked Oct 7, 2026 (the original "general public knowledge" list had
+  every place 2.5-7.8 km off): the river mouth (centerline start), the Kenai city boat launch,
+  the Warren Ames Bridge, Cunningham Park, the Eagle Rock boat launch; element IDs are in that
+  file's header. "near X" is dropped beyond 1.5 km. Past the mouth (`isKenaiInletPosition`: the
+  nearest centerline point is the mouth itself and the sighting is more than 300 m beyond it) the
+  line reads "in Cook Inlet off the river mouth" with "heading toward the river mouth" or
+  "heading out into the inlet", never up/downriver. In the river, a bearing within 22.5 degrees of
+  straight across reads "heading across the river". No bearing stays "direction not reported".
+  **The RED map draws at
   most 3 sightings (Oct 7, 2026, display only)**: `RED_MAP_MAX_SHOWN` in status.js, chosen
   client-side from the full qualifying list by `sortByRecency` (newest observed, ties broken by
   `created_at`). The Kenai RPC returns no `created_at`, so `fillCreatedAtForTies` reads it from
