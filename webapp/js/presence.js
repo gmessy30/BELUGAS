@@ -143,6 +143,32 @@ function colorForBelugaPresenceStatus(status) {
   }
 }
 
+// Oct 8, 2026: DISPLAY-ONLY "no data" overrides. A calm blue screen reads as "checked, all
+// clear", so blue is drawn grey in the two cases where there's actually nothing behind it. The
+// status VALUE itself (RED/YELLOW/BLUE/UNKNOWN) is never changed -- alerts, transitions and
+// how RED/YELLOW/BLUE are decided all still see the real status. Only BLUE is ever overridden,
+// so RED and YELLOW always win.
+//   - "tide": Kenai in season with no tide prediction (kenaiGateTimeLabel's TIDE DATA
+//     UNAVAILABLE). Off-season blue ("NOT EXPECTED THIS TIME OF YEAR") is NOT affected.
+//   - "reports": a watched non-Kenai zone with no reports in get_watched_zone_statuses' window.
+//     That RPC only looks back over the yellow window, so this is every non-Kenai blue.
+const NO_DATA_DISPLAY_COLOR = "#616161"; // the same grey as UNKNOWN
+const NO_DATA_NOTES = {
+  tide: "Can't predict belugas right now. This is not a sign the water is clear.",
+  reports: "No one has reported from this area recently. No reports doesn't mean no belugas."
+};
+
+function kenaiNoDataReason(status, detail) {
+  return status === PRESENCE_BLUE && detail != null && detail.in_season && detail.gate_time_possible_epoch_ms == null
+    ? "tide" : null;
+}
+
+function zoneNoDataReason(status, statusRow) {
+  const noReports = statusRow == null ||
+    (statusRow.last_verified_sighting_epoch_ms == null && statusRow.last_any_sighting_epoch_ms == null);
+  return status === PRESENCE_BLUE && noReports ? "reports" : null;
+}
+
 // Item 53: YELLOW and BLUE now render the IDENTICAL gate-time label -- the color alone already
 // says "possible" vs. "not expected," so the wording no longer needs to repeat that distinction;
 // both just answer "when's the next window," same field/bias/formatting either way. Extracted
@@ -202,6 +228,8 @@ function presenceBannerLabel(card) {
     baseLabel = `LOADING…${zoneSuffix}`;
   } else if (card.status === PRESENCE_UNKNOWN) {
     baseLabel = `STATUS UNKNOWN${zoneSuffix}`;
+  } else if (card.noDataReason === "reports") {
+    baseLabel = `NO REPORTS YET${zoneSuffix}`; // was NO RECENT SIGHTINGS (Oct 8, 2026), drawn grey
   } else if (card.kenaiDetail != null) {
     baseLabel = kenaiBannerLabel(card.status, card.kenaiDetail, zoneSuffix);
   } else if (card.status === PRESENCE_RED) {

@@ -24,7 +24,9 @@
 // explicit "unknown zone" state -- never silently falls back to Kenai's data.
 
 const urlParams = new URLSearchParams(window.location.search);
-const currentZoneSlug = urlParams.get("zone") || "kenai";
+// Trimmed and lowercased before matching (Oct 8, 2026), so "?zone=Kenai" or a stray space reaches
+// Kenai instead of a contradictory "KENAI ... isn't monitored" page. Slugs are always lowercase.
+const currentZoneSlug = (urlParams.get("zone") || "").trim().toLowerCase() || "kenai";
 const isKenaiZone = currentZoneSlug === "kenai";
 
 // Spec: "refreshes every 5 minutes while open."
@@ -139,12 +141,15 @@ function computeCurrentStatus(nowMs) {
 function render(fetchRedData) {
   const textEl = document.getElementById("status-text");
   const updatedEl = document.getElementById("status-updated");
+  const noteEl = document.getElementById("status-note");
+  const setNote = (text) => { noteEl.hidden = !text; noteEl.textContent = text || ""; };
 
   if (!hasEverFetched) {
     document.body.style.background = colorForBelugaPresenceStatus(PRESENCE_UNKNOWN);
     document.body.classList.remove("on-yellow");
     textEl.textContent = lastFetchFailed ? "COULDN'T LOAD STATUS" : "LOADING…";
     updatedEl.textContent = lastFetchFailed ? "Check your connection — retrying…" : "";
+    setNote(null);
     updateRedSection(PRESENCE_UNKNOWN, false);
     return;
   }
@@ -152,8 +157,11 @@ function render(fetchRedData) {
   if (!isKenaiZone && zoneNotFound) {
     document.body.style.background = colorForBelugaPresenceStatus(PRESENCE_UNKNOWN);
     document.body.classList.remove("on-yellow");
-    textEl.textContent = "UNKNOWN ZONE";
-    updatedEl.textContent = `"${currentZoneSlug}" isn't a watched zone.`;
+    // Oct 8, 2026: was "UNKNOWN ZONE" / "<slug> isn't a watched zone." Deliberately names no
+    // monitored zones, so it can't go stale when another zone goes live.
+    textEl.textContent = "This area isn't being monitored by BELUGAS";
+    updatedEl.textContent = "";
+    setNote("Don't take this page as a sign the water is clear.");
     updateRedSection(PRESENCE_UNKNOWN, false);
     return;
   }
@@ -162,8 +170,14 @@ function render(fetchRedData) {
   // this file's own tick() below -- a status page left open with no working connection still
   // visibly decays toward UNKNOWN instead of showing an hours-old RED/YELLOW forever.
   const status = computeCurrentStatus(Date.now());
-  document.body.style.background = colorForBelugaPresenceStatus(status);
+  // Oct 8, 2026: display-only grey for a blue with nothing behind it (presence.js). `status`
+  // itself is unchanged, so the RED map and everything else still see the real value.
+  const noDataReason = isKenaiZone
+    ? kenaiNoDataReason(status, lastSnapshot.detail)
+    : zoneNoDataReason(status, currentZoneStatusRow);
+  document.body.style.background = noDataReason ? NO_DATA_DISPLAY_COLOR : colorForBelugaPresenceStatus(status);
   document.body.classList.toggle("on-yellow", status === PRESENCE_YELLOW);
+  setNote(noDataReason ? NO_DATA_NOTES[noDataReason] : null);
 
   let label;
   let asOf;
@@ -189,7 +203,7 @@ function render(fetchRedData) {
     } else if (status === PRESENCE_YELLOW) {
       label = "POSSIBLE ACTIVITY";
     } else if (status === PRESENCE_BLUE) {
-      label = "NO RECENT SIGHTINGS";
+      label = noDataReason === "reports" ? "NO REPORTS YET" : "NO RECENT SIGHTINGS";
     } else {
       label = "STATUS UNKNOWN";
     }

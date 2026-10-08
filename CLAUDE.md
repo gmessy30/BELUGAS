@@ -818,6 +818,25 @@ never just that playback started.
   like `-1`, because `SupabaseClient.kt:909` treats any integer as `Success`. Port by calling
   `redeem_tier_code_detailed` and adding `AlreadyClaimed`/`DeviceHasOtherCode`/`Network` cases
   (with `TierClaimScreen.kt` messages matching `tier-code.js`), alongside the other pending items.
+- **Native-side parity item (Oct 8, 2026, web-only so far) -- grey instead of a calm blue with
+  nothing behind it**: display only; the status VALUE (and so alerts, transitions, and how
+  RED/YELLOW/BLUE are decided) is unchanged, and only BLUE is ever overridden. presence.js's
+  `kenaiNoDataReason`/`zoneNoDataReason` pick the case, `NO_DATA_DISPLAY_COLOR` (#616161) and
+  `NO_DATA_NOTES` the look. "tide": Kenai in season with no tide prediction (TIDE DATA
+  UNAVAILABLE), which otherwise stays blue while fresh and up to 24 h after the last fetch
+  (`KENAI_EXEMPT_BLUE_CEILING_MS`); off-season blue is not affected. "reports": a watched
+  non-Kenai zone with no reports in `get_watched_zone_statuses`' window (every non-Kenai blue,
+  since that RPC only looks back over the yellow window), labelled NO REPORTS YET. Used by the
+  main app's banner (`presence-banner.js`, card `noDataReason`) and the status page, which also
+  shows the plain-words note. Same pass on the status page: `?zone=` is trimmed and lowercased,
+  and an unwatched or unknown zone reads "This area isn't being monitored by BELUGAS" / "Don't take
+  this page as a sign the water is clear." (deliberately naming no monitored zones). The Sightings
+  Map's zone SHADING still uses the plain status colour. **Native's `PresenceBanner.kt` needs the
+  same grey for tide-unavailable and no-reports.**
+- **Printable status sign: `LIVE_SIGN_ZONES` in `print/status-sign.html` must be updated when a zone
+  goes live** (`zones.is_banner_watched`). Any other zone's sign is stamped "Not monitored yet.
+  Don't post this sign." over the QR (Oct 8, 2026). Hardcoded on purpose: the sign page makes no
+  network calls.
 - **Native-side parity item (Oct 7, 2026, web-only so far) -- Alaska time everywhere**: every
   sighting time and day boundary in the PWA is America/Anchorage, whatever the phone's timezone
   (`39dc205` did the map pin caption and popup; this pass did the rest). Shared helpers live in

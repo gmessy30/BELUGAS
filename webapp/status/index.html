@@ -157,6 +157,13 @@
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
     max-width: 640px;
   }
+  .status-note {
+    margin-top: 14px;
+    max-width: 30em;
+    font-size: 1rem;
+    line-height: 1.4;
+    color: var(--status-fg);
+  }
   .status-updated {
     margin-top: 18px;
     font-size: 0.95rem;
@@ -342,6 +349,8 @@
        alt="BELUGAS" decoding="async">
   <div class="status-zone-name" id="status-zone-name"></div>
   <div class="status-label" id="status-text" role="status" aria-live="polite">LOADING…</div>
+  <!-- Oct 8, 2026: plain-words note for the grey "nothing behind this" states (status.js). -->
+  <div class="status-note" id="status-note" hidden></div>
   <div class="status-updated" id="status-updated"></div>
 
   <!-- Item 97b: RED only -- populated/shown by status.js's renderRedMap/renderLastSeenLine,

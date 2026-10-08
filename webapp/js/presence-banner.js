@@ -163,13 +163,17 @@ function rebuildPresenceBannerCards() {
       status = effectivePresenceStatus(flat, presenceState.lastSuccessfulWatchedZoneStatusesFetchAtMs, nowMs);
     }
 
+    const kenaiDetail = isKenai ? (presenceState.kenaiPresenceSnapshot?.detail ?? null) : null;
     return {
       zoneId,
       zoneName,
       zoneSlug,
       status,
       isLoading,
-      kenaiDetail: isKenai ? (presenceState.kenaiPresenceSnapshot?.detail ?? null) : null,
+      kenaiDetail,
+      // Oct 8, 2026: display-only grey for a blue with nothing behind it (presence.js's
+      // kenaiNoDataReason/zoneNoDataReason). `status` itself is unchanged.
+      noDataReason: isLoading ? null : (isKenai ? kenaiNoDataReason(status, kenaiDetail) : zoneNoDataReason(status, statusRow)),
       isDataStale: isKenai ? presenceState.isKenaiDataStale : presenceState.isWatchedZoneStatusesStale,
       isSubscribed: subscribedIds.includes(zoneId)
     };
@@ -205,7 +209,7 @@ function renderPresenceBannerCard() {
 
   const safeIndex = Math.min(presenceBannerCurrentIndex, presenceBannerCards.length - 1);
   const card = presenceBannerCards[safeIndex];
-  const color = colorForBelugaPresenceStatus(card.status);
+  const color = card.noDataReason ? NO_DATA_DISPLAY_COLOR : colorForBelugaPresenceStatus(card.status);
 
   // Item 53: YELLOW is now the same true --brand-yellow (#FFFF00) the rest of this app uses --
   // white text/dots (fine against RED/BLUE's own darker fills) read as barely-there against pure

@@ -65,6 +65,26 @@
   }
   /* What the page is, for someone who has never heard of the app. Sits in the heading's own
      bottom margin, so the QR keeps its size and position on the page. */
+  /* Oct 8, 2026: stamped across any sign whose zone isn't live (see LIVE_SIGN_ZONES below).
+     Absolutely positioned, so the sign's own layout and page fit are untouched; it sits over the
+     QR on purpose, so a sign that shouldn't be posted also can't be scanned. Black on white. */
+  body { position: relative; }
+  .sign-not-monitored {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-10deg);
+    width: 6.6in;
+    padding: 0.25in 0.3in;
+    background: #ffffff;
+    border: 6pt solid #000000;
+    font-size: 34pt;
+    font-weight: 900;
+    line-height: 1.2;
+    text-align: center;
+    z-index: 10;
+  }
+  .sign-not-monitored[hidden] { display: none; }
   .sign-subline {
     font-size: 14pt;
     line-height: 1.35;
@@ -120,6 +140,7 @@
 </head>
 <body>
   <img class="sign-icon" src="../icons/icon-512.png" alt="">
+  <div class="sign-not-monitored" id="sign-not-monitored" hidden>Not monitored yet.<br>Don't post this sign.</div>
   <h1 class="sign-heading" id="sign-heading"></h1>
   <p class="sign-subline" id="sign-subline"></p>
 
@@ -157,7 +178,8 @@
       return slug.replace(/_/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
     }
 
-    var zoneSlug = new URLSearchParams(window.location.search).get("zone") || "kenai";
+    // Trimmed and lowercased, same as the status page (Oct 8, 2026).
+    var zoneSlug = (new URLSearchParams(window.location.search).get("zone") || "").trim().toLowerCase() || "kenai";
     var zoneName = ZONE_DISPLAY_NAMES[zoneSlug] || zoneDisplayNameFallback(zoneSlug);
     var statusUrl = zoneSlug === "kenai"
       ? STATUS_PAGE_BASE_URL
@@ -172,6 +194,15 @@
       : "A free page showing whether belugas have been reported in " + zoneName + ". No app needed.";
     document.getElementById("sign-url").textContent = statusUrl;
     document.title = "BELUGAS Status Page Sign — " + zoneName;
+
+    // Oct 8, 2026: zones whose status page actually shows a status. A sign for any other zone
+    // would send people to a page that says the area isn't monitored, so it's stamped
+    // "Not monitored yet. Don't post this sign." Hardcoded on purpose (no network calls on a print
+    // page). UPDATE THIS LIST when a zone goes live (zones.is_banner_watched) -- see CLAUDE.md.
+    var LIVE_SIGN_ZONES = ["kenai"];
+    if (LIVE_SIGN_ZONES.indexOf(zoneSlug) === -1) {
+      document.getElementById("sign-not-monitored").hidden = false;
+    }
 
     new QRCode(document.getElementById("sign-qr-code"), {
       text: statusUrl,
