@@ -98,31 +98,94 @@ function renderFilteredArticles() {
   filtered.forEach((article) => container.appendChild(articleCard(article)));
 }
 
+// Item 93c: the card is now a container, not one big link, so the "Report broken link" button can
+// sit BESIDE the link rather than inside it (a button inside an <a> is invalid and its taps would
+// also open the article). The link is only ever drawn for an http(s) URL (isWebUrl, db.js) -- the
+// database enforces the same for new rows, but an older row could predate that check.
 function articleCard(article) {
-  const card = document.createElement("a");
+  const card = document.createElement("div");
   card.className = "article-card";
-  card.href = article.source_url;
-  card.target = "_blank";
-  card.rel = "noopener";
+
+  const hasWebUrl = isWebUrl(article.source_url);
+  const link = document.createElement(hasWebUrl ? "a" : "div");
+  link.className = "article-card-link";
+  if (hasWebUrl) {
+    link.href = article.source_url;
+    link.target = "_blank";
+    link.rel = "noopener";
+  }
 
   const title = document.createElement("div");
   title.className = "article-title";
   title.textContent = article.title;
-  card.appendChild(title);
+  link.appendChild(title);
 
   if (article.summary) {
     const summary = document.createElement("div");
     summary.className = "article-summary";
     summary.textContent = article.summary;
-    card.appendChild(summary);
+    link.appendChild(summary);
   }
 
   const openLink = document.createElement("div");
   openLink.className = "article-open-link";
-  openLink.textContent = "Open link →";
-  card.appendChild(openLink);
+  openLink.textContent = hasWebUrl ? "Open link →" : "Link unavailable";
+  link.appendChild(openLink);
+  card.appendChild(link);
 
+  // Admin-confirmed only: reader reports never change what anyone sees.
+  if (article.link_status === "broken") {
+    const note = document.createElement("div");
+    note.className = "article-broken-note";
+    note.textContent = "This link may no longer work.";
+    card.appendChild(note);
+    if (article.archive_url && /^https:\/\//i.test(article.archive_url)) {
+      const archive = document.createElement("a");
+      archive.className = "article-archive-link";
+      archive.href = article.archive_url;
+      archive.target = "_blank";
+      archive.rel = "noopener";
+      archive.textContent = "View archived copy →";
+      card.appendChild(archive);
+    }
+  }
+
+  if (hasWebUrl) card.appendChild(reportBrokenLinkControl(article));
   return card;
+}
+
+const REPORT_BROKEN_LINK_MESSAGES = {
+  recorded: "Thanks, we'll check this link.",
+  already_reported: "You've already reported this link. Thanks.",
+  rate_limited: "Too many reports from this device just now. Try again later.",
+  other: "Couldn't send the report right now. Try again later."
+};
+
+function reportBrokenLinkControl(article) {
+  const wrap = document.createElement("div");
+  wrap.className = "article-report-row";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "article-report-btn";
+  btn.textContent = "Report broken link";
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "Sending…";
+    const status = await reportBrokenArticleLink(article.id);
+    const message = document.createElement("span");
+    message.className = "article-report-message";
+    message.textContent = REPORT_BROKEN_LINK_MESSAGES[status] || REPORT_BROKEN_LINK_MESSAGES.other;
+    // Keep the button for a retry only when nothing was recorded for a reason that can pass.
+    if (status === "rate_limited" || !(status in REPORT_BROKEN_LINK_MESSAGES)) {
+      btn.disabled = false;
+      btn.textContent = "Report broken link";
+      wrap.replaceChildren(btn, message);
+    } else {
+      wrap.replaceChildren(message);
+    }
+  });
+  wrap.appendChild(btn);
+  return wrap;
 }
 
 // Called from the main menu's "News Feed" item.
@@ -175,6 +238,13 @@ async function submitSuggestedArticle() {
 
   if (!title || !url) {
     statusEl.textContent = "Title and URL are required.";
+    statusEl.className = "status-error";
+    return;
+  }
+  // Item 93c: the database now refuses anything but a full http(s) address; say so plainly here
+  // instead of letting it fail with a raw error.
+  if (!isWebUrl(url)) {
+    statusEl.textContent = "Please enter a full web address starting with https://";
     statusEl.className = "status-error";
     return;
   }

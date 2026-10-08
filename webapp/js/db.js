@@ -546,18 +546,48 @@ function randomUuidV4Fallback() {
  * by RLS server-side, not filtered here -- this only ever sees what's actually public.
  */
 async function getArticles(contentType) {
-  const { data, error } = await supabaseClient
+  // Item 93c: link_status/archive_url come from 20261009000000. If a database ever lacks them,
+  // retry without, so the feed still loads (every card then reads as an ordinary working link).
+  const fetchWith = (columns) => supabaseClient
     .from("articles")
-    .select("id, title, summary, source_url, content_type, status")
+    .select(columns)
     .eq("content_type", contentType)
     .eq("status", "published")
     .order("created_at", { ascending: false });
 
+  let { data, error } = await fetchWith("id, title, summary, source_url, content_type, status, link_status, archive_url");
+  if (error && isMissingColumnError(error)) {
+    ({ data, error } = await fetchWith("id, title, summary, source_url, content_type, status"));
+  }
   if (error) {
     console.error("ARTICLES_FETCH_ERROR", error);
     return [];
   }
   return data ?? [];
+}
+
+// Item 93c: a full http(s) address with a host -- the same rule as the database's
+// articles_source_url_web CHECK. Used for the suggest form AND before any article URL becomes an
+// href, so a non-web URL (javascript:, data:, a bare "www.…") can never be a link in this app.
+function isWebUrl(url) {
+  return typeof url === "string" && /^https?:\/\/[^\s/]+/i.test(url.trim());
+}
+
+/**
+ * Item 93c: "This link is broken" from a reader. Returns the server's status -- "recorded",
+ * "already_reported", "rate_limited", "not_found" -- or "error" with no usable answer. A report
+ * only flags the article for an admin; nothing a reader does can hide it.
+ */
+async function reportBrokenArticleLink(articleId) {
+  const { data, error } = await supabaseClient.rpc("report_broken_article_link", {
+    p_article_id: articleId,
+    p_subscriber_id: getOrCreateSubscriberId()
+  });
+  if (error) {
+    console.error("REPORT_BROKEN_LINK_ERROR", error);
+    return "error";
+  }
+  return data?.status || "error";
 }
 
 /**

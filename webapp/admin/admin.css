@@ -299,3 +299,10 @@
   color: rgba(255, 255, 255, 0.6);
   white-space: nowrap;
 }
+
+/* Item 93c: REPORTED LINKS card title. */
+.article-review-title {
+  color: #ffffff;
+  font-weight: 700;
+  margin-bottom: 4px;
+}

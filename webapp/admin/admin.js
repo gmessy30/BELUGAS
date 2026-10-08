@@ -68,6 +68,7 @@ async function checkExistingSession() {
   showAdminContent();
   renderTierCodesList(data);
   refreshPendingArticles();
+  refreshReportedLinks();
   refreshRecentlyPublished();
 }
 
@@ -142,6 +143,7 @@ async function handleLogin() {
   showAdminContent();
   renderTierCodesList(data);
   refreshPendingArticles();
+  refreshReportedLinks();
   refreshRecentlyPublished();
 }
 
@@ -386,7 +388,9 @@ function pendingArticleCard(article) {
 
   const urlLink = document.createElement("a");
   urlLink.className = "article-review-url";
-  urlLink.href = article.source_url;
+  // Item 93c: only an http(s) address ever becomes a clickable link here, even in the review
+  // queue, where a submission is shown exactly as typed.
+  if (isAdminWebUrl(article.source_url)) urlLink.href = article.source_url;
   urlLink.target = "_blank";
   urlLink.rel = "noopener";
   urlLink.textContent = article.source_url;
@@ -458,6 +462,144 @@ async function handleSetArticleStatus(id, status, titleInput, summaryInput, stat
   }
 
   await Promise.all([refreshPendingArticles(), refreshRecentlyPublished()]);
+  if (myAdminInfo.owner) refreshAuditLog();
+}
+
+// Item 93c: REPORTED LINKS -- list_reported_article_links (already ordered by report count) and
+// set_article_link_status (20261009000000), both gated server-side by is_tier_admin(), like the
+// article RPCs above. Reader reports never change what readers see; these buttons are the only
+// way an article gets the "This link may no longer work." notice (Mark broken), or loses it.
+function isAdminWebUrl(url) {
+  return typeof url === "string" && /^https?:\/\/[^\s/]+/i.test(url.trim());
+}
+
+async function refreshReportedLinks() {
+  const { data, error } = await adminSupabase.rpc("list_reported_article_links");
+  const section = document.getElementById("reported-links-section");
+  const divider = document.getElementById("reported-links-divider");
+  if (error) {
+    // Includes "function doesn't exist" before the migration lands -- just leave the section hidden.
+    console.error("LIST_REPORTED_ARTICLE_LINKS_ERROR", error);
+    section.hidden = true;
+    divider.hidden = true;
+    return;
+  }
+  if (!data || data.length === 0) {
+    section.hidden = true;
+    divider.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  divider.hidden = false;
+  const container = document.getElementById("reported-links-list");
+  container.innerHTML = "";
+  data.forEach((row) => container.appendChild(reportedLinkCard(row)));
+}
+
+function reportedLinkCard(row) {
+  const card = document.createElement("div");
+  card.className = "article-review-card";
+
+  const title = document.createElement("div");
+  title.className = "article-review-title";
+  title.textContent = row.title;
+  card.appendChild(title);
+
+  const urlEl = document.createElement(isAdminWebUrl(row.source_url) ? "a" : "span");
+  urlEl.className = "article-review-url";
+  if (isAdminWebUrl(row.source_url)) {
+    urlEl.href = row.source_url;
+    urlEl.target = "_blank";
+    urlEl.rel = "noopener";
+  }
+  urlEl.textContent = row.source_url;
+  card.appendChild(urlEl);
+
+  const meta = document.createElement("div");
+  meta.className = "article-review-submitter";
+  const count = Number(row.report_count) || 0;
+  const parts = [`${count} report${count === 1 ? "" : "s"}`];
+  if (row.last_reported_at) parts.push(`last ${new Date(row.last_reported_at).toLocaleString()}`);
+  if (row.link_status === "broken") parts.push("marked broken");
+  if (row.status !== "published") parts.push(row.status);
+  meta.textContent = parts.join(" · ");
+  card.appendChild(meta);
+
+  const archiveInput = document.createElement("input");
+  archiveInput.className = "suggest-input";
+  archiveInput.type = "url";
+  archiveInput.placeholder = "Archived copy URL (optional, https://…)";
+  archiveInput.value = row.archive_url || "";
+  card.appendChild(archiveInput);
+
+  const fixInput = document.createElement("input");
+  fixInput.className = "suggest-input";
+  fixInput.type = "url";
+  fixInput.placeholder = "Corrected URL (for Fix URL)";
+  card.appendChild(fixInput);
+
+  const statusEl = document.createElement("p");
+  statusEl.className = "status-info article-review-status";
+  card.appendChild(statusEl);
+
+  const actions = document.createElement("div");
+  actions.className = "modal-actions";
+  const mk = (label, cls, onClick) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = cls;
+    b.textContent = label;
+    b.addEventListener("click", () => onClick(b));
+    return b;
+  };
+  actions.append(
+    mk("Looks fine", "secondary", (b) => handleSetArticleLinkStatus(row, "mark_ok", null, null, statusEl, b,
+      `Clear the reports on "${row.title}"? Readers won't see any notice.`)),
+    mk("Mark broken", "secondary", (b) => {
+      const archive = archiveInput.value.trim() || null;
+      if (archive && !/^https:\/\//i.test(archive)) {
+        statusEl.textContent = "The archived copy needs a full https:// address.";
+        statusEl.className = "status-error article-review-status";
+        return;
+      }
+      handleSetArticleLinkStatus(row, "mark_broken", null, archive, statusEl, b,
+        `Mark "${row.title}" as broken? Readers will see "This link may no longer work."` + (archive ? " and a link to the archived copy." : ""));
+    }),
+    mk("Fix URL", "primary", (b) => {
+      const url = fixInput.value.trim();
+      if (!isAdminWebUrl(url)) {
+        statusEl.textContent = "Enter the corrected address, starting with https://";
+        statusEl.className = "status-error article-review-status";
+        return;
+      }
+      handleSetArticleLinkStatus(row, "fix_url", url, null, statusEl, b,
+        `Change the link on "${row.title}" to ${url}? Its reports will be cleared.`);
+    })
+  );
+  card.appendChild(actions);
+  return card;
+}
+
+async function handleSetArticleLinkStatus(row, action, sourceUrl, archiveUrl, statusEl, triggerBtn, confirmMessage) {
+  if (!confirm(confirmMessage)) return;
+  triggerBtn.disabled = true;
+  statusEl.textContent = "Saving…";
+  statusEl.className = "status-info article-review-status";
+
+  const { data, error } = await adminSupabase.rpc("set_article_link_status", {
+    p_article_id: row.id,
+    p_action: action,
+    p_source_url: sourceUrl,
+    p_archive_url: archiveUrl
+  });
+  if (error || !data) {
+    console.error("SET_ARTICLE_LINK_STATUS_ERROR", error);
+    statusEl.textContent = "Couldn't save -- try again.";
+    statusEl.className = "status-error article-review-status";
+    triggerBtn.disabled = false;
+    return;
+  }
+  await Promise.all([refreshReportedLinks(), refreshRecentlyPublished()]);
   if (myAdminInfo.owner) refreshAuditLog();
 }
 
@@ -686,7 +828,9 @@ function publishedArticleCard(article) {
 
   const urlLink = document.createElement("a");
   urlLink.className = "article-review-url";
-  urlLink.href = article.source_url;
+  // Item 93c: only an http(s) address ever becomes a clickable link here, even in the review
+  // queue, where a submission is shown exactly as typed.
+  if (isAdminWebUrl(article.source_url)) urlLink.href = article.source_url;
   urlLink.target = "_blank";
   urlLink.rel = "noopener";
   urlLink.textContent = article.source_url;

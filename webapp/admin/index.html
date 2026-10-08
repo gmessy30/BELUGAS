@@ -84,6 +84,15 @@
       </div>
       <hr class="section-divider" id="pending-articles-divider" hidden>
 
+      <!-- Item 93c: articles readers have reported as broken, plus any already marked broken.
+           Hidden entirely when there's nothing to look at, same as PENDING ARTICLES. Reports
+           never hide anything on their own; only these buttons change what readers see. -->
+      <div class="subpage-section" id="reported-links-section" hidden>
+        <div class="section-title">REPORTED LINKS</div>
+        <div id="reported-links-list"></div>
+      </div>
+      <hr class="section-divider" id="reported-links-divider" hidden>
+
       <div class="subpage-section">
         <div class="section-title">RECENTLY PUBLISHED</div>
         <div id="published-articles-list"></div>

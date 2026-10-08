@@ -883,6 +883,53 @@ button.text-link {
   margin-top: 6px;
 }
 
+/* Item 93c: the card is a container now; the link inside it carries the old card-as-link look. */
+.article-card-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.article-broken-note {
+  color: var(--brand-amber);
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-top: 8px;
+}
+
+.article-archive-link {
+  display: inline-block;
+  color: var(--brand-cyan);
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-top: 4px;
+  text-decoration: none;
+}
+
+.article-report-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.article-report-btn {
+  background: none;
+  border: none;
+  padding: 4px 0;
+  color: rgba(255, 255, 255, 0.6);
+  font: inherit;
+  font-size: 0.7rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.article-report-message {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.7rem;
+}
+
 .suggest-article-btn {
   flex-shrink: 0;
   margin: 0 16px calc(env(safe-area-inset-bottom, 0px) + 16px);

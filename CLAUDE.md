@@ -804,16 +804,41 @@ never just that playback started.
   real CSV and a real GeoJSON file both actually landed in `/sdcard/Download/` on Android Chrome
   (`Browser.setDownloadBehavior` over CDP, `adb pull` to inspect the bytes), confirming the field
   list matches this allowlist exactly with nothing extra leaking through.
-- **Dead-link handling for the News Feed (item 93c, spec only — not built)**: nightly check
-  (pg_cron or a scheduled edge function) does a HEAD/GET on each published article's `source_url`,
-  storing `last_checked_at`/`http_status`; two consecutive failures mark it `link_broken`, and the
-  feed shows a small "link unavailable" badge (not hidden entirely) with the admin page listing
-  broken links for review plus a fix-URL field. At publish time, request a Wayback Machine
-  snapshot (`web.archive.org/save/<url>`) and store the archive URL, so a broken card can offer
-  "View archived copy" instead. Papers with a DOI: store the DOI and link via `doi.org`, which
-  outlives publisher URLs. None of this is implemented yet — needs its own migration
-  (`link_broken` status/column, `last_checked_at`/`http_status`/`archive_url`/`doi` columns) and a
-  scheduled job, a bigger, separate piece of work from item 93's client-side search.
+- **News Feed dead-link handling (item 93c, BUILT Oct 8, 2026 — reader-reported, admins
+  decide)**: `supabase/migrations/20261009000000_add_article_link_reports.sql`, applied by the user
+  and verified live (synthetic rows in rolled-back transactions, replica role, dry run then live:
+  identical results, 0 alerts queued, the 33 real articles hash-identical). Readers tap "Report
+  broken link" (`report_broken_article_link`); reports land in `article_link_reports` (RLS on, no
+  policies, no anon/authenticated grants -- RPCs only) and ONLY flag the article for the admin
+  page's REPORTED LINKS section (`list_reported_article_links`, ordered by count). They never hide
+  anything. Only an admin's `set_article_link_status` (`mark_broken` with an optional https
+  `archive_url`, `mark_ok`, `fix_url`) changes what readers see: a broken card reads "This link
+  may no longer work." plus "View archived copy →". Both admin RPCs use the same gate as
+  `set_article_status` (`is_tier_admin()`; articles have no zone, so item 101's zone scoping
+  doesn't apply), are authenticated-only (anon and PUBLIC revoked), and write `admin_actions`.
+  - **Why not the original nightly server check**: 12 of the 23 published links are Google
+    Scholar searches, and Scholar blocks automated fetches, so a server check would flag them
+    every night. It would also mean fetching user-submitted URLs from our servers (SSRF risk) and,
+    via pg_net, sharing `net.http_request_queue` with the sighting alerts.
+  - **The device id in a report is NOT validated**: it's the client's own random
+    `belugas_subscriber_id`, and no table lists real devices -- one person can mint many. Hence
+    reports only flag, plus two limits: 10 reports per device per hour (`rate_limited`) and 50
+    stored reports per article (past 50 the RPC still answers `recorded` but stores nothing).
+  - **URL rule**: `articles_source_url_web` CHECK (`^https?://` plus a host) is `NOT VALID`, because
+    one REJECTED test row from Sept 14 ("edge case not-a-url", source_url `not-a-url`, id
+    `f0afb333…`) fails it and real articles weren't changed. Every insert and update is still
+    checked, so that row can't be re-published without a real URL. The INSERT policy also now
+    requires `link_status = 'ok'`, `link_status_at` and `archive_url` null, so a submitter can't
+    pre-set a "View archived copy" link. Client-side, `isWebUrl` (db.js) gates every feed href and
+    the suggest form ("Please enter a full web address starting with https://"); the admin page's
+    links are gated the same way.
+  - Not built from the old spec: DOI links, Wayback snapshots taken automatically at publish.
+  - Left alone on purpose: one published article links to `copilot.microsoft.com` (looks like a
+    private AI-chat share rather than an article) -- an admin call, not a code change.
+- **Native-side parity item (item 93c, web-only so far)**: native HAS a News Feed
+  (`NewsFeedScreen.kt`), but no "Report broken link" button, no broken-link notice or archived
+  copy, and no URL check on its suggest form -- a native suggestion that isn't a full http(s)
+  address is now refused by the database with a raw error. Port all three.
 - **Native-side asset swap still pending (final artwork)**: Luna Montgomery's FINAL breaching-beluga
   artwork for the whale-count buttons is in place in `webapp/img/` only --
   `Whitebreaching.png`/`Greybreaching.png`/`Calfbreaching.png`/`Unknownbreaching.png`, all four
