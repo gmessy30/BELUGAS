@@ -434,7 +434,12 @@ function buildLastSeenLine(sighting, nowMs) {
     }
     const landmarkName = nearestKenaiLandmarkName(sighting.whale_lat, sighting.whale_lng);
     const nearClause = landmarkName ? ` near ${landmarkName}` : "";
-    return `Last seen ${relTime}${nearClause}, ${direction}`;
+    // "near the river mouth, heading downriver toward the mouth" says the mouth twice; there the
+    // place already says where downriver leads. Everywhere else "toward the mouth" stays.
+    const wording = landmarkName === "the river mouth" && direction === "heading downriver toward the mouth"
+      ? "heading downriver"
+      : direction;
+    return `Last seen ${relTime}${nearClause}, ${wording}`;
   }
   // No landmark lookup for generic zones (item 97b's own "if we have a small lookup, else omit").
   const direction = describeGenericTravelDirection(sighting.travel_bearing_degrees);
