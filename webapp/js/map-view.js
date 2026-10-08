@@ -588,8 +588,8 @@ async function handleDeleteSightingClick(sighting, btn) {
 
   btn.disabled = true;
   btn.textContent = "Deleting…";
-  const ok = await deleteMyLastSighting(getOrCreateSubscriberId(), sighting.id);
-  if (ok) {
+  const status = await deleteMySighting(getOrCreateSubscriberId(), sighting.id);
+  if (status === "ok") {
     mapInstance.closePopup();
     // Refetch rather than splicing the row out locally: the server now names a different editable
     // row (or none), and both the map and the list need that answer, not just the row gone.
@@ -597,7 +597,7 @@ async function handleDeleteSightingClick(sighting, btn) {
   } else {
     btn.disabled = false;
     btn.textContent = "Delete";
-    alert("Couldn't delete this sighting -- it may no longer be your most recent report, or the time to change it has passed.");
+    alert(sightingChangeRefusalMessage("delete", status)); // item 120: says why, in plain words
     await refreshSightings();
   }
 }

@@ -637,10 +637,33 @@ never just that playback started.
   skipped (see "A REAL INSERT FROM A TEST IS A REAL NOTIFICATION"). Deleted: own newest row, then
   the next row once it became newest. Refused: own older row, another device's row, own row
   requested by another device, own row outside the window (edit refuses it too).
-  **Known bug in edit, not fixed**: `edit_my_last_sighting` takes no row id. If a newer report
-  syncs while someone is editing, the save overwrites that newer report with the older one's
-  pre-filled values. Its own comment claims it "matches zero rows" instead, which is wrong. The
-  fix is the same `p_sighting_id` guard, as its own reviewed migration (it touches `sightings`).
+  **Edit race: fixed by item 120 (below).** `edit_my_last_sighting` took no row id, so a newer
+  report syncing while someone was editing got the older one's pre-filled values written onto it
+  (its comment wrongly claimed it "matched zero rows"; that comment is gone).
+- **Migration applied and verified** (item 120 — edit/delete pinned to the row's id, Oct 8, 2026):
+  `supabase/migrations/20261008000000_add_sighting_id_guard_to_edit_and_delete.sql` — applied by
+  the user via `tools\apply-latest-migration.ps1` (it touches `sightings`). Adds
+  `edit_my_sighting(p_subscriber_id, p_sighting_id, p_updates)` and
+  `delete_my_sighting(p_subscriber_id, p_sighting_id)`, both returning `{"status": ...}`: `ok`,
+  `superseded` (a newer one of the caller's exists), `expired` (outside `sighting_edit_window()`),
+  `not_found` (no such row, someone else's, or a null argument -- deliberately the same), and
+  `no_changes` (edit, empty patch; `edited_at` not stamped). The write is still one statement
+  with ownership, window and "still the newest" in its WHERE; only when it matches nothing does
+  `classify_my_sighting_refusal` (EXECUTE for postgres/service_role only) work out why. "Newest"
+  is `created_at desc nulls last, id desc` everywhere, same as `get_my_editable_sighting`
+  (unchanged). New names, not overloads: `delete_my_last_sighting` already had the
+  `(p_subscriber_id, p_sighting_id)` signature. The migration revokes Postgres's default PUBLIC
+  EXECUTE on the new pair (the first dry run showed it), matching the old pair.
+  **Old names are now wrappers, kept for older cached PWA copies**: `edit_my_last_sighting` looks
+  up the caller's newest row itself and passes that id, so it behaves exactly as before, race
+  included (an old client can't send an id; only the new client is protected).
+  `delete_my_last_sighting` returns `delete_my_sighting(...).status = 'ok'`. Verified twice with
+  synthetic rows in rolled-back transactions under `session_replication_role = replica` (a dry
+  run with the migration body prepended, then against the live functions): 16 cases, identical
+  results, 0 alerts queued, before/after snapshots identical. Client: `editMySighting`/
+  `deleteMySighting` (db.js) return the status, falling back to the old RPCs on PGRST202; Save
+  passes `editingSighting.id`, Delete passes `sighting.id`; refusals show
+  `SIGHTING_CHANGE_REFUSAL_MESSAGES` and refresh so EDIT/DELETE move or disappear.
 - **Migration applied and verified** (Oct 4, 2026 — idempotent tier-code redemption):
   `supabase/migrations/20261004000000_make_tier_code_redeem_idempotent.sql` — applied by the user
   via `tools\apply-latest-migration.ps1` (it touches `tier_roster`). Why: a tier-2 code committed
@@ -818,6 +841,10 @@ never just that playback started.
   like `-1`, because `SupabaseClient.kt:909` treats any integer as `Success`. Port by calling
   `redeem_tier_code_detailed` and adding `AlreadyClaimed`/`DeviceHasOtherCode`/`Network` cases
   (with `TierClaimScreen.kt` messages matching `tier-code.js`), alongside the other pending items.
+- **Native-side parity item (item 120, Oct 8, 2026)**: native calls none of the sighting edit or
+  delete functions today -- editing and deleting your own last report exist only in the PWA. If
+  native ever adds them, call `edit_my_sighting`/`delete_my_sighting` with the row's id and show
+  the same plain messages for `superseded`/`expired`/`not_found`, never the old id-less wrapper.
 - **Native-side parity item (Oct 8, 2026, web-only so far) -- grey instead of a calm blue with
   nothing behind it**: display only; the status VALUE (and so alerts, transitions, and how
   RED/YELLOW/BLUE are decided) is unchanged, and only BLUE is ever overridden. presence.js's

@@ -1551,8 +1551,9 @@ async function finishSightingEdit(lat, lng, isGeofenceVerified) {
 
   try {
     const patch = buildSightingEditPatch(lat, lng, isGeofenceVerified);
-    const ok = await editMyLastSighting(getOrCreateSubscriberId(), patch);
-    if (ok) {
+    // Item 120: the id of the row on screen, so a newer report can never receive these values.
+    const status = await editMySighting(getOrCreateSubscriberId(), editingSighting.id, patch);
+    if (status === "ok") {
       // navigateBack pops the edit layer, whose onPop IS exitEditSightingFlow -- so the cleanup
       // and the return to Map/List are the same single path a back gesture takes, never a second
       // copy of it. refreshSightings afterward picks up the real edited_at (and re-asks which row
@@ -1560,10 +1561,12 @@ async function finishSightingEdit(lat, lng, isGeofenceVerified) {
       navigateBack();
       await refreshSightings();
     } else {
-      // The ordinary reason to land here is the window having closed (or a newer sighting having
-      // been reported) between this screen opening and SAVE -- rare, but the only honest thing to
-      // do is say so rather than leave the edit looking pending. The row itself is untouched.
-      setManualSubmitStatus("Couldn't save the changes -- this sighting may no longer be editable.", true);
+      // The ordinary reasons to land here are the window having closed or a newer sighting having
+      // been reported between this screen opening and SAVE. Say which, plainly; the row itself is
+      // untouched. Then refresh, so EDIT/DELETE move to the right row (or disappear) behind this
+      // screen -- the message stays up so it can actually be read.
+      setManualSubmitStatus(sightingChangeRefusalMessage("edit", status), true);
+      await refreshSightings();
     }
   } finally {
     button.disabled = false;

@@ -788,6 +788,7 @@ async function probeSightingDeleteRpc() {
 
 /**
  * Item 119: hard-deletes this device's own most recent sighting, if `sightingId` still is that row
+ * (since item 120, only deleteMySighting's pre-migration fallback; it has no reason to give)
  * and it's still inside the edit window. false covers every ordinary refusal uniformly, exactly as
  * editMyLastSighting's does.
  */
@@ -804,7 +805,8 @@ async function deleteMyLastSighting(subscriberId, sightingId) {
 }
 
 /**
- * Item 106: the sole write path for an ordinary correction to an already-submitted sighting.
+ * Item 106: the original write path for a correction to an already-submitted sighting. Since
+ * item 120 it's only editMySighting's pre-migration fallback: it takes no row id (see below).
  * `updates` is a PATCH -- only the keys present are changed (see the RPC's own header comment;
  * an explicit null clears a field, an absent key leaves it alone).
  *
@@ -823,6 +825,70 @@ async function editMyLastSighting(subscriberId, updates) {
     return false;
   }
   return data === true;
+}
+
+// ======================== Item 120: edit/delete pinned to the row's id ========================
+// edit_my_last_sighting took no row id, so a newer report landing while the edit screen was open
+// (another device, or the offline queue syncing) got the older report's values written onto it.
+// edit_my_sighting/delete_my_sighting (20261008000000) take the id of the row on screen and change
+// it only if it's still this device's, still the newest, and still inside the 4-hour window.
+// Otherwise nothing changes and they say why. Statuses returned here:
+//   "ok", "superseded", "expired", "not_found" -- straight from the server
+//   "refused" -- the old boolean RPC said no without a reason (pre-migration fallback only)
+//   "error"   -- no usable answer (network, unexpected server error)
+// Falls back to the old RPCs when the new ones aren't deployed (PGRST202), so this client works
+// before or after the migration. The fallback edit can't send an id, so it keeps the old race.
+const SIGHTING_CHANGE_REFUSAL_MESSAGES = {
+  edit: {
+    superseded: "You've reported a newer sighting since opening this one, so these changes weren't saved. Only your most recent report can be changed.",
+    expired: "The 4 hours to change this sighting have passed, so these changes weren't saved.",
+    not_found: "This sighting can't be changed any more.",
+    other: "Couldn't save the changes -- this sighting may no longer be editable."
+  },
+  delete: {
+    superseded: "You've reported a newer sighting since this one, so it wasn't deleted. Only your most recent report can be deleted.",
+    expired: "The 4 hours to delete this sighting have passed, so it wasn't deleted.",
+    not_found: "This sighting can't be deleted any more.",
+    other: "Couldn't delete this sighting -- it may no longer be your most recent report, or the time to change it has passed."
+  }
+};
+
+function sightingChangeRefusalMessage(kind, status) {
+  const messages = SIGHTING_CHANGE_REFUSAL_MESSAGES[kind];
+  return messages[status] || messages.other;
+}
+
+async function editMySighting(subscriberId, sightingId, updates) {
+  const { data, error } = await supabaseClient.rpc("edit_my_sighting", {
+    p_subscriber_id: subscriberId,
+    p_sighting_id: sightingId,
+    p_updates: updates
+  });
+  if (error) {
+    if (isMissingFunctionError(error)) {
+      return (await editMyLastSighting(subscriberId, updates)) ? "ok" : "refused";
+    }
+    console.error("EDIT_MY_SIGHTING_ERROR", error);
+    return "error";
+  }
+  // "no_changes" (an empty patch) is never sent by this app -- the edit screen always sends the
+  // full editable set -- but it isn't a failure either.
+  return data?.status === "no_changes" ? "ok" : (data?.status || "error");
+}
+
+async function deleteMySighting(subscriberId, sightingId) {
+  const { data, error } = await supabaseClient.rpc("delete_my_sighting", {
+    p_subscriber_id: subscriberId,
+    p_sighting_id: sightingId
+  });
+  if (error) {
+    if (isMissingFunctionError(error)) {
+      return (await deleteMyLastSighting(subscriberId, sightingId)) ? "ok" : "refused";
+    }
+    console.error("DELETE_MY_SIGHTING_ERROR", error);
+    return "error";
+  }
+  return data?.status || "error";
 }
 
 /**
