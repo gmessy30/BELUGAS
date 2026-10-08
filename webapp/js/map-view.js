@@ -778,21 +778,52 @@ function anchorageMidnightEpochMs(year, month, day) {
   return utcGuess - anchorageOffsetMinutesAt(utcGuess) * 60000;
 }
 
+// Oct 7, 2026: every sighting time and day boundary in the app is Alaska time, whatever the
+// phone's own timezone. These are the shared helpers for it (also used by list-view.js,
+// export-view.js and submit-view.js, all of which only call them after every script has loaded).
+// Never a fixed -8/-9 offset: Alaska changes clocks (e.g. Nov 1, 2026), so a calendar day is 23 or
+// 25 hours long twice a year, and "midnight + 24h - 1ms" is the wrong end of day on those days.
+
+// [year, month, day, hour, minute] of an instant on Anchorage's wall clock.
+function anchorageDateTimeParts(epochMs) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Anchorage", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false
+  }).formatToParts(new Date(epochMs));
+  const get = (type) => Number(parts.find((p) => p.type === type).value);
+  return [get("year"), get("month"), get("day"), get("hour") % 24, get("minute")];
+}
+
+// The instant an Anchorage wall-clock time names. Guesses with the offset at the naive UTC
+// reading, then re-reads the offset at that guess -- they only differ when a clock change falls
+// between the two, and the second read is the right one.
+function anchorageWallTimeToEpochMs(year, month, day, hour, minute) {
+  const naive = Date.UTC(year, month - 1, day, hour, minute);
+  const guess = naive - anchorageOffsetMinutesAt(naive) * 60000;
+  return naive - anchorageOffsetMinutesAt(guess) * 60000;
+}
+
+// The last millisecond of an Anchorage calendar day: one before the NEXT day's midnight.
+function anchorageEndOfDayEpochMs(year, month, day) {
+  const next = new Date(Date.UTC(year, month - 1, day + 1));
+  return anchorageMidnightEpochMs(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate()) - 1;
+}
+
 // PlaybackRange.kt's private thisSeasonRange -- backward-looking only (never a future window
 // with no data in it yet): inside a window, that window from its start through now; between
 // windows, whichever one ended most recently.
 function thisSeasonRange(nowMs) {
   const [year] = anchorageDateParts(nowMs);
   const springStart = anchorageMidnightEpochMs(year, SPRING_START_MONTH, SPRING_START_DAY);
-  const springEnd = anchorageMidnightEpochMs(year, SPRING_END_MONTH, SPRING_END_DAY) + DAY_MS - 1;
+  const springEnd = anchorageEndOfDayEpochMs(year, SPRING_END_MONTH, SPRING_END_DAY);
   const fallStart = anchorageMidnightEpochMs(year, FALL_START_MONTH, FALL_START_DAY);
-  const fallEnd = anchorageMidnightEpochMs(year, FALL_END_MONTH, FALL_END_DAY) + DAY_MS - 1;
+  const fallEnd = anchorageEndOfDayEpochMs(year, FALL_END_MONTH, FALL_END_DAY);
 
   if (nowMs >= springStart && nowMs <= springEnd) return [springStart, nowMs];
   if (nowMs >= fallStart && nowMs <= fallEnd) return [fallStart, nowMs];
   if (nowMs < springStart) {
     const prevFallStart = anchorageMidnightEpochMs(year - 1, FALL_START_MONTH, FALL_START_DAY);
-    const prevFallEnd = anchorageMidnightEpochMs(year - 1, FALL_END_MONTH, FALL_END_DAY) + DAY_MS - 1;
+    const prevFallEnd = anchorageEndOfDayEpochMs(year - 1, FALL_END_MONTH, FALL_END_DAY);
     return [prevFallStart, prevFallEnd];
   }
   return [springStart, springEnd];
@@ -944,7 +975,8 @@ function initPlaybackPanel() {
     onPlaybackFilterChanged();
   });
   document.getElementById("date-range-to-input").addEventListener("change", (event) => {
-    playbackCustomToMs = event.target.value ? (parseDateInputToStartOfDayMs(event.target.value) + DAY_MS - 1) : null;
+    // End of that Anchorage day, not midnight + 24h: Nov 1 2026 is 25 hours long.
+    playbackCustomToMs = event.target.value ? parseDateInputToEndOfDayMs(event.target.value) : null;
     savePlaybackSettings();
     onPlaybackFilterChanged();
   });
@@ -961,6 +993,11 @@ function initPlaybackPanel() {
 function parseDateInputToStartOfDayMs(dateInputValue) {
   const [y, m, d] = dateInputValue.split("-").map(Number);
   return anchorageMidnightEpochMs(y, m, d);
+}
+
+function parseDateInputToEndOfDayMs(dateInputValue) {
+  const [y, m, d] = dateInputValue.split("-").map(Number);
+  return anchorageEndOfDayEpochMs(y, m, d);
 }
 
 function openPlaybackPanel() {
@@ -1138,7 +1175,7 @@ function updatePlaybackPlayButtonUi() {
 
 function updatePlaybackTimeLabel() {
   document.getElementById("playback-time-label").textContent = playbackTimeMs
-    ? new Date(playbackTimeMs).toLocaleString()
+    ? new Date(playbackTimeMs).toLocaleString(undefined, { timeZone: "America/Anchorage" }) // Alaska time, like the pin popup
     : "";
 }
 

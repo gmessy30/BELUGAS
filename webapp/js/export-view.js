@@ -87,8 +87,11 @@ function showExportRowCount() {
 function exportDateRangeMs() {
   const startInput = document.getElementById("export-start-date").value;
   const endInput = document.getElementById("export-end-date").value;
-  const startMs = startInput ? new Date(`${startInput}T00:00:00Z`).getTime() : EXPORT_ALL_TIME_START_MS;
-  const endMs = endInput ? new Date(`${endInput}T23:59:59.999Z`).getTime() : Date.now();
+  // From and To are Anchorage calendar days: From starts at that day's Alaska midnight, To runs to
+  // the last millisecond before the next Alaska midnight. These were UTC days, so an evening
+  // sighting in Alaska (after 4 PM AKDT / 3 PM AKST) was counted under the next day.
+  const startMs = startInput ? parseDateInputToStartOfDayMs(startInput) : EXPORT_ALL_TIME_START_MS;
+  const endMs = endInput ? parseDateInputToEndOfDayMs(endInput) : Date.now();
   return { startMs, endMs };
 }
 

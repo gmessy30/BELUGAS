@@ -724,9 +724,23 @@ function openManualReportFlow() {
 // DatePickerDialog.kt, ported as a plain datetime-local input (the platform supplies its own
 // picker UI) -- defaults to "now" each time this screen is entered, matching
 // ManualLoggingScreen's own `var selectedTimestampMs by remember { mutableStateOf(currentTimeMillis()) }`.
+// The input holds an ALASKA wall-clock time (Oct 7, 2026), written and read through the Anchorage
+// helpers in map-view.js -- not the phone's own clock, so a phone set to another timezone shows
+// and submits the same time an Alaska phone would. Unchanged for a phone already on Alaska time.
 function formatDatetimeLocalValue(date) {
   const pad = (n) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const [y, m, d, h, min] = anchorageDateTimeParts(date.getTime());
+  return `${y}-${pad(m)}-${pad(d)}T${pad(h)}:${pad(min)}`;
+}
+
+// "YYYY-MM-DDTHH:MM" read as Alaska time; NaN when it isn't in that shape.
+function parseAlaskaDatetimeLocalValue(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value || "");
+  return m ? anchorageWallTimeToEpochMs(+m[1], +m[2], +m[3], +m[4], +m[5]) : NaN;
+}
+
+function formatAlaskaDateTime(epochMs) {
+  return new Date(epochMs).toLocaleString(undefined, { timeZone: "America/Anchorage" });
 }
 
 function setManualDatetimeInputToNow() {
@@ -738,7 +752,7 @@ function setManualDatetimeInputToNow() {
 function manualSelectedTimestampMs() {
   const value = document.getElementById("manual-datetime-input").value;
   if (!value) return Date.now();
-  const parsed = new Date(value).getTime();
+  const parsed = parseAlaskaDatetimeLocalValue(value);
   return Number.isNaN(parsed) ? Date.now() : parsed;
 }
 
@@ -912,7 +926,8 @@ function updateManualDatetimeButtonLabel() {
     btn.textContent = "📅 SET DATE / TIME";
     return;
   }
-  btn.textContent = `📅 ${new Date(value).toLocaleString()}`;
+  const ms = parseAlaskaDatetimeLocalValue(value);
+  btn.textContent = `📅 ${Number.isNaN(ms) ? value : formatAlaskaDateTime(ms)}`;
 }
 
 // --- BearingDial.kt, ported directly: continuous drag anywhere on the dial sets a LIVE angle
@@ -1254,7 +1269,7 @@ async function submitManualSighting() {
   showSubmitConfirmModal(
     formatWhaleCountsSummary(manualCounts),
     directionText,
-    new Date(manualSelectedTimestampMs()).toLocaleString(),
+    formatAlaskaDateTime(manualSelectedTimestampMs()),
     formatActivitiesSummary(Array.from(manualSelectedActivities), manualActivityOtherNote),
     () => proceedManualSubmit()
   );

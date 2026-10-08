@@ -88,6 +88,7 @@ function sightingListItem(s) {
   time.className = "sighting-time";
   time.textContent = s.observed_at_epoch_ms
     ? new Date(s.observed_at_epoch_ms).toLocaleString("en-US", {
+        timeZone: "America/Anchorage", // Alaska time whatever the phone's own timezone, like the map
         weekday: "short", month: "short", day: "numeric", year: "numeric",
         hour: "numeric", minute: "2-digit"
       })

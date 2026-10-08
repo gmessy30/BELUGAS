@@ -183,8 +183,10 @@ function kenaiBannerLabel(status, detail, zoneSuffix) {
 }
 
 // Matches OfflineSightingRepository.kt's formatTime12Hour: 12-hour clock with AM/PM (e.g. "3:42 PM").
+// Pinned to Alaska time (Oct 7, 2026): these are tide-gate times for the river and "last updated"
+// times, which mean nothing in the phone's own timezone if that isn't Alaska.
 function formatTime12Hour(epochMs) {
-  return new Date(epochMs).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  return new Date(epochMs).toLocaleTimeString("en-US", { timeZone: "America/Anchorage", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 // Matches BelugaPresenceBanner's own label assembly (the non-Kenai branch) plus the "(UPDATING…)"

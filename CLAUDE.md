@@ -811,6 +811,21 @@ never just that playback started.
   like `-1`, because `SupabaseClient.kt:909` treats any integer as `Success`. Port by calling
   `redeem_tier_code_detailed` and adding `AlreadyClaimed`/`DeviceHasOtherCode`/`Network` cases
   (with `TierClaimScreen.kt` messages matching `tier-code.js`), alongside the other pending items.
+- **Native-side parity item (Oct 7, 2026, web-only so far) -- Alaska time everywhere**: every
+  sighting time and day boundary in the PWA is America/Anchorage, whatever the phone's timezone
+  (`39dc205` did the map pin caption and popup; this pass did the rest). Shared helpers live in
+  map-view.js beside `anchorageDateParts`/`anchorageMidnightEpochMs`: `anchorageDateTimeParts`,
+  `anchorageWallTimeToEpochMs` and `anchorageEndOfDayEpochMs` (end of day = next Alaska midnight
+  minus 1 ms, never midnight + 24h: Nov 1, 2026 is 25 hours, Mar 8 is 23). Covered: Sightings List
+  rows, the playback time label, Export Data's From/To (were UTC days, so an Alaska evening
+  sighting landed on the next day), the map's custom range end and season ends, the banner's
+  tide-gate times and the status page's "Last updated" (`formatTime12Hour`), and the Report
+  Manually / Edit date-time picker, which now shows AND reads an Alaska wall-clock time (a
+  typed time in the repeated 1-2 AM hour on Nov 1 resolves to the first, AKDT one). Verified
+  identical with the browser in UTC, America/Los_Angeles and America/Anchorage. Not changed:
+  CSV/GeoJSON `observed_at` stays ISO 8601 UTC; admin-page dates stay in the admin's own
+  timezone. **Native needs the same rule** for its list (`OfflineSightingsList`), playback label
+  and Export date range, plus its manual-logging date picker.
 - **Native-side parity item (Oct 6, 2026, web-only so far) -- pin captions on a one-day range**:
   when the Sightings Map's active date range is exactly one Anchorage calendar day, every pin's
   caption shows the observed TIME instead of the date ("4 Belugas · 2:24 PM", America/Anchorage
