@@ -718,7 +718,11 @@ never just that playback started.
   at a shared spot. The older two dots and arrows are drawn at 55% opacity, labels unfaded. The
   map fits only the shown three plus the river mouth (or zone outline). "Last seen…" describes
   the newest. When more qualify, a line under the map reads "Showing the 3 most recent of N
-  reports"; nothing is shown at 3 or fewer. Currently only `kenai` is
+  reports"; nothing is shown at 3 or fewer. **"Open the full app" link (Oct 7, 2026):** fixed to the
+  bottom in portrait and on tablets, but in the normal page flow at the end of the content under
+  `@media (max-height: 500px)` (phones in landscape), where a fixed link covered the map and
+  "Last seen" line. Body is `height: auto` (min-height 100vh) so its 76px bottom padding survives
+  a long page; with `height: 100%` the open NOAA panel's end stayed under the link. Currently only `kenai` is
   `is_banner_watched` live, so `?zone=` for anything else renders an honest "UNKNOWN ZONE" state
   rather than silently substituting Kenai's data — this is expected until/unless another zone gets
   flagged, not a bug. The Share page's STATUS PAGE chip mode has its own zone picker (only shown

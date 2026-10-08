@@ -94,6 +94,14 @@
     justify-content: center;
     justify-content: safe center;
     min-height: 100vh;
+    /* Overrides the html,body height:100% above for body only. A body pinned to exactly one
+       screen lets a long page (RED map + the NOAA panel opened) overflow past its box, and
+       overflowing content doesn't carry the body's bottom padding with it -- so the room reserved
+       below for the fixed "Open the full app" link vanished exactly when it was needed: measured
+       on Oct 7, 2026, the open panel's last 9-56px stayed under the link even fully scrolled
+       (432x862, 360x640, 1280x800). Growing with the content keeps the padding at the end of the
+       page; min-height above still gives short pages the same one-screen centering as before. */
+    height: auto;
     /* Item 107: bottom padding reserves room for the FIXED "Open the full app" link below --
        with the NOAA guidance panel expanded this page genuinely scrolls, and without this the
        last line of the panel ends up underneath that link instead of above it. */
@@ -304,6 +312,22 @@
   }
   .status-open-app-link:active {
     opacity: 1;
+  }
+  /* Short viewports (a phone in landscape: 918x348 on the Stylus) leave too little height for a
+     FIXED link to sit anywhere without covering the map or the "Last seen" line as they scroll
+     past. There it joins the normal page flow as the last thing on the page instead. The body is
+     a centered flex column, so a static link still sits centered. Its fixed-link bottom padding is
+     no longer needed there either. Portrait and tablets keep the fixed link and the 76px padding
+     above, which already lets the last content scroll fully clear of it. */
+  @media (max-height: 500px) {
+    body {
+      padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    }
+    .status-open-app-link {
+      position: static;
+      transform: none;
+      margin-top: 24px;
+    }
   }
 </style>
 </head>
