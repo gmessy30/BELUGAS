@@ -691,8 +691,11 @@ never just that playback started.
   Client (`db.js`'s `redeemTierCode`, `tier-code.js`'s `submitTierCode`) shows a distinct message
   per status; a request with no server answer (no PostgREST error code) is NETWORK, never
   "invalid"; the Enter key can no longer start a second call while one is in flight.
-- **Migration WRITTEN, NOT applied — needs the user's explicit go-ahead** (item 101 bug fix):
-  `supabase/migrations/20260929010000_fix_email_type_mismatch_in_tier_admin_rpcs.sql`.
+- **Migration LIVE** (item 101 bug fix) -- **correction, Oct 8, 2026**: this entry used to say
+  "written, not applied". Checked live: `list_tier_codes`, `list_tier_admins` and
+  `list_admin_actions` all carry the `email::text` cast, so the fix below is applied (when and by
+  whom isn't recorded; any further change to these functions is still Hard-rule territory).
+  Original description: `supabase/migrations/20260929010000_fix_email_type_mismatch_in_tier_admin_rpcs.sql`.
   `list_tier_codes`/`list_tier_admins`/`list_admin_actions` (all three, 20260929000000) select
   `auth.users.email` straight into a `RETURNS TABLE` column declared `text` -- but that column is
   actually `character varying(255)`, and PL/pgSQL's `RETURN QUERY` requires an exact type match
@@ -993,7 +996,7 @@ never just that playback started.
   correct when nothing's been observed in that window yet).
 - Web Push via FCM: needs the real Firebase Web config + VAPID key pasted into
   `webapp/js/firebase-config.js` (currently placeholder values) before it can work at all.
-- Self-service re-verification by email (deferred to after the Sunday deadline).
+- Self-service re-verification by email: not built, deferred (no date set).
 - **Make sighting inserts idempotent** (found while investigating item 73's phantom-marker bug):
   `insertSighting`/`attemptUploadAndInsert` (`webapp/js/db.js`, `offline-queue.js`) do a plain
   `.insert(record)` with no client-supplied id and no server-side uniqueness check. If the insert
@@ -1005,10 +1008,23 @@ never just that playback started.
   first insert attempt and reuse that same id on every retry of the same submission, so a retried
   insert after a lost success response can be made to no-op (upsert on that id, or a unique
   constraint) instead of creating a second row.
-- Real-device testing still needed for: time-lapse playback + clustering (Sightings Map), the
-  Android/PWA back-gesture nav stack, Camera/Report Manually's responsive (portrait+landscape,
-  no forced orientation) layout and fullscreen-on-touch-devices behavior, and the Android/iOS
-  install prompt — none of this has been exercised in an actual browser this session.
+- Real-device testing still needed (corrected Oct 8, 2026 -- some of this has since been exercised):
+  time-lapse scrubbing/playing and the date-range chips were driven on the Stylus (Oct 6), and the
+  camera stream was measured there in portrait and landscape (Oct 4). Still not exercised on a real
+  device: cluster tap/expand on the Sightings Map, the back-GESTURE nav stack (tests called
+  `navigateBack()` rather than performing a real gesture), fullscreen on touch devices, and the
+  Android/iOS install prompt. Nothing has been tested on an iPhone.
+- **Still open as of Oct 8, 2026 (summary; details in the entries above)**:
+  - **The native parity pass**: every "Native-side parity item" and "Native-side BUG" entry in
+    this list, done together, then a rebuild for Android and iOS. Includes the native News Feed
+    suggest form needing the same full http(s) address check (item 93c's parity entry).
+  - **iPhone camera stream size**: still unmeasured (see the camera-preview entry above for the
+    `?debug=1` way to read it without submitting).
+  - **The `copilot.microsoft.com` News Feed article**: one published article links to what looks
+    like a private AI-chat share rather than an article. Left alone on purpose; it's an admin call
+    (unpublish, or Fix URL from REPORTED LINKS), not a code change.
+  - Web Push config (above), idempotent sighting inserts (above), self-service re-verification
+    (above).
 - **Native-side parity item**: the PWA's presence banner (RED phase, "CHECK MAP") is now tappable
   and navigates straight to the Sightings Map (webapp/js/presence-banner.js's
   `handlePresenceBannerTap`) — a field suggestion implemented web-only so far. `PresenceBanner.kt`/
