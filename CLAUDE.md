@@ -25,7 +25,11 @@ deliberate deviation from native in a code comment rather than silently divergin
 ### Service worker
 
 `webapp/sw.js` registers with `updateViaCache: "none"` plus a `controllerchange` reload, so a new
-deploy actually takes over an already-open tab instead of requiring a full close/reopen.
+deploy actually takes over an already-open tab instead of requiring a full close/reopen. **The
+reload only happens when a worker was already in control at page load** (Oct 13, 2026,
+`hadServiceWorkerControllerAtLoad`, app.js): on a first-ever visit `clients.claim()` also fires
+`controllerchange`, and reloading then threw away whatever the visitor had open a few seconds in
+(found because it lost the Share page opened from the status page's "Share this page" link).
 **Always bump `CACHE_NAME` on any change to a file listed in `APP_SHELL`** (check the current value
 in `webapp/sw.js` rather than trusting a number here, it moves every deploy) — without a bump, a
 returning visitor's installed service worker sees byte-identical install/activate logic and never
@@ -793,6 +797,8 @@ never just that playback started.
   - Without it (no `from`, any other value, or an older cached status page sending only
     `?share=status`), Share opens over the Menu as before -- Back lands on the Menu whatever the
     launch-screen preference, so the camera never starts underneath.
+  - Verified headless on the deployed site (v124) in a fresh profile, so the Kenai run is a true
+    first visit (no service worker yet): Share stays open past the worker's install.
   - Not checkable headless: the real Android gesture in an installed PWA, and whether Android ever
     opens the link in the installed app's own window with no status page behind it (the
     `location.replace` fallback covers that case). `openSharePage(options)` takes `{ kind, zoneSlug }`; no

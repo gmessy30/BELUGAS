@@ -158,8 +158,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     // taking control of future fetches doesn't retroactively change what's already executing.
     // Reloading once the controller actually changes is what makes a new deploy visibly take
     // over instead of requiring the user to fully close and reopen the app.
+    //
+    // Oct 13, 2026: only when a worker was ALREADY in control at load, i.e. an update replacing
+    // an old one. On a first-ever visit there's no old code running (this page came from the
+    // network), but clients.claim() still fires controllerchange as the new worker takes over --
+    // and the reload that followed threw away whatever the visitor had open a few seconds in.
+    // Found because it lost the Share page opened by the status page's "Share this page" link
+    // (share.js's openShareFromLaunchLink has already cleaned the URL by then, so the reload
+    // landed on the Menu), which is exactly the first-time visitor that link is for.
+    const hadServiceWorkerControllerAtLoad = !!navigator.serviceWorker.controller;
     let hasReloadedForNewServiceWorker = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hadServiceWorkerControllerAtLoad) return;
       if (hasReloadedForNewServiceWorker) return;
       hasReloadedForNewServiceWorker = true;
       window.location.reload();
