@@ -57,12 +57,13 @@ document.title = `BELUGAS Status — ${currentZoneDisplayName}`;
 document.getElementById("status-zone-name").textContent = currentZoneDisplayName;
 
 // Oct 13, 2026: "Share this page" opens the main app's Share page in STATUS PAGE mode for this
-// zone (share.js's openShareFromLaunchLink reads these parameters). Kenai, the default, needs no
+// zone (share.js's openShareFromLaunchLink reads these parameters). from=status makes the Share
+// page's Back return here instead of to the app's Menu. Kenai, the default, needs no
 // zone. Relative, so it reaches the app on whatever origin served this page. A non-Kenai zone
 // starts hidden and is shown once the fetch confirms it's monitored (render, below): sharing the
 // "isn't being monitored" page would only pass that message on.
 const shareLinkEl = document.getElementById("status-share-link");
-shareLinkEl.href = `../?share=status${isKenaiZone ? "" : `&zone=${encodeURIComponent(currentZoneSlug)}`}`;
+shareLinkEl.href = `../?share=status&from=status${isKenaiZone ? "" : `&zone=${encodeURIComponent(currentZoneSlug)}`}`;
 shareLinkEl.hidden = !isKenaiZone;
 
 async function fetchKenaiPresenceStateRaw() {

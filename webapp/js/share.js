@@ -235,21 +235,43 @@ function openSharePage(options) {
 }
 
 // Oct 13, 2026: the status page's "Share this page" button links to the app as
-// ?share=status[&zone=<slug>]. Called once at startup in place of resolveLaunchScreen (app.js);
-// returns false, doing nothing, when there's no such link. Opens the Share page over the Menu,
-// exactly as the menu's own Share item would leave things, so Back lands on the Menu whatever the
-// launch-screen preference is -- in particular it never starts the camera underneath. The two
-// parameters are removed from the address bar first (anything else, e.g. ?debug=1, is kept), so
-// a reload doesn't reopen the Share page and the base history entry initNavStack recorded stays
-// the plain app URL. The zone is trimmed and lowercased the same way status.js reads it.
+// ?share=status&from=status[&zone=<slug>]. Called once at startup in place of resolveLaunchScreen
+// (app.js); returns false, doing nothing, when there's no such link. The parameters are removed
+// from the address bar first (anything else, e.g. ?debug=1, is kept), so a reload doesn't reopen
+// the Share page and the base history entry initNavStack recorded stays the plain app URL. The
+// zone is trimmed and lowercased the same way status.js reads it.
+//
+// Where Back goes depends on `from`, and ONLY the exact value "status" counts:
+// - from=status: Share is the only layer, and Back (button or system gesture -- both arrive as
+//   the same popstate, see nav-stack.js) returns to the status page. The origin lives only in
+//   this one layer's onPop closure: not a global, not sessionStorage, so a reload forgets it, and
+//   a later Share opened from the Menu (openSharePage via main-menu.js) never sees it.
+// - anything else (no `from`, a bogus value, or an older cached status page that sends only
+//   ?share=status): Share opens over the Menu, exactly as the menu's own Share item would leave
+//   things, so Back lands on the Menu whatever the launch-screen preference -- in particular the
+//   camera never starts underneath.
 function openShareFromLaunchLink() {
   const params = new URLSearchParams(window.location.search);
   if (params.get("share") !== "status") return false;
   const zoneSlug = (params.get("zone") || "").trim().toLowerCase() || "kenai";
+  const fromStatusPage = params.get("from") === "status";
   params.delete("share");
   params.delete("zone");
+  params.delete("from");
   const query = params.toString();
   history.replaceState(history.state, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
+
+  if (fromStatusPage) {
+    // Read now, before anything else can change them: was this app load a same-tab navigation
+    // from our own status page? Then the history entry just behind this one IS that page.
+    const statusPageUrl = new URL(`status/${zoneQuery(zoneSlug)}`, window.location.href).href;
+    const statusPageIsPreviousEntry = history.length > 1 && isOwnStatusPageUrl(document.referrer);
+    openSharePage({ kind: "status", zoneSlug });
+    // The Share page is deliberately left showing while the browser leaves, so the map
+    // underneath never flashes on the way out.
+    pushNavLayer("share-page", () => returnToStatusPage(statusPageUrl, statusPageIsPreviousEntry));
+    return true;
+  }
 
   const menu = document.getElementById("main-menu");
   pushNavLayer("menu", () => { menu.hidden = true; });
@@ -259,4 +281,31 @@ function openShareFromLaunchLink() {
     menu.hidden = false;
   });
   return true;
+}
+
+function isOwnStatusPageUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.origin === window.location.origin && u.pathname === new URL("status/", window.location.href).pathname;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Prefers stepping back to the status page's own history entry: that is the page the person was
+// on, and it leaves no duplicate entry behind (a replace would put a second copy of the status
+// page in history, and the next system back would land on the first copy -- a back that seems to
+// do nothing). If there's no such entry (the link was opened in a new tab or window), or the
+// browser hasn't left within 3 s, it replaces this entry with the status page URL for the same
+// normalised zone instead. 3 s, not less: a step back to a status page that isn't in the
+// back/forward cache has to fetch it, and pagehide only fires once that lands -- a short timer
+// would cut across a traversal that was working on a slow connection. pagehide is what tells the two apart; the timer is frozen with the page
+// if it goes into the back/forward cache, and finds `left` already true if it's ever restored.
+function returnToStatusPage(statusPageUrl, statusPageIsPreviousEntry) {
+  let left = false;
+  window.addEventListener("pagehide", () => { left = true; }, { once: true });
+  if (statusPageIsPreviousEntry) history.back();
+  setTimeout(() => {
+    if (!left) window.location.replace(statusPageUrl);
+  }, statusPageIsPreviousEntry ? 3000 : 0);
 }

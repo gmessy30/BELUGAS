@@ -774,14 +774,28 @@ never just that playback started.
   page has a "Share this page" pill (`#status-share-link`) in the NORMAL page flow, after the NOAA
   panel and before "Open the full app", never fixed, so it can't cover the map, the "Last seen"/
   count lines or the panel in either orientation; the body's 76px bottom padding keeps it clear of
-  the fixed link in portrait. It links to `../?share=status` plus `&zone=<slug>` for a non-Kenai
-  zone (the same trimmed/lowercased slug status.js reads), and is hidden for an unmonitored zone
+  the fixed link in portrait. It links to `../?share=status&from=status` plus `&zone=<slug>` for a
+  non-Kenai zone (the same trimmed/lowercased slug status.js reads), and is hidden for an unmonitored zone
   (a non-Kenai zone starts hidden until the fetch confirms it). In the main app,
   `openShareFromLaunchLink` (share.js), called from app.js in place of `resolveLaunchScreen`,
   reads those parameters once, removes them from the address bar (keeping anything else, e.g.
-  `?debug=1`), and opens the Share page in STATUS PAGE mode over the Menu -- Back lands on the
-  Menu whatever the launch-screen preference, so the camera never starts underneath. A zone that
-  isn't watched falls back to Kenai. `openSharePage(options)` takes `{ kind, zoneSlug }`; no
+  `?debug=1`), and opens the Share page in STATUS PAGE mode. A zone that isn't watched falls back
+  to Kenai. **Where Back goes (same day, follow-up):** only `from=status` exactly counts.
+  - With it, Share is the ONLY layer, and its `onPop` (`returnToStatusPage`) sends Back -- button
+    or system gesture, both the same popstate -- to the status page. If the app was loaded by a
+    same-tab click from our own status page (`document.referrer` is `/webapp/status/` on this
+    origin and `history.length > 1`, read at startup), it steps `history.back()` to that real
+    entry, so no duplicate entry is left; otherwise, or if `pagehide` hasn't fired within 3 s, it
+    does `location.replace("status/[?zone=<normalised slug>]")`. The origin lives only in that
+    layer's closure (not a global, not sessionStorage): a reload forgets it, and a later Share
+    from the Menu goes back to the Menu. The Share page is left showing while the browser leaves,
+    so the map never flashes.
+  - Without it (no `from`, any other value, or an older cached status page sending only
+    `?share=status`), Share opens over the Menu as before -- Back lands on the Menu whatever the
+    launch-screen preference, so the camera never starts underneath.
+  - Not checkable headless: the real Android gesture in an installed PWA, and whether Android ever
+    opens the link in the installed app's own window with no status page behind it (the
+    `location.replace` fallback covers that case). `openSharePage(options)` takes `{ kind, zoneSlug }`; no
   argument still means APP/Kenai. Known limit: like `?debug=1`, a `?share=` URL is a separate
   service-worker cache key, so it needs the network on first open.
   **Share page QR (same date)**: level H, as before, with the icon overlay (`.share-qr-icon-wrap`)
