@@ -889,8 +889,19 @@ never just that playback started.
     the suggest form ("Please enter a full web address starting with https://"); the admin page's
     links are gated the same way.
   - Not built from the old spec: DOI links, Wayback snapshots taken automatically at publish.
-  - Left alone on purpose: one published article links to `copilot.microsoft.com` (looks like a
-    private AI-chat share rather than an article) -- an admin call, not a code change.
+  - **Rejected Oct 13, 2026**: the published article linking to `copilot.microsoft.com`
+    (`22651d07-171d-40e0-a127-e89a02a73670`, "NOAA fisheries priorities spark conservation
+    concerns", submitted by "Ryan" on Sept 14, empty summary). The link was a Copilot "Discover"
+    story (`/shares/discover-stories/...`), not a private chat as first assumed, but a render
+    showed only "Not available in your region", and no single original source clearly matched
+    (the same NOAA-priorities story was covered by Inside Climate News, Ocean Conservancy, NOAA
+    itself and Mongabay). Rejected from the command line on the owner's instruction, mirroring
+    `set_article_status`: `status = 'rejected'`, `reviewed_by` = the owner (`993183af…`),
+    `reviewed_at = now()`, plus an `admin_actions` row `reject_article` with detail
+    `{"status": "rejected", "via": "command line (Supabase CLI), on the owner's instruction"}`.
+    Verified: published 24 -> 23 (34 articles; one published Oct 10 after the earlier 33/23
+    count), the other 33 rows hash-identical across every column, and this row's other columns
+    unchanged apart from status and the two review fields.
 - **Native-side parity item (item 93c, web-only so far)**: native HAS a News Feed
   (`NewsFeedScreen.kt`), but no "Report broken link" button, no broken-link notice or archived
   copy, and no URL check on its suggest form -- a native suggestion that isn't a full http(s)
@@ -1073,9 +1084,6 @@ never just that playback started.
     suggest form needing the same full http(s) address check (item 93c's parity entry).
   - **iPhone camera stream size**: still unmeasured (see the camera-preview entry above for the
     `?debug=1` way to read it without submitting).
-  - **The `copilot.microsoft.com` News Feed article**: one published article links to what looks
-    like a private AI-chat share rather than an article. Left alone on purpose; it's an admin call
-    (unpublish, or Fix URL from REPORTED LINKS), not a code change.
   - Web Push config (above), idempotent sighting inserts (above), self-service re-verification
     (above).
 - **Native-side parity item**: the PWA's presence banner (RED phase, "CHECK MAP") is now tappable
