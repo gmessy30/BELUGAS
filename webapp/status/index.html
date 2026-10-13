@@ -320,6 +320,31 @@
   .status-open-app-link:active {
     opacity: 1;
   }
+  /* Oct 13, 2026: "Share this page" -- opens the main app's Share page in STATUS PAGE mode for
+     this zone (status.js sets the href). In the NORMAL page flow, after the NOAA panel, never
+     fixed: an in-flow element can't sit over the map, the "Last seen"/count lines or the panel,
+     in any orientation, and the body's bottom padding above keeps it clear of the fixed "Open the
+     full app" link once scrolled to the end. Colours come from the same --status-fg variables as
+     the text, so it reads on red, yellow (black text), blue and grey alike. 44px tall: an easy
+     tap. */
+  .status-share-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    margin-top: 22px;
+    padding: 10px 24px;
+    color: var(--status-fg);
+    background: rgba(255, 255, 255, 0.14);
+    border: 1.5px solid var(--status-fg);
+    border-radius: 999px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .status-share-link[hidden] {
+    display: none;
+  }
   /* Short viewports (a phone in landscape: 918x348 on the Stylus) leave too little height for a
      FIXED link to sit anywhere without covering the map or the "Last seen" line as they scroll
      past. There it joins the normal page flow as the last thing on the page instead. The body is
@@ -382,6 +407,10 @@
       <a class="noaa-panel-source" href="https://www.fisheries.noaa.gov/resource/educational-materials/endangered-beluga-whales-cook-inlet-rivers-and-streams" target="_blank" rel="noopener">Source: NOAA Fisheries &rarr;</a>
     </div>
   </details>
+
+  <!-- Oct 13, 2026: status.js fills in the href (carrying ?zone=) and hides it for an area that
+       isn't monitored -- there's nothing worth passing on there. -->
+  <a class="status-share-link" id="status-share-link" href="../?share=status">Share this page</a>
 
   <a class="status-open-app-link" href="../">Open the full app &rarr;</a>
 

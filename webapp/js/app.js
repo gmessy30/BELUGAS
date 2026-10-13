@@ -136,7 +136,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Resolved while still covered by the splash screen, same timing intent as App.kt's own
   // resolveAndSetLaunchScreen (called during the splash's own display window) -- the very first
   // thing visible once the splash clears is already the right screen, not a Map flash-then-swap.
-  resolveLaunchScreen();
+  // Oct 13, 2026: a link from the status page's "Share this page" button opens the Share page
+  // (over the Menu) instead of the usual launch screen -- see share.js.
+  if (!openShareFromLaunchLink()) resolveLaunchScreen();
   hideSplash();
 
   if ("serviceWorker" in navigator) {

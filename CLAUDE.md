@@ -770,6 +770,31 @@ never just that playback started.
   (`CANONICAL_WEBAPP_BASE_URL`, share.js), never `window.location`, so a localhost session still
   hands out working links. APP mode still derives its URL from `window.location`. One QR per
   screen still holds: the sign page draws its own, on its own page.
+- **Status page "Share this page" button and Share page deep link (Oct 13, 2026)**: the status
+  page has a "Share this page" pill (`#status-share-link`) in the NORMAL page flow, after the NOAA
+  panel and before "Open the full app", never fixed, so it can't cover the map, the "Last seen"/
+  count lines or the panel in either orientation; the body's 76px bottom padding keeps it clear of
+  the fixed link in portrait. It links to `../?share=status` plus `&zone=<slug>` for a non-Kenai
+  zone (the same trimmed/lowercased slug status.js reads), and is hidden for an unmonitored zone
+  (a non-Kenai zone starts hidden until the fetch confirms it). In the main app,
+  `openShareFromLaunchLink` (share.js), called from app.js in place of `resolveLaunchScreen`,
+  reads those parameters once, removes them from the address bar (keeping anything else, e.g.
+  `?debug=1`), and opens the Share page in STATUS PAGE mode over the Menu -- Back lands on the
+  Menu whatever the launch-screen preference, so the camera never starts underneath. A zone that
+  isn't watched falls back to Kenai. `openSharePage(options)` takes `{ kind, zoneSlug }`; no
+  argument still means APP/Kenai. Known limit: like `?debug=1`, a `?share=` URL is a separate
+  service-worker cache key, so it needs the network on first open.
+  **Share page QR (same date)**: level H, as before, with the icon overlay (`.share-qr-icon-wrap`)
+  cut from 54px (22.5%) to 46px (19.2% of the 240px code) on its white tile, and the white margin
+  set by `renderShareQrCode` to a 4-module quiet zone measured from the drawn code (30px for the
+  app URL, 24px Kenai status, 20px a longer `?zone=` URL; CSS 28px is only the fallback). Verified
+  by decoding a screenshot of the rendered container (icon included) with jsQR: APP, STATUS PAGE
+  Kenai and a stubbed second zone all decode to the exact URL. The printable sign's own QR
+  (`status-sign.html`/`.pdf`) is a separate code and was not changed.
+- **Native-side parity note (Oct 13, 2026)**: native has no Share page or QR code at all today
+  (the Share page is web-only, item 43). If one is ever added, give its QR the same treatment:
+  level H, a centre icon on a plain light tile at 20% of the code's width or less, and a
+  4-module quiet zone.
 - **Printable signs** (item 98) at `/webapp/print/`: `status-sign.html` is zone-parameterized (same
   `?zone=` convention as `/status/`, generates its QR client-side via qrcodejs since it now needs a
   different code per zone) and keeps Kenai's own established "…before you launch" phrase, with a

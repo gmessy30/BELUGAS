@@ -100,6 +100,14 @@ async function setShareSelectedKind(kind) {
   const zoneRow = document.getElementById("share-zone-row");
   if (kind === "status") {
     await ensureShareZonesLoaded();
+    // Oct 13, 2026: re-checked on every entry, not just the first load -- a zone can now arrive
+    // from a link (openShareFromLaunchLink). One that isn't monitored falls back to Kenai rather
+    // than a QR for a page that would only say "isn't being monitored". The chip highlight is
+    // re-synced too: it used to keep whichever zone was picked on an earlier visit.
+    if (!shareZones.some((z) => z.slug === shareSelectedZoneSlug)) shareSelectedZoneSlug = "kenai";
+    zoneRow.querySelectorAll(".news-filter-chip").forEach((btn, i) => {
+      btn.classList.toggle("active", shareZones[i].slug === shareSelectedZoneSlug);
+    });
     zoneRow.hidden = shareZones.length <= 1; // nothing to PICK with only one (or zero) watched zone
   } else {
     zoneRow.hidden = true;
@@ -184,30 +192,71 @@ async function handleNativeShare() {
 // each time.
 //
 // Error-correction level H (~30% of the code's data can be damaged/obscured and still decode) is
-// what makes the center icon overlay in the HTML (.share-qr-icon-wrap, sized to ~22% of the
-// code's own width) safe at all -- the library's default level (M, ~15%) would risk the code
+// what makes the center icon overlay in the HTML (.share-qr-icon-wrap, 46px = ~19% of the
+// code's own 240px width since Oct 13, 2026; was 54px, ~22%) safe at all -- the library's default level (M, ~15%) would risk the code
 // failing to scan once anything is drawn over it. The icon is layered on top via plain CSS
 // positioning, not composited into the QR's own pixel data (qrcodejs has no API for that) -- a
 // scanner reading the rendered page sees the identical result either way, since it can't tell the
 // difference between "this pixel was never drawn" and "this pixel is covered by another element."
+//
+// Oct 13, 2026: the white margin around the code (#share-qr-container's padding) is set here to
+// the standard 4-module quiet zone, measured from the code actually drawn -- a module's size
+// depends on the URL's length, so a fixed pixel padding can't be right for every link. The CSS
+// padding is only the fallback if the module count can't be read.
+const SHARE_QR_SIZE_PX = 240;
+const SHARE_QR_QUIET_ZONE_MODULES = 4;
+
 function renderShareQrCode() {
   const container = document.getElementById("share-qr-code");
   container.innerHTML = "";
-  new QRCode(container, {
+  const qr = new QRCode(container, {
     text: getShareableUrlForKind(shareSelectedKind),
-    width: 240,
-    height: 240,
+    width: SHARE_QR_SIZE_PX,
+    height: SHARE_QR_SIZE_PX,
     colorDark: "#000000",
     colorLight: "#ffffff",
     correctLevel: QRCode.CorrectLevel.H
   });
+  const moduleCount = qr._oQRCode && qr._oQRCode.getModuleCount ? qr._oQRCode.getModuleCount() : 0;
+  if (moduleCount > 0) {
+    const quietZonePx = Math.ceil((SHARE_QR_SIZE_PX / moduleCount) * SHARE_QR_QUIET_ZONE_MODULES);
+    document.getElementById("share-qr-container").style.padding = `${quietZonePx}px`;
+  }
 }
 
-// Called from the main menu's "Share" item and from the About page's own link (about.js). Always
-// resets to APP -- same "fresh entry resets to the default" convention item 93's search page
-// established for its own chips (openNewsFeedPage always starts on the NEWS chip).
-function openSharePage() {
-  shareSelectedZoneSlug = "kenai";
-  setShareSelectedKind("app");
+// Called from the main menu's "Share" item and from the About page's own link (about.js), with
+// no argument: always resets to APP -- same "fresh entry resets to the default" convention item
+// 93's search page established for its own chips (openNewsFeedPage always starts on the NEWS
+// chip). Oct 13, 2026: openShareFromLaunchLink passes { kind: "status", zoneSlug } instead.
+function openSharePage(options) {
+  shareSelectedZoneSlug = (options && options.zoneSlug) || "kenai";
+  setShareSelectedKind((options && options.kind) || "app");
   document.getElementById("share-page").hidden = false;
+}
+
+// Oct 13, 2026: the status page's "Share this page" button links to the app as
+// ?share=status[&zone=<slug>]. Called once at startup in place of resolveLaunchScreen (app.js);
+// returns false, doing nothing, when there's no such link. Opens the Share page over the Menu,
+// exactly as the menu's own Share item would leave things, so Back lands on the Menu whatever the
+// launch-screen preference is -- in particular it never starts the camera underneath. The two
+// parameters are removed from the address bar first (anything else, e.g. ?debug=1, is kept), so
+// a reload doesn't reopen the Share page and the base history entry initNavStack recorded stays
+// the plain app URL. The zone is trimmed and lowercased the same way status.js reads it.
+function openShareFromLaunchLink() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("share") !== "status") return false;
+  const zoneSlug = (params.get("zone") || "").trim().toLowerCase() || "kenai";
+  params.delete("share");
+  params.delete("zone");
+  const query = params.toString();
+  history.replaceState(history.state, "", window.location.pathname + (query ? `?${query}` : "") + window.location.hash);
+
+  const menu = document.getElementById("main-menu");
+  pushNavLayer("menu", () => { menu.hidden = true; });
+  openSharePage({ kind: "status", zoneSlug });
+  pushNavLayer("share-page", () => {
+    document.getElementById("share-page").hidden = true;
+    menu.hidden = false;
+  });
+  return true;
 }

@@ -1216,7 +1216,9 @@ button.text-link {
   position: relative;
   display: inline-block;
   margin-top: 8px;
-  padding: 12px;
+  /* Fallback only: share.js's renderShareQrCode sets this to the standard 4-module quiet zone,
+     measured from the code actually drawn (Oct 13, 2026; was a flat 12px, ~1.6 modules). */
+  padding: 28px;
   background: #ffffff;
   border-radius: 12px;
 }
@@ -1230,7 +1232,8 @@ button.text-link {
 
 /* Centered over the QR by the container's own real rendered size, not a hardcoded pixel value --
    qrcodejs draws at exactly the width/height given to it (240px, share.js), so 50%/50% + translate
-   always lands dead-center regardless of what that size is. ~22% of 240px -- see share.js's own
+   always lands dead-center regardless of what that size is. 46px, ~19% of 240px (Oct 13, 2026;
+   was 54px, ~22%, over the 20% ceiling for a centre logo) -- see share.js's own
    comment on why level-H error correction is what makes this safe. White backing (not just the
    icon's own image) keeps a clean quiet margin between the icon and the QR's dark modules right
    at its edge, same reasoning as a real-world printed QR-with-logo. */
@@ -1239,10 +1242,10 @@ button.text-link {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 54px;
-  height: 54px;
+  width: 46px;
+  height: 46px;
   background: #ffffff;
-  border-radius: 10px;
+  border-radius: 9px;
   padding: 5px;
   box-sizing: border-box;
 }

@@ -56,6 +56,15 @@ let currentZoneDisplayName = isKenaiZone ? KENAI_DISPLAY_NAME : zoneDisplayNameF
 document.title = `BELUGAS Status — ${currentZoneDisplayName}`;
 document.getElementById("status-zone-name").textContent = currentZoneDisplayName;
 
+// Oct 13, 2026: "Share this page" opens the main app's Share page in STATUS PAGE mode for this
+// zone (share.js's openShareFromLaunchLink reads these parameters). Kenai, the default, needs no
+// zone. Relative, so it reaches the app on whatever origin served this page. A non-Kenai zone
+// starts hidden and is shown once the fetch confirms it's monitored (render, below): sharing the
+// "isn't being monitored" page would only pass that message on.
+const shareLinkEl = document.getElementById("status-share-link");
+shareLinkEl.href = `../?share=status${isKenaiZone ? "" : `&zone=${encodeURIComponent(currentZoneSlug)}`}`;
+shareLinkEl.hidden = !isKenaiZone;
+
 async function fetchKenaiPresenceStateRaw() {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_kenai_presence_state`, {
     method: "POST",
@@ -162,9 +171,11 @@ function render(fetchRedData) {
     textEl.textContent = "This area isn't being monitored by BELUGAS";
     updatedEl.textContent = "";
     setNote("Don't take this page as a sign the water is clear.");
+    shareLinkEl.hidden = true;
     updateRedSection(PRESENCE_UNKNOWN, false);
     return;
   }
+  shareLinkEl.hidden = false;
 
   // Same staleness-escalation math the main app's own banner runs for this exact zone, driven by
   // this file's own tick() below -- a status page left open with no working connection still
