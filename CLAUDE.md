@@ -797,8 +797,16 @@ never just that playback started.
   - Without it (no `from`, any other value, or an older cached status page sending only
     `?share=status`), Share opens over the Menu as before -- Back lands on the Menu whatever the
     launch-screen preference, so the camera never starts underneath.
-  - Verified headless on the deployed site (v124) in a fresh profile, so the Kenai run is a true
-    first visit (no service worker yet): Share stays open past the worker's install.
+  - Verified headless on the deployed site (v124): Back button and `history.back()` both land on
+    the status page (Kenai and a stubbed second zone, the original entry, history length
+    unchanged); with no status page behind it, the fallback lands on `status/?zone=zz_test`;
+    reload opens the Menu; Share from the Menu and `from=bogus` both go back to the Menu. The
+    first-visit reload fix (Service worker section above) was checked by dispatching
+    `controllerchange` on an uncontrolled page with Share open: same document, Share still open.
+    A REAL first install can't be reproduced headless here: in this environment's headless Chrome
+    the worker's install fails inside the browser (`CacheStorage.open`: "Unexpected internal
+    error", seen via CDP `ServiceWorker.workerErrorReported`) even though all 51 `APP_SHELL` files
+    return 200, so no worker ever takes control there. Not a site bug; don't chase it as one.
   - Not checkable headless: the real Android gesture in an installed PWA, and whether Android ever
     opens the link in the installed app's own window with no status page behind it (the
     `location.replace` fallback covers that case). `openSharePage(options)` takes `{ kind, zoneSlug }`; no
