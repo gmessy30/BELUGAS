@@ -766,6 +766,29 @@ never just that playback started.
   / "Last seen" code throws. YELLOW, BLUE, grey and unmonitored never show it.
   **Callers:** only `/webapp/status/` calls this RPC. Native never does (it reads only
   `get_kenai_presence_state`, `SupabaseClient.kt`), and neither does the main PWA.
+  **12-hour context set (Oct 15, 2026, status.js, display only):** the Kenai RED map now merges
+  the RED rows with up to the newest 40 sightings from the last 12 hours that pass the banner's
+  trust rule (`is_geofence_verified`, and tier 1, tier 2 SELF, or confirmed) and are inside the
+  Kenai banner area. Rows come from `export_sightings`; the area test is the server's own
+  `is_whale_position_in_kenai_banner_area`, called per candidate (no geometry copied into the
+  page). The merge is by id (RED wins; a context copy only lends `created_at` for the tie-break).
+  The merged list is sorted by recency, so the top 3, the draw order (oldest first), `zIndexOffset`
+  and "Last seen" all apply across both sets: a newer context dot sits above an older RED dot.
+  - **Fading:** 55% means context-only and not the newest. RED-qualifying dots and the newest dot
+    are always full strength. Before this, every dot but the newest was faded, RED or not. "Fainter
+    dots are older reports." shows under the count line only when a dot is faded.
+  - **Count line:** "Showing the 3 most recent of N reports in the last 12 hours" when more than 3
+    qualify; the old wording when the context set wasn't merged in.
+  - **Departure reports:** context rows observed at or before the newest departure report in the
+    last 12 hours are dropped (`kenai_departure_reports`, anon-readable; same +1 ms ratchet as the
+    banner). Deliberately the 12-hour window, not only the current tide cycle: it hides everything
+    the current-cycle rule would, and also covers item 117's grace, without copying the grace logic
+    into the page.
+  - **Fallback:** the context set is fetched only when there's at least one RED row. Any failure
+    (export, departure read, an area check) falls back to the RED rows alone, never blanking the
+    map or triggering "Map unavailable".
+  - Kenai only; generic zones keep their own RED-only set. **The banner and the RED/YELLOW/BLUE
+    decision are still `get_kenai_presence_state` alone**; nothing here changes the colour.
 - **Standalone status page** (items 97/97b/97c) at `/webapp/status/`: full design/rationale lives
   in that directory's own file header comments (`index.html`, `status.js`,
   `kenai-landmarks.js`) — summarized here for discoverability. Reads

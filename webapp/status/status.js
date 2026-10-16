@@ -237,7 +237,12 @@ function tick() {
 // ---------------------------------------------------------------------------------------------
 
 let leafletAndDepsLoadPromise = null;
-let redQualifyingSightings = null; // last successful fetch, normalized to one shape regardless of source; or null
+// Last successful fetch, normalized to one shape regardless of source; or null. Since Oct 15,
+// 2026 on Kenai this is the RED rows MERGED with the 12-hour context set (isRedQualifying says
+// which is which); the name is kept from when it held only RED rows.
+let redQualifyingSightings = null;
+let redMapRecentCount = 0;          // merged rows observed in the last 12 hours, for the count line
+let redMapCountIsTwelveHour = false; // true when the context set was merged in this time
 // The RED map shows only this many of them -- the most recent, newest drawn on top. Display only:
 // what makes the page RED is decided server-side and is untouched.
 const RED_MAP_MAX_SHOWN = 3;
@@ -382,6 +387,108 @@ async function fillCreatedAtForTies(rows) {
   }
 }
 
+// Oct 15, 2026: the Kenai RED map's 12-hour CONTEXT set -- display only. The RED set
+// (get_kenai_red_qualifying_sightings) starts at the current cycle's low (plus item 117's grace),
+// so a whale seen just before a low drops off the map even though it's the best clue to where the
+// one seen just after is heading. This adds the most recent sightings from the last 12 hours that
+// pass the banner's own trust rule (is_geofence_verified, and tier 1, tier 2 SELF, or confirmed)
+// and are inside the Kenai banner area, merged with the RED set by id. Nothing here decides the
+// colour: the banner is still get_kenai_presence_state alone, and the map is only drawn on RED.
+//
+// - Rows come from export_sightings (already anon-callable, returns everything needed). The area
+//   test is the server's own is_whale_position_in_kenai_banner_area, called per candidate, so the
+//   page never carries a second copy of that geometry.
+// - Departure reports: context rows observed at or before the most recent departure report in the
+//   last 12 hours are dropped (same "+1 ms" ratchet as the banner). Deliberately the 12-hour
+//   window rather than only the current tide cycle: inside the window it hides everything the
+//   current-cycle rule would, and it also covers item 117's grace, when the banner's own window
+//   reaches back into the previous cycle and a report filed there already ratcheted RED past
+//   those sightings. Working out the cycle here would mean copying the grace logic into the page.
+// - Best effort: ANY failure here (export, departure read, an area check) returns null and the map
+//   falls back to the RED rows alone, exactly as before.
+const KENAI_CONTEXT_WINDOW_MS = 12 * 60 * 60 * 1000;
+// Area checks are one small RPC each, made in parallel; only the newest this many trusted
+// candidates are checked (and counted), which is far more than a 12-hour window ever holds.
+const KENAI_CONTEXT_MAX_AREA_CHECKS = 40;
+
+async function postRpc(name, body) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
+  return res.json();
+}
+
+async function fetchLatestKenaiDepartureReportMs(sinceMs, nowMs) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/kenai_departure_reports?select=reported_at_epoch_ms`
+    + `&reported_at_epoch_ms=gte.${sinceMs}&reported_at_epoch_ms=lte.${nowMs}&order=reported_at_epoch_ms.desc&limit=1`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+  });
+  if (!res.ok) throw new Error(`kenai_departure_reports: HTTP ${res.status}`);
+  const rows = await res.json();
+  return rows.length ? rows[0].reported_at_epoch_ms : null;
+}
+
+async function fetchKenaiContextSightings(nowMs) {
+  try {
+    const sinceMs = nowMs - KENAI_CONTEXT_WINDOW_MS;
+    const [rows, departureMs] = await Promise.all([
+      postRpc("export_sightings", {
+        p_start_ms: sinceMs, p_end_ms: nowMs,
+        p_min_lat: OUTER_GEOFENCE_MIN_LAT, p_max_lat: OUTER_GEOFENCE_MAX_LAT,
+        p_min_lng: OUTER_GEOFENCE_MIN_LNG, p_max_lng: OUTER_GEOFENCE_MAX_LNG,
+        p_zone_slug: null
+      }),
+      fetchLatestKenaiDepartureReportMs(sinceMs, nowMs)
+    ]);
+    const cutoffMs = departureMs != null ? Math.max(sinceMs, departureMs + 1) : sinceMs;
+    const trusted = rows
+      .filter((s) => s.whale_lat != null && s.whale_lng != null
+        && s.observed_at_epoch_ms >= cutoffMs && s.observed_at_epoch_ms <= nowMs
+        && s.is_geofence_verified
+        && ((s.observer_tier === 2 && s.observer_type === "SELF") || s.observer_tier === 1 || s.confirmed_at != null))
+      .sort((a, b) => b.observed_at_epoch_ms - a.observed_at_epoch_ms)
+      .slice(0, KENAI_CONTEXT_MAX_AREA_CHECKS);
+    const inArea = await Promise.all(trusted.map((s) => postRpc("is_whale_position_in_kenai_banner_area", {
+      p_lng: s.whale_lng, p_lat: s.whale_lat, p_uncertainty_radius_meters: s.uncertainty_radius_meters
+    })));
+    return trusted.filter((_, i) => inArea[i] === true).map((s) => ({
+      id: s.id,
+      created_at: s.created_at,
+      observed_at_epoch_ms: s.observed_at_epoch_ms,
+      whale_lat: s.whale_lat,
+      whale_lng: s.whale_lng,
+      count_whites: s.count_whites,
+      count_greys: s.count_greys,
+      count_calves: s.count_calves,
+      count_unknown: s.count_unknown,
+      travel_bearing_degrees: s.travel_bearing_degrees
+    }));
+  } catch (e) {
+    console.warn("STATUS_PAGE_CONTEXT_SIGHTINGS_FAILED", e);
+    return null;
+  }
+}
+
+// RED rows win on a shared id (they're the reason the page is RED); a context copy only lends
+// its created_at, which the RED RPC doesn't return, for the tie-break. Every merged row carries
+// isRedQualifying, which renderRedMap uses for the faded style.
+function mergeRedAndContextRows(redRows, contextRows) {
+  const contextById = new Map((contextRows || []).map((s) => [s.id, s]));
+  const merged = redRows.map((s) => ({
+    ...s,
+    created_at: s.created_at ?? contextById.get(s.id)?.created_at ?? null,
+    isRedQualifying: true
+  }));
+  const redIds = new Set(redRows.map((s) => s.id));
+  (contextRows || []).forEach((s) => {
+    if (!redIds.has(s.id)) merged.push({ ...s, isRedQualifying: false });
+  });
+  return merged;
+}
+
 function formatRelativeTime(epochMs, nowMs) {
   const minutes = Math.round(Math.max(0, nowMs - epochMs) / 60000);
   if (minutes < 1) return "just now";
@@ -498,6 +605,11 @@ function extraFitBoundsPoints() {
   return boundingBoxFromRing(zoneEntry.fullRing);
 }
 
+// recencyRank: 0 = newest shown. See renderRedMap's comment for the rule.
+function isFadedMapSighting(s, recencyRank) {
+  return recencyRank > 0 && s.isRedQualifying === false;
+}
+
 function renderRedMap(sightings, nowMs) {
   if (!redMapInstance) {
     redMapInstance = L.map("status-map", {
@@ -522,9 +634,15 @@ function renderRedMap(sightings, nowMs) {
   // `sightings` is newest first. Drawn OLDEST first so the newest marker and its label are the
   // last added: Leaflet stacks tooltips by insertion order, and zIndexOffset (newest highest)
   // overrides Leaflet's default of stacking markers by screen position -- so the newest dot,
-  // arrow and label sit on top even when two reports share a spot. Older ones are drawn fainter so
-  // recency reads at a glance; their labels are NOT faded (same as the newest's), since the map
-  // tiles under them are light and faded text is what would suffer in sunlight.
+  // arrow and label sit on top even when two reports share a spot. Labels are never faded, since
+  // the map tiles under them are light and faded text is what would suffer in sunlight.
+  //
+  // Oct 15, 2026: `sightings` is the MERGED RED + 12-hour context list, already sorted by recency,
+  // so this same order and zIndexOffset apply across both sets: a context dot newer than a RED dot
+  // is drawn above it. Faded (55%) means "context only and not the newest" -- a RED-qualifying dot
+  // is always full strength, and so is the newest dot whatever set it came from. (Before this,
+  // every dot but the newest was faded, RED or not; `isRedQualifying` is undefined for the generic
+  // zones, which have no context set, so there every dot is RED and full strength.)
   sightings.slice().reverse().forEach((s) => {
     const recencyRank = sightings.indexOf(s); // 0 = newest
     boundsPoints.push([s.whale_lat, s.whale_lng]);
@@ -542,7 +660,7 @@ function renderRedMap(sightings, nowMs) {
     const marker = L.marker([s.whale_lat, s.whale_lng], {
       icon,
       zIndexOffset: (sightings.length - recencyRank) * 1000,
-      opacity: recencyRank === 0 ? 1 : 0.55
+      opacity: isFadedMapSighting(s, recencyRank) ? 0.55 : 1
     }).addTo(redMarkersLayerGroup);
     marker.bindTooltip(`${total} beluga${total === 1 ? "" : "s"} · ${relTime}`, {
       permanent: true,
@@ -586,10 +704,21 @@ async function updateRedSection(status, fetchNewData) {
   if (fetchNewData) {
     try {
       await ensureLeafletAndDepsLoaded();
+      const nowMs = Date.now();
       const fetched = isKenaiZone
         ? await fetchKenaiRedQualifyingSightingsRaw()
-        : await fetchGenericZoneRedQualifyingSightings(currentZoneSlug, Date.now());
-      redQualifyingSightings = sortByRecency(await fillCreatedAtForTies(fetched));
+        : await fetchGenericZoneRedQualifyingSightings(currentZoneSlug, nowMs);
+      // Oct 15, 2026: Kenai merges in the 12-hour context set, but only when there IS a RED row:
+      // with none, the map isn't drawn and the guard below says so, rather than showing a trail
+      // with nothing behind the RED. A failed context fetch (null) leaves the RED rows alone.
+      const contextRows = isKenaiZone && fetched.length > 0 ? await fetchKenaiContextSightings(nowMs) : null;
+      const merged = contextRows ? mergeRedAndContextRows(fetched, contextRows) : fetched;
+      // Recency order (and so the top three, the stacking and "Last seen") is decided on the
+      // merged list, never within each set.
+      redQualifyingSightings = sortByRecency(await fillCreatedAtForTies(merged));
+      redMapRecentCount = redQualifyingSightings
+        .filter((s) => s.observed_at_epoch_ms >= nowMs - KENAI_CONTEXT_WINDOW_MS).length;
+      redMapCountIsTwelveHour = !!contextRows;
     } catch (e) {
       console.error("STATUS_PAGE_RED_MAP_ERROR", e);
       // Deliberately don't clear a previously-successful redQualifyingSightings on a transient
@@ -616,10 +745,18 @@ async function updateRedSection(status, fetchNewData) {
     renderRedMap(shown, Date.now());
     document.getElementById("status-last-seen-line").textContent =
       buildLastSeenLine(shown[0], Date.now());
+    // With the context set merged in, the count is the reports in the last 12 hours (the window
+    // the context set covers); otherwise (generic zones, or the context fetch failed) it's the
+    // RED rows, worded as before.
     const countEl = document.getElementById("status-map-count-line");
-    const total = redQualifyingSightings.length;
+    const total = redMapCountIsTwelveHour ? redMapRecentCount : redQualifyingSightings.length;
     countEl.hidden = total <= RED_MAP_MAX_SHOWN;
-    countEl.textContent = total > RED_MAP_MAX_SHOWN ? `Showing the ${RED_MAP_MAX_SHOWN} most recent of ${total} reports` : "";
+    countEl.textContent = total <= RED_MAP_MAX_SHOWN ? ""
+      : redMapCountIsTwelveHour
+        ? `Showing the ${RED_MAP_MAX_SHOWN} most recent of ${total} reports in the last 12 hours`
+        : `Showing the ${RED_MAP_MAX_SHOWN} most recent of ${total} reports`;
+    const fadedNoteEl = document.getElementById("status-map-faded-note");
+    fadedNoteEl.hidden = !shown.some((s, i) => isFadedMapSighting(s, i));
     unavailableEl.hidden = true;
   } catch (e) {
     console.error("STATUS_PAGE_RED_MAP_RENDER_ERROR", e);
