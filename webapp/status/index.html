@@ -93,7 +93,15 @@
        -- it simply ignores the second declaration and keeps the first. */
     justify-content: center;
     justify-content: safe center;
+    /* Oct 15, 2026: svh, not vh. Android Chrome resolves 100vh to the height with the address bar
+       HIDDEN (918px on the Stylus against 862px visible), so a short page was always 56px taller
+       than the screen: it scrolled a little, the address bar hid and showed, and the page "played"
+       under a drag. 100svh is the height with the bar shown, so a short page fits one screen and
+       a long one still scrolls for its real content. The 100vh line stays first as the fallback
+       for browsers without svh; dvh is avoided on purpose (it changes size as the bar slides,
+       which would re-lay the page out mid-gesture). */
     min-height: 100vh;
+    min-height: 100svh;
     /* Overrides the html,body height:100% above for body only. A body pinned to exactly one
        screen lets a long page (RED map + the NOAA panel opened) overflow past its box, and
        overflowing content doesn't carry the body's bottom padding with it -- so the room reserved

@@ -822,8 +822,19 @@ never just that playback started.
   reports"; nothing is shown at 3 or fewer. **"Open the full app" link (Oct 7, 2026):** fixed to the
   bottom in portrait and on tablets, but in the normal page flow at the end of the content under
   `@media (max-height: 500px)` (phones in landscape), where a fixed link covered the map and
-  "Last seen" line. Body is `height: auto` (min-height 100vh) so its 76px bottom padding survives
-  a long page; with `height: 100%` the open NOAA panel's end stayed under the link. Currently only `kenai` is
+  "Last seen" line. Body is `height: auto` (min-height 100svh) so its 76px bottom padding survives
+  a long page; with `height: 100%` the open NOAA panel's end stayed under the link.
+  **The page's height uses svh because Chrome's vh ignores the address bar** (Oct 15, 2026):
+  `min-height: 100vh; min-height: 100svh;` (vh first as the fallback; no dvh, which resizes as the
+  bar slides). **"The page plays" when dragged, diagnosed the same day:** up/down was this. On the
+  Stylus `100vh` was 918px against 862px visible, so a short page was always 56px taller than the
+  screen, scrolled a little, and hid and showed the address bar; it dated from the page's first
+  commit (`07e3556`, Sep 14), not from any October change. Left/right was NOT overflow (scrollWidth
+  = clientWidth everywhere, only clipped map tiles past the edge): the page was pinch-zoomed
+  (`visualViewport.scale` 1.17), so a drag panned sideways. Left as is on purpose; disabling zoom
+  would hurt readers who need it. The map has `touch-action: none` (Leaflet), so a drag on it
+  moves only the map. Headless Chrome has no address bar (vh = svh there), so the vertical half
+  can only be confirmed on a phone. Currently only `kenai` is
   `is_banner_watched` live, so `?zone=` for anything else renders an honest "UNKNOWN ZONE" state
   rather than silently substituting Kenai's data — this is expected until/unless another zone gets
   flagged, not a bug. The Share page's STATUS PAGE chip mode has its own zone picker (only shown
