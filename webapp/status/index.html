@@ -189,6 +189,14 @@
     isolation: isolate;
     background: #cfd8dc;
   }
+  /* Oct 15, 2026: the RED-only "Map unavailable right now." line (status.js). Same colour
+     variables as the text around it; [hidden] keeps working because nothing sets display. */
+  .status-map-unavailable {
+    margin-top: 16px;
+    font-size: 0.95rem;
+    line-height: 1.4;
+    color: var(--status-fg);
+  }
   .status-last-seen-line {
     margin-top: 12px;
     font-size: 0.9rem;
@@ -377,6 +385,8 @@
   <!-- Oct 8, 2026: plain-words note for the grey "nothing behind this" states (status.js). -->
   <div class="status-note" id="status-note" hidden></div>
   <div class="status-updated" id="status-updated"></div>
+  <!-- Oct 15, 2026: RED only, when the map can't be drawn (status.js's updateRedSection). -->
+  <div class="status-map-unavailable" id="status-map-unavailable" hidden>Map unavailable right now.</div>
 
   <!-- Item 97b: RED only -- populated/shown by status.js's renderRedMap/renderLastSeenLine,
        hidden (and left empty) for every other status. -->

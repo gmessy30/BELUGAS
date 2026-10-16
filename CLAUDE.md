@@ -190,6 +190,24 @@ migration history, 20260903030000 through 20260923000000) precisely because smal
 here have repeatedly had non-obvious real-world effects. This applies no matter how small the
 change looks, and regardless of the general allowance above for low-risk additive changes.
 
+**The RED logic lives in TWO functions -- change both in the same migration.**
+`get_kenai_red_qualifying_sightings` (the status page's RED map) duplicates
+`get_kenai_presence_state`'s RED window: cycle start, the item 117 grace, the departure ratchet
+and the sighting filter. Any change to RED logic in `get_kenai_presence_state` must change
+`get_kenai_red_qualifying_sightings` in the same migration, or the banner says RED while the
+page shows no map (this happened from Oct 1 to Oct 15, 2026; see the item 97b entry under Open
+items). Run `tools\check-red-map-consistency.sql` as a regression check, in a rolled-back dry run
+with the migration prepended before applying it and again on the live functions after. It's
+read-only and must report `PASS` (banner RED with 0 map rows = 0):
+
+```powershell
+& "$env:LOCALAPPDATA\supabase-cli\supabase.exe" db query --linked --file tools\check-red-map-consistency.sql
+```
+
+Merging the two into one shared function (e.g. one that returns the RED window bounds, used by
+both) would remove the duplication, but it touches `get_kenai_presence_state` itself and so
+needs its own review under the Hard rule above -- not done.
+
 ### Legal pages
 
 `PRIVACY.html` and `LICENSE.html` at the **repo root** (not under `webapp/`) are static, hand-
@@ -728,6 +746,26 @@ never just that playback started.
   the map can never show a sighting that isn't actually why the banner is RED. Any CHANGE to it
   is still Hard-rule territory (it copies `get_kenai_presence_state`'s logic and reads sightings):
   show the user the diff and get an explicit go-ahead first.
+  **BUG FOUND AND FIXED (Oct 15, 2026, `20261015000000_fix_red_map_rpc_grace_window.sql`, applied
+  by the user):** item 117 (`20261001000000`) added the RED step-down grace to
+  `get_kenai_presence_state` only -- for 90 minutes after a low higher than 0.0 m the RED window
+  keeps the PREVIOUS cycle's start. This copy never got it, so in every such grace window the
+  banner said RED while the map RPC returned 0 rows, and the status page hid its map, "Last seen"
+  and count lines with no space reserved. Seen live Oct 15: sighting `76b9c9bc` observed 12:42
+  AKDT but reported 13:52:41, after the 13:52 low (+1.859 m), so the banner was RED through grace
+  alone and the map never appeared. A 30-day scan found 33 failing half-hour samples across 13
+  tide cycles since Oct 1, 0 after the fix. Every status-page commit since Oct 6 was bisected
+  against the same pinned live rows: all draw the map when the RPC returns rows and none when it
+  doesn't, so no page commit was involved. The fix copies the cycle start, grace block and
+  departure ratchet verbatim from the live banner function (same signature, grants and
+  SECURITY INVOKER). The live fingerprint is `7d0a677e…`; the dry run reported `ffa0f009…` only
+  because the dry-run file was written with CRLF line endings -- same body otherwise.
+  **The page guard (same date, status.js `updateRedSection`):** on RED only, once the first fetch
+  has settled, "Map unavailable right now." (`#status-map-unavailable`) shows under "Last
+  updated" when the RPC returns 0 rows, the fetch fails with nothing earlier to show, or the map
+  / "Last seen" code throws. YELLOW, BLUE, grey and unmonitored never show it.
+  **Callers:** only `/webapp/status/` calls this RPC. Native never does (it reads only
+  `get_kenai_presence_state`, `SupabaseClient.kt`), and neither does the main PWA.
 - **Standalone status page** (items 97/97b/97c) at `/webapp/status/`: full design/rationale lives
   in that directory's own file header comments (`index.html`, `status.js`,
   `kenai-landmarks.js`) — summarized here for discoverability. Reads

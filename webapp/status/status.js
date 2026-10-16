@@ -563,11 +563,23 @@ function renderRedMap(sightings, nowMs) {
 // status: the CURRENT effective status (already computed by render()). fetchNewData: true only
 // on an actual network refresh (refreshStatus), never on tick()'s 30s display-only recompute --
 // the map/last-seen line only need to change when new sighting data could exist, not every tick.
+//
+// Oct 15, 2026: "Map unavailable right now." guard (#status-map-unavailable). Until then a RED
+// page with no map just hid the block, which looked like a page bug -- and that is what happened
+// for every item 117 grace window, when the map RPC returned 0 rows while the banner said RED
+// (fixed in 20261015000000). The line shows only on RED, once the first fetch for this page has
+// settled (never while it's still loading), in three cases: the RPC returned 0 rows, the fetch
+// failed with nothing earlier to show, or the map / "Last seen" code threw. The banner itself is
+// untouched; every other status hides the line on the same path that hides the map.
+let redMapFetchSettled = false;
+
 async function updateRedSection(status, fetchNewData) {
   const wrapEl = document.getElementById("status-map-wrap");
+  const unavailableEl = document.getElementById("status-map-unavailable");
 
   if (status !== PRESENCE_RED) {
     wrapEl.hidden = true;
+    unavailableEl.hidden = true;
     return;
   }
 
@@ -584,27 +596,36 @@ async function updateRedSection(status, fetchNewData) {
       // failure -- same graceful-degrade posture as the rest of this page (and the main app's own
       // presence state): keep showing the last known-good map/line rather than blanking it.
     }
+    redMapFetchSettled = true;
   }
 
-  // Nothing to show yet (still loading on this device's very first RED, or every attempt so far
-  // has failed) -- fall back to just the color/text/updated-time above, no map, rather than an
-  // empty or broken-looking map block.
+  // Nothing to show: still loading on this device's very first RED (no line yet), or the RPC
+  // returned no rows / every attempt so far has failed (the guard line). No map block either way,
+  // rather than an empty or broken-looking one.
   if (!redQualifyingSightings || redQualifyingSightings.length === 0) {
     wrapEl.hidden = true;
+    unavailableEl.hidden = !redMapFetchSettled;
     return;
   }
 
-  wrapEl.hidden = false;
-  // redQualifyingSightings is already newest first (sortByRecency), so [0] -- what the
-  // "Last seen..." line describes -- is always the newest, and the newest drawn marker.
-  const shown = redQualifyingSightings.slice(0, RED_MAP_MAX_SHOWN);
-  renderRedMap(shown, Date.now());
-  document.getElementById("status-last-seen-line").textContent =
-    buildLastSeenLine(shown[0], Date.now());
-  const countEl = document.getElementById("status-map-count-line");
-  const total = redQualifyingSightings.length;
-  countEl.hidden = total <= RED_MAP_MAX_SHOWN;
-  countEl.textContent = total > RED_MAP_MAX_SHOWN ? `Showing the ${RED_MAP_MAX_SHOWN} most recent of ${total} reports` : "";
+  try {
+    wrapEl.hidden = false;
+    // redQualifyingSightings is already newest first (sortByRecency), so [0] -- what the
+    // "Last seen..." line describes -- is always the newest, and the newest drawn marker.
+    const shown = redQualifyingSightings.slice(0, RED_MAP_MAX_SHOWN);
+    renderRedMap(shown, Date.now());
+    document.getElementById("status-last-seen-line").textContent =
+      buildLastSeenLine(shown[0], Date.now());
+    const countEl = document.getElementById("status-map-count-line");
+    const total = redQualifyingSightings.length;
+    countEl.hidden = total <= RED_MAP_MAX_SHOWN;
+    countEl.textContent = total > RED_MAP_MAX_SHOWN ? `Showing the ${RED_MAP_MAX_SHOWN} most recent of ${total} reports` : "";
+    unavailableEl.hidden = true;
+  } catch (e) {
+    console.error("STATUS_PAGE_RED_MAP_RENDER_ERROR", e);
+    wrapEl.hidden = true;
+    unavailableEl.hidden = false;
+  }
 }
 
 refreshStatus();
