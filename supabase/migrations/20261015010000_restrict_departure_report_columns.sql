@@ -1,0 +1,31 @@
+-- Oct 15, 2026: stop exposing departure reporters' device ids.
+--
+-- WHY: kenai_departure_reports had a table-level SELECT grant for anon and authenticated plus a
+-- `using (true)` read policy, so anyone could read every row's subscriber_id (and the reporter's
+-- latitude/longitude). Every departure reporter is a tier-1 device, and a subscriber_id acts as
+-- that device's credential: it's what get_observer_tier / is_tier_one_observer /
+-- report_kenai_departure check, and what edit_my_sighting / delete_my_sighting accept as proof of
+-- ownership.
+--
+-- WHAT: anon and authenticated keep SELECT on reported_at_epoch_ms only. Row-level security and
+-- the existing "Anon can read kenai departure reports" policy are unchanged.
+--
+-- Everything that reads this table, checked Oct 15, 2026:
+--   get_kenai_presence_state, get_kenai_red_qualifying_sightings -- SECURITY INVOKER (so they run
+--     as anon for the app and status page); read reported_at_epoch_ms only.
+--   report_kenai_departure -- SECURITY DEFINER (runs as the owner); INSERTs subscriber_id,
+--     reported_at_epoch_ms, reported_lat, reported_lng; not affected by these grants.
+--   webapp/status/status.js -- PostgREST ?select=reported_at_epoch_ms, filtered and ordered on that
+--     column; still allowed.
+--   The PWA's secret page and native (TierClaimScreen.kt) only call is_kenai_departure_reporter
+--     and report_kenai_departure; nothing reads the table directly and nothing uses select=*.
+-- PostgREST note: once column grants apply, ?select=* (or any request naming another column) on
+-- this table fails with "permission denied for table kenai_departure_reports".
+--
+-- Out of scope here on purpose (see that day's audit): device_tokens, subscriptions and
+-- match_notification_recipients still expose subscriber_id / fcm_token to anon, and sightings
+-- exposes subscriber_id to any authenticated account (email sign-up is open). Each needs its own
+-- reviewed change.
+
+revoke select on table public.kenai_departure_reports from anon, authenticated;
+grant select (reported_at_epoch_ms) on public.kenai_departure_reports to anon, authenticated;

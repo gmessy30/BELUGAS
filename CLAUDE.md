@@ -151,6 +151,65 @@ transferring ownership is deliberately left a manual, out-of-band operation, not
 admin-page action. Every admin RPC (issue/revoke/publish/reject/unpublish/add-remove-update-admin)
 writes to `admin_actions`, readable only via `list_admin_actions` (owner-only).
 
+### Security: device identifiers (audit Oct 15, 2026)
+
+**HARD RULE: a `subscriber_id` is a credential.** It's what proves a device's tier
+(`get_observer_tier`, `is_tier_one_observer`, `report_kenai_departure`) and its ownership of its
+own sightings (`edit_my_sighting` / `delete_my_sighting`). So:
+- Never show more than its first 4 characters in a report, log or screenshot, and never call an
+  RPC with a real one to test something.
+- Never return one from a new RPC, view or table grant to anon or authenticated. A new table that
+  stores one gets row-level security plus column-level grants that leave that column out (see
+  `kenai_departure_reports` below).
+- Check every new table, view and RPC result for device identifiers before it ships. The audit
+  queries (has_column_privilege per column plus each table's SELECT policies; RPC result columns
+  plus EXECUTE grants; `pg_publication_tables`) are in that day's session and easy to rerun.
+- "authenticated" is NOT a trusted role: email sign-up is open (`/auth/v1/settings` reports
+  `disable_signup: false`), so anyone who confirms an email gets an authenticated session.
+
+**Readable device identifiers found by the audit:**
+
+| Where | Identifier | Readable by | Status |
+|---|---|---|---|
+| `kenai_departure_reports` | `subscriber_id`, reporter lat/lng | anon + authenticated, all rows | **FIXED** by `20261015010000` (applied by the user, verified live) |
+| `sightings` | `subscriber_id`, `confirmed_by_subscriber_id` | authenticated (anon already revoked) | **OPEN** |
+| `device_tokens` | `subscriber_id`, `fcm_token` | anon + authenticated, all rows; also INSERT/UPDATE `true` | **OPEN** |
+| `subscriptions` | `subscriber_id` | anon + authenticated, all rows; also UPDATE/DELETE `true` | **OPEN** |
+| `match_notification_recipients()` | returns `fcm_token`s | anon + authenticated EXECUTE | **OPEN** |
+| `sightings.observer_id` / `export_sightings` | `observer_id` | anon | empty on every row; no client sets it |
+
+Not exposed: `tier_roster`, `subscriber_identities`, `tier_code_redeem_attempts`, `tier_admins`,
+`admin_actions` (RLS on, no read policy), `article_link_reports` (no grants), the admin `list_*`
+RPCs (check admin membership first; `list_tier_codes` returns no `claimed_subscriber_id`),
+`get_my_editable_sighting`. No table is in a Realtime publication.
+
+**What `20261015010000_restrict_departure_report_columns.sql` fixed:** anon and authenticated keep
+SELECT on `kenai_departure_reports.reported_at_epoch_ms` only (table SELECT revoked, column SELECT
+granted; RLS and the read policy unchanged). Its readers were checked first: both RED functions run
+as the caller and read only that column; `report_kenai_departure` runs as definer and only
+inserts; the status page asks for `?select=reported_at_epoch_ms`; the secret page and native only
+call RPCs. Verified live: anon reads that column (3 rows), `subscriber_id` / lat / lng / `select *`
+are refused, the status page's departure read returns 200, and the RED map consistency scan
+passes as anon. Before the fix the table exposed 3 reports from 2 tier-1 devices.
+
+**OPEN items (not built):**
+- `sightings.subscriber_id` and `confirmed_by_subscriber_id` readable by authenticated while
+  sign-up is open. Options: turn off sign-up in the dashboard (no code change; new admins are then
+  invited from the dashboard), and/or revoke those two columns from authenticated as anon already
+  is (the PWA's column lists and the admin page don't request them).
+- `device_tokens` and `subscriptions` readable AND writable by anon (UPDATE/DELETE `using (true)`),
+  so anyone can read every device id and repoint or delete other devices' tokens and alerts. Fix:
+  move reads and writes into RPCs that act only on the caller's own `subscriber_id` and drop the
+  direct table policies. Column grants don't work here (the clients filter and upsert on
+  `subscriber_id`), and hashing just makes the hash the credential.
+- `match_notification_recipients` executable by anon and authenticated, returning FCM tokens. Only
+  the `notify-new-sighting` edge function calls it, with the service role, so revoking EXECUTE
+  from anon and authenticated breaks nothing.
+
+**Native has never been released.** No installed native build is in anyone's hands, so table and
+RPC changes for these items don't need a period where old and new clients both work: change the
+database and both clients together.
+
 ### Migrations
 
 `supabase/migrations/20260920000000_add_server_side_outer_geofence_check.sql` and
@@ -780,7 +839,8 @@ never just that playback started.
   - **Count line:** "Showing the 3 most recent of N reports in the last 12 hours" when more than 3
     qualify; the old wording when the context set wasn't merged in.
   - **Departure reports:** context rows observed at or before the newest departure report in the
-    last 12 hours are dropped (`kenai_departure_reports`, anon-readable; same +1 ms ratchet as the
+    last 12 hours are dropped (`kenai_departure_reports`, whose `reported_at_epoch_ms` is the only
+    column anon can read, the only one this asks for; same +1 ms ratchet as the
     banner). Deliberately the 12-hour window, not only the current tide cycle: it hides everything
     the current-cycle rule would, and also covers item 117's grace, without copying the grace logic
     into the page.
